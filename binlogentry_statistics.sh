@@ -34,6 +34,7 @@ function processBinlogEntry() {
     if [[ "${binlogEntry:0:1}" == '#' ]]; then
         if [[ "${binlogEntry:0:5}" == "# at " ]]; then
             STATS_at=${binlogEntry:5}
+            echo $STATS_lines $binlogEntry  ${binlogEntry:5} >&2
         elif [[ "${binlogEntry:0:2}" == "#2" ]]; then
             read -ra parts <<< "$binlogEntry"
 
@@ -48,8 +49,8 @@ function processBinlogEntry() {
                     STATS_Write_rows=$((STATS_Write_rows+1))
                     ;;
                 "Rotate")
-                    if [[ "${parts[11]}"  == "to" ]]; then
-                        STATS_BINLOGFILE="${parts[12]}"
+                    if [[ "${parts[10]}" == "to" ]]; then
+                        STATS_BINLOGFILE="${parts[11]}"
                     fi
                     ;;
                 *)
