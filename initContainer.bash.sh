@@ -1,1 +1,1 @@
-dnf install -y js
+dnf install -y jq diffutils

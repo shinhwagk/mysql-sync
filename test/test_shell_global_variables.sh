@@ -1,6 +1,6 @@
 #!/bin/bash
 
-STATS_DATA='{"Write_rows":0,"Table_map":0,"GTID_NEXT":"","COMMIT":0,"ROLLBACK":0,"TIMESTAMP":0,"at":0,"BINLOG":0,"BINLOGFILE":""}'
+STATS_DATA='{"Write_rows":0,"Table_map":0,"GTID_NEXT":"","COMMIT":0,"ROLLBACK":0,"TIMESTAMP":0,"at":0,"BINLOG":0,"BINLOGFILE":"",lines:0}'
 
 # function processBinlogEntry(){
 #     local binlogEntry="$1"
