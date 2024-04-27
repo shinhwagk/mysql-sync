@@ -38,14 +38,4 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
- 
-      - run: mysql -uroot -e 'SELECT version()'
-
-      - name: Connect to MySQL
-        run: mysql -h127.0.0.1 -uroot -proot_password -e "CREATE TABLE test_db.example_table (id INT PRIMARY KEY, name VARCHAR(50));"
-
-      - name: Insert data into MySQL
-        run: mysql -h127.0.0.1 -uroot -proot_password -e "INSERT INTO test_db.example_table (id, name) VALUES (1, 'example');"
-
-      - name: Query data from MySQL
-        run: mysql -h127.0.0.1 -uroot -proot_password -e "SELECT * FROM test_db.example_table;"
+      - run: mysql -hmysql8036 -P33061 -uroot -eexample 'SELECT version()'
