@@ -13,7 +13,7 @@ jobs:
         image: shinhwagk/mysql:8.0.36
         env:
           MYSQL_ROOT_PASSWORD: root_password
-          MYSQL_MYSQLD_ARGS: '--server-id=1000 --log-bin=mysql-bin --gtid-mode=on --enforce-gtid-consistency=on'
+          MYSQL_MYSQLD_ARGS: "--server-id=1000 --log-bin=mysql-bin --gtid-mode=on --enforce-gtid-consistency=on"
         ports:
           - 33061:3306
         options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3'
