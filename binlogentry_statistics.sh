@@ -146,15 +146,13 @@ done
 
 print_statistics
 
-for key in "${!STATS_Table_map_id[@]}"; do
-    echo "$key: ${STATS_Table_map_id[$key]}" >&2
-done
+
 for key in "${!STATS_Table_Write_rows_counter[@]}"; do
-    echo "$key: ${STATS_Table_Write_rows_counter[$key]}" >&2
+    echo "write ${STATS_Table_map_id[$key]}: ${STATS_Table_Write_rows_counter[$key]}" >&2
 done
 for key in "${!STATS_Table_Delete_rows_counter[@]}"; do
-    echo "$key: ${STATS_Table_Delete_rows_counter[$key]}" >&2
+    echo "delete ${STATS_Table_map_id[$key]}: ${STATS_Table_Delete_rows_counter[$key]}" >&2
 done
 for key in "${!STATS_Table_Update_rows_counter[@]}"; do
-    echo "$key: ${STATS_Table_Update_rows_counter[$key]}" >&2
+    echo "update ${STATS_Table_map_id[$key]}: ${STATS_Table_Update_rows_counter[$key]}" >&2
 done
