@@ -47,5 +47,9 @@ jobs:
 
       - run: |
           time mysqlbinlog -h127.0.0.1 -P33061 -uroot -proot_password --read-from-remote-server --to-last-log -v mysql-bin.000001 | bash ./binlogentry_statistics.sh >/dev/null
+
+          mysqlbinlog -h127.0.0.1 -P33061 -uroot -proot_password --read-from-remote-server --to-last-log -v mysql-bin.000001 | bash -x ./binlogentry_statistics.sh | grep -i 'create table '
+
           [[ $? == 0 ]] && exit 0
           mysqlbinlog -h127.0.0.1 -P33061 -uroot -proot_password --read-from-remote-server --to-last-log -v mysql-bin.000001 | bash -x ./binlogentry_statistics.sh
+
