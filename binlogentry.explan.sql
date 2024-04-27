@@ -1,0 +1,11 @@
+#240424 10:45:54 server id 1  end_log_pos 1644 CRC32 0x053e2440 	GTID	last_committed=6	sequence_number=7	rbr_only=yes	original_committed_timestamp=1713955554358471	immediate_commit_timestamp=1713955554358471	transaction_length=361
+-- #240424 10:45:54：表示这条记录是在这个日期和时间生成的。
+-- server id 1：表示生成该事务的 MySQL 服务器的 ID 是 1。
+-- end_log_pos 1644：表示下一个事件的起始位置是二进制日志中的 1644。
+-- CRC32 0x053e2440：这是记录的循环冗余校验和（CRC32），用于检测在存储或传输过程中是否发生数据损坏。
+-- last_committed=6：这是事务在提交队列中的位置，即有六个事务已提交，但在此事务之前开始。
+-- sequence_number=7：这是该事务的序列号，用于维护事务的执行顺序。
+-- rbr_only=yes：表示该事务只使用基于行的复制（Row-Based Replication, RBR）。这种复制模式是复制数据变更的具体内容，而非 SQL 语句本身。
+-- original_committed_timestamp=1713955554358471：该事务最初提交的时间戳。
+-- immediate_commit_timestamp=1713955554358471：该事务实际提交的时间戳，通常这两个时间戳应该非常接近，除非有延迟或排队。
+-- transaction_length=361：事务的大小，单位是字节，指示该事务变更了多少数据。
