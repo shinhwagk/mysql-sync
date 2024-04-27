@@ -3,6 +3,8 @@
 set -e
 
 STATS_Write_rows=0
+STATS_Delete_rows=0
+STATS_Update_rows=0
 STATS_Table_map=0
 STATS_GTID_NEXT=""
 STATS_COMMIT=0
@@ -13,28 +15,28 @@ STATS_BINLOG=0
 STATS_BINLOGFILE=""
 STATS_lines=0
 
-_last_unixtime=$SECONDS
+_last_seconds=$SECONDS
 
 function print_statistics() {
-    local current_unixtime=$SECONDS
+    echo "statistics ${SECONDS} {\"Write_rows\":${STATS_Write_rows},\"Delete_rows\":${STATS_Delete_rows},\"Update_rows\":${STATS_Update_rows},\"Table_map\":${STATS_Table_map},\"GTID_NEXT\":\"${STATS_GTID_NEXT}\",\"COMMIT\":${STATS_COMMIT},\"ROLLBACK\":${STATS_ROLLBACK},\"TIMESTAMP\":${STATS_TIMESTAMP},\"at\":${STATS_at},\"BINLOG\":${STATS_BINLOG},\"BINLOGFILE\":\"${STATS_BINLOGFILE}\",\"lines\":${STATS_lines}}" >&2
+}
 
-    if ((current_unixtime - _last_unixtime >= 1)); then
-        echo "statistics ${current_unixtime} {\"Write_rows\":${STATS_Write_rows},\"Table_map\":${STATS_Table_map},\"GTID_NEXT\":\"${STATS_GTID_NEXT}\",\"COMMIT\":${STATS_COMMIT},\"ROLLBACK\":${STATS_ROLLBACK},\"TIMESTAMP\":${STATS_TIMESTAMP},\"at\":${STATS_at},\"BINLOG\":${STATS_BINLOG},\"BINLOGFILE\":\"${STATS_BINLOGFILE}\",\"lines\":${STATS_lines}}" >&2
+function print_statistics_interval() {
+    local local_seconds=$SECONDS
 
-        _last_unixtime=$current_unixtime;
+    if ((local_seconds - _last_seconds >= 1)); then
+        print_statistics
+        _last_seconds=$local_seconds;
     fi
 }
 
-
-function processBinlogEntry() {
+function statistics_binlogentry() {
     local binlogEntry="$1"
 
-    STATS_lines=$((STATS_lines+1))
-
     if [[ "${binlogEntry:0:1}" == '#' ]]; then
+        # binlogentry: # at 1534
         if [[ "${binlogEntry:0:5}" == "# at " ]]; then
             STATS_at=${binlogEntry:5}
-            echo $STATS_lines $binlogEntry  ${binlogEntry:5} >&2
         elif [[ "${binlogEntry:0:2}" == "#2" ]]; then
             read -ra parts <<< "$binlogEntry"
 
@@ -47,6 +49,12 @@ function processBinlogEntry() {
                     ;;
                 "Write_rows:")
                     STATS_Write_rows=$((STATS_Write_rows+1))
+                    ;;
+                "Delete_rows:")
+                    STATS_Delete_rows=$((STATS_Delete_rows+1))
+                    ;;
+                "Update_rows:")
+                    STATS_Update_rows=$((STATS_Update_rows+1))
                     ;;
                 "Rotate")
                     if [[ "${parts[10]}" == "to" ]]; then
@@ -64,16 +72,19 @@ function processBinlogEntry() {
 
             if [[ "${parts[7]}" == "Rotate" && "${parts[8]}" == "to" ]]; then
                 STATS_BINLOGFILE="${parts[9]}"
+            elif [[ "${parts[9]}" == "Rotate" && "${parts[10]}" == "to" ]]; then
+                STATS_BINLOGFILE="${parts[11]}"
             fi
         fi
 
     else
+        # binlogentry: SET @@SESSION.GTID_NEXT= '6af9e1aa-0225-11ef-8fee-0242ac140002:14'/*!*/; 
         if [[ "${binlogEntry:0:26}" == "SET @@SESSION.GTID_NEXT= '" && "${binlogEntry: -7}" == "'/*!*/;" ]]; then
             gtid_next=$(echo "$binlogEntry" | grep -o "'.*'" | sed "s/'//g")
             STATS_GTID_NEXT="${gtid_next}"
-        elif [[ "$binlogEntry" == "COMMIT/*!*/;" ]]; then
+        elif [[ "$binlogEntry" == 'COMMIT/*!*/;' ]]; then
             STATS_COMMIT=$((STATS_COMMIT+1))
-        elif [[ "$binlogEntry" == "ROLLBACK/*!*/;" ]]; then
+        elif [[ "$binlogEntry" == 'ROLLBACK/*!*/;' ]]; then
             STATS_ROLLBACK=$((STATS_ROLLBACK+1))
         elif [[ "${binlogEntry:0:14}" == "SET TIMESTAMP=" && "${binlogEntry: -6}" == "/*!*/;" ]]; then
             STATS_TIMESTAMP="${binlogEntry#*TIMESTAMP=}"
@@ -87,12 +98,28 @@ function processBinlogEntry() {
         echo "$binlogEntry"
     fi
 
-    print_statistics
+    print_statistics_interval
 }
 
 
+# while [[ "$#" -gt 0 ]]; do
+#     case $1 in
+#         --age) age="$2"; shift ;;
+#         --name) name="$2"; shift ;;
+#         *) echo "Unknown parameter passed: $1"; exit 1 ;;
+#     esac
+#     shift
+# done
+
+
 while IFS= read -r line; do
-    processBinlogEntry "$line";
+    STATS_lines=$((STATS_lines+1))
+
+    if [[ $STATS_lines == 2 ]]; then
+        echo "${binlogEntry}" | grep -Eo '8.[0-9].[0-9]+'
+    fi
+
+    statistics_binlogentry "$line";
 done
 
 print_statistics
