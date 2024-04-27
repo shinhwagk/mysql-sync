@@ -38,4 +38,4 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - run: mysql -hmysql8036 -P33061 -uroot -eexample 'SELECT version()'
+      - run: mysql -hmysql8036 -P33061 -uroot -proot_password 'SELECT version()'
