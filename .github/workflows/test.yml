@@ -8,16 +8,19 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-
-    # services:
-    #   mysql8036:
-    #     image: mysql:8.0.36
-    #     env:
-    #       MYSQL_ROOT_PASSWORD: root_password
-    #       MYSQL_DATABASE: test_db
-    #     ports:
-    #       - 33061:3306
-    #     options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+    container:
+      image: node:14
+      entrypoint: ["/bin/sh", "-c"]
+      args: ["echo Hello, world! && node your-script.js"]
+    services:
+      mysql8036:
+        image: mysql:8.0.36
+        env:
+          MYSQL_ROOT_PASSWORD: root_password
+          MYSQL_DATABASE: test_db
+        ports:
+          - 33061:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3 --entrypoint /bin/sh -c 'mysqld --character-set-server=utf8mb4'
     #   percona803628:
     #     image: percona:8.0.36-28
     #     env:
@@ -39,10 +42,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Running Mysql 8.0.36
-        run: |
-          docker run -d -e MYSQL_ROOT_PASSWORD=example mysql:8.0.36
-      
+ 
       - run: mysql -uroot -e 'SELECT version()'
 
       - name: Connect to MySQL
