@@ -16,7 +16,7 @@ insert into test.tab1 values(1,'a');
 insert into test.tab1 values(2,'a');
 insert into test.tab1 values(3,'a');
 flush logs;
-start transation;
+start transcation;
 delete from test.tab1 where a=1;
 update test.tab1 set b='b' where a=2;
 replace into test.tab1 values(3,'c');
