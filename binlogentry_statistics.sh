@@ -116,9 +116,7 @@ function statistics_binlogentry() {
         elif [[ "$binlogEntry" == 'ROLLBACK/*!*/;' ]]; then
             STATS_ROLLBACK=$((STATS_ROLLBACK+1))
         elif [[ "${binlogEntry:0:14}" == "SET TIMESTAMP=" && "${binlogEntry: -6}" == "/*!*/;" ]]; then
-            STATS_TIMESTAMP="${binlogEntry#*TIMESTAMP=}"
-            STATS_TIMESTAMP="${STATS_TIMESTAMP%%.*}"
-            STATS_TIMESTAMP="${STATS_TIMESTAMP%%/*}"
+            STATS_TIMESTAMP="${binlogEntry:14:10}}"
         elif [[ "$binlogEntry" == "BINLOG '" ]]; then
             STATS_BINLOG=$((STATS_BINLOG+1))
         else
