@@ -4,18 +4,19 @@ set -e
 
 declare -A STATS_Table_map_counter
 
-STATS_Write_rows=0
-STATS_Delete_rows=0
-STATS_Update_rows=0
-STATS_Table_map=0
-STATS_GTID_NEXT=""
-STATS_COMMIT=0
-STATS_ROLLBACK=0
-STATS_TIMESTAMP=0
-STATS_at=0
-STATS_BINLOG=0
-STATS_BINLOGFILE=""
-STATS_lines=0
+declare -i STATS_Write_rows=0
+declare -i STATS_Delete_rows=0
+declare -i STATS_Update_rows=0
+declare -i STATS_Table_map=0
+declare -i STATS_COMMIT=0
+declare -i STATS_ROLLBACK=0
+declare -i STATS_TIMESTAMP=0
+declare -i STATS_at=0
+declare -i STATS_BINLOG=0
+declare -i STATS_lines=0
+
+declare STATS_GTID_NEXT=""
+declare STATS_BINLOGFILE=""
 
 _last_seconds=$SECONDS
 
