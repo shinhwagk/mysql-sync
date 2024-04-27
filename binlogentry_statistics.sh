@@ -140,5 +140,5 @@ print_statistics
 
 
 for key in "${!STATS_Table_map_counter[@]}"; do
-    echo "$key: ${STATS_Table_map_counter[$key]}"
+    echo "$key: ${STATS_Table_map_counter[$key]}" >&2
 done
