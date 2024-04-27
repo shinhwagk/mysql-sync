@@ -2,6 +2,8 @@
 
 set -e
 
+declare -A STATS_Table_map_counter
+
 STATS_Write_rows=0
 STATS_Delete_rows=0
 STATS_Update_rows=0
@@ -16,6 +18,15 @@ STATS_BINLOGFILE=""
 STATS_lines=0
 
 _last_seconds=$SECONDS
+
+function update_or_initialize_key() {
+    local key=$1
+    if [[ -z "${STATS_Table_map_counter[$key]}" ]]; then
+        STATS_Table_map_counter[$key]=1
+    else
+        ((STATS_Table_map_counter[$key]++))
+    fi
+}
 
 function print_statistics() {
     echo "statistics ${SECONDS} {\"Write_rows\":${STATS_Write_rows},\"Delete_rows\":${STATS_Delete_rows},\"Update_rows\":${STATS_Update_rows},\"Table_map\":${STATS_Table_map},\"GTID_NEXT\":\"${STATS_GTID_NEXT}\",\"COMMIT\":${STATS_COMMIT},\"ROLLBACK\":${STATS_ROLLBACK},\"TIMESTAMP\":${STATS_TIMESTAMP},\"at\":${STATS_at},\"BINLOG\":${STATS_BINLOG},\"BINLOGFILE\":\"${STATS_BINLOGFILE}\",\"lines\":${STATS_lines}}" >&2
@@ -46,6 +57,7 @@ function statistics_binlogentry() {
                     ;;
                 "Table_map:")
                     STATS_Table_map=$((STATS_Table_map+1))
+                    update_or_initialize_key "${parts[10]}"
                     ;;
                 "Write_rows:")
                     STATS_Write_rows=$((STATS_Write_rows+1))
@@ -123,3 +135,8 @@ while IFS= read -r line; do
 done
 
 print_statistics
+
+
+for key in "${!STATS_Table_map_counter[@]}"; do
+    echo "$key: ${STATS_Table_map_counter[$key]}"
+done
