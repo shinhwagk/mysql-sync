@@ -62,7 +62,7 @@ function statistics_binlogentry() {
                     fi
                     ;;
                 *)
-                    echo "error: ${parts[9]} $binlogEntry"
+                    echo "error: ${parts[9]} $binlogEntry" >&2
                     exit 1
                     ;;
             esac
