@@ -2,7 +2,13 @@
 
 set -e
 
-declare -A STATS_Table_map_counter
+declare -A STATS_Table_Write_rows_counter
+declare -A STATS_Table_Delete_rows_counter
+declare -A STATS_Table_Update_rows_counter
+
+declare -A STATS_Table_map_id
+
+
 
 declare -i STATS_Write_rows=0
 declare -i STATS_Delete_rows=0
@@ -20,12 +26,13 @@ declare STATS_BINLOGFILE=""
 
 _last_seconds=$SECONDS
 
-function update_or_initialize_key() {
-    local key=$1
-    if [[ -z "${STATS_Table_map_counter[$key]}" ]]; then
-        STATS_Table_map_counter[$key]=1
+update_or_initialize_key() {
+    local -n arr=$1
+    local key=$2
+    if [[ -z "${arr[$key]}" ]]; then
+        arr[$key]=1
     else
-        ((STATS_Table_map_counter[$key]++))
+        ((arr[$key]++))
     fi
 }
 
@@ -58,17 +65,24 @@ function statistics_binlogentry() {
                     ;;
                 "Table_map:")
                     STATS_Table_map=$((STATS_Table_map+1))
-                    modified_string=$(echo "${parts[10]}" | tr -d '`')
 
-                    update_or_initialize_key "$modified_string"
+                    tab_name=$(echo "${parts[10]}" | tr -d '`')
+                    tab_id=$(echo "${parts[14]}")
+                    [[ -z "${STATS_Table_map_id[$tab_id]}" ]] && STATS_Table_map_id[$tab_id]="$tab_name"
                     ;;
                 "Write_rows:")
+                    tab_id=$(echo "${parts[12]}")
+                    update_or_initialize_key "STATS_Table_Write_rows_counter" $tab_id
                     STATS_Write_rows=$((STATS_Write_rows+1))
                     ;;
                 "Delete_rows:")
+                    tab_id=$(echo "${parts[12]}")
+                    update_or_initialize_key "STATS_Table_Delete_rows_counter" $tab_id
                     STATS_Delete_rows=$((STATS_Delete_rows+1))
                     ;;
                 "Update_rows:")
+                    tab_id=$(echo "${parts[12]}")
+                    update_or_initialize_key "STATS_Table_Update_rows_counter" $tab_id
                     STATS_Update_rows=$((STATS_Update_rows+1))
                     ;;
                 "Rotate")
@@ -140,6 +154,6 @@ done
 print_statistics
 
 
-for key in "${!STATS_Table_map_counter[@]}"; do
-    echo "$key: ${STATS_Table_map_counter[$key]}" >&2
+for key in "${!STATS_Table_Write_rows_counter[@]}"; do
+    echo "$key: ${STATS_Table_Write_rows_counter[$key]}" >&2
 done
