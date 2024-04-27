@@ -71,18 +71,18 @@ function statistics_binlogentry() {
                     # [[ -z "${STATS_Table_map_id[$tab_id]}" ]] && STATS_Table_map_id[$tab_id]="$tab_name"
                     ;;
                 "Write_rows:")
-                    tab_id=$(echo "${parts[12]}")
-                    update_or_initialize_key "STATS_Table_Write_rows_counter" $tab_id
+                    # tab_id=$(echo "${parts[12]}")
+                    # update_or_initialize_key "STATS_Table_Write_rows_counter" $tab_id
                     STATS_Write_rows=$((STATS_Write_rows+1))
                     ;;
                 "Delete_rows:")
-                    tab_id=$(echo "${parts[12]}")
-                    update_or_initialize_key "STATS_Table_Delete_rows_counter" $tab_id
+                    # tab_id=$(echo "${parts[12]}")
+                    # update_or_initialize_key "STATS_Table_Delete_rows_counter" $tab_id
                     STATS_Delete_rows=$((STATS_Delete_rows+1))
                     ;;
                 "Update_rows:")
-                    tab_id=$(echo "${parts[12]}")
-                    update_or_initialize_key "STATS_Table_Update_rows_counter" $tab_id
+                    # tab_id=$(echo "${parts[12]}")
+                    # update_or_initialize_key "STATS_Table_Update_rows_counter" $tab_id
                     STATS_Update_rows=$((STATS_Update_rows+1))
                     ;;
                 "Rotate")
