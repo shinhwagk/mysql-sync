@@ -41,5 +41,4 @@ jobs:
       - name: Check mysql client version
         run: mysql --version
         
-
       - run: mysql -h127.0.0.1 -P33061 -uroot -proot_password -e 'SELECT version()'

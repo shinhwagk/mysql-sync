@@ -43,6 +43,8 @@ mysqlbinlog -vv --base64-output=DECODE-ROWS --host=127.0.0.1 --port=3306 --user=
 ```
 
 ```sh
+docker run -d -e MYSQL_ROOT_PASSWORD=example -e MYSQL_server_id=999  mysql:8.0.36 
+
 echo 'hello world' | deno run --allow-read --allow-write transform.ts | wc -c
 
 # # source
@@ -83,3 +85,6 @@ generate_data() {
   mysqlbinlog -hdb --user=repl --password=repl --read-from-remote-server --stop-never -v -i mysql-bin.000001
 } | ./main
 ```
+
+## links
+[https://dev.mysql.com/doc/refman/8.0/en/mysqlbinlog-hexdump.html](https://dev.mysql.com/doc/refman/8.0/en/mysqlbinlog.html)
