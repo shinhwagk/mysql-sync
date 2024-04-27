@@ -10,7 +10,7 @@ services:
     command: sleep infinity
 
   db:
-    image: mysql:latest
+    image: mysql:8.0.36
     platform: linux/amd64
     environment:
       MYSQL_ROOT_PASSWORD: example
@@ -19,5 +19,3 @@ services:
       - --log-bin=mysql-bin
       - --gtid-mode=on
       - --enforce-gtid-consistency=on
-
- 
