@@ -57,7 +57,9 @@ function statistics_binlogentry() {
                     ;;
                 "Table_map:")
                     STATS_Table_map=$((STATS_Table_map+1))
-                    update_or_initialize_key "${parts[10]}"
+                    modified_string=$(echo "${parts[10]}" | tr -d '`')
+
+                    update_or_initialize_key "$modified_string"
                     ;;
                 "Write_rows:")
                     STATS_Write_rows=$((STATS_Write_rows+1))
