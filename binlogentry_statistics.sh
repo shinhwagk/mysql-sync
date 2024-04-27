@@ -66,9 +66,9 @@ function statistics_binlogentry() {
                 "Table_map:")
                     STATS_Table_map=$((STATS_Table_map+1))
 
-                    tab_name=$(echo "${parts[10]}" | tr -d '`')
-                    tab_id=$(echo "${parts[14]}")
-                    [[ -z "${STATS_Table_map_id[$tab_id]}" ]] && STATS_Table_map_id[$tab_id]="$tab_name"
+                    # tab_name=$(echo "${parts[10]}" | tr -d '`')
+                    # tab_id=$(echo "${parts[14]}")
+                    # [[ -z "${STATS_Table_map_id[$tab_id]}" ]] && STATS_Table_map_id[$tab_id]="$tab_name"
                     ;;
                 "Write_rows:")
                     tab_id=$(echo "${parts[12]}")
