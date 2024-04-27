@@ -42,3 +42,7 @@ jobs:
         run: mysql --version
         
       - run: mysql -h127.0.0.1 -P33061 -uroot -proot_password -e 'SELECT version()'
+
+      - run: mysql -h127.0.0.1 -P33061 -uroot -proot_password <test_data.sql
+
+      - run: mysqlbinlog -h127.0.0.1 -P33061 -uroot -proot_password --read-from-remote-server --stop-never -v mysql-bin.000001 | bash ./binlogentry_statistics.sh >/dev/null

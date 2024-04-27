@@ -1,0 +1,23 @@
+-- create user repl@'%' identified by 'repl';
+-- grant replication client, replication slave on *.* to repl@'%';
+
+flush logs;
+create database test;
+flush logs;
+create table test.tab1(a int primary key, b varhcar(10));
+flush logs;
+insert into table test.tab1 values(1,'a');
+flush logs;
+update test.tab set b='b' where a=1;
+flush logs;
+delete from test.tab where a=1;
+flush logs;
+insert into table test.tab1 values(1,'a');
+insert into table test.tab1 values(2,'a');
+insert into table test.tab1 values(3,'a');
+flush logs;
+start transation;
+delete from test.tab where a=1;
+update test.tab set b='b' where a=2;
+replace into test.tab values(3,'c');
+commit;
