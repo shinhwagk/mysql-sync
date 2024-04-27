@@ -113,11 +113,11 @@ function statistics_binlogentry() {
 
 
 while IFS= read -r line; do
-    STATS_lines=$((STATS_lines+1))
+    # STATS_lines=$((STATS_lines+1))
 
-    if [[ $STATS_lines == 2 ]]; then
-        echo "${binlogEntry}" | grep -Eo '8.[0-9].[0-9]+'
-    fi
+    # if [[ $STATS_lines == 2 ]]; then
+    #     echo "${binlogEntry}" | grep -Eo '8.[0-9].[0-9]+'
+    # fi
 
     statistics_binlogentry "$line";
 done
