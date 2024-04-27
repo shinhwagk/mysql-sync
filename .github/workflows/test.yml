@@ -1,0 +1,52 @@
+name: MySQL Service Example
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      mysql8036:
+        image: mysql:8.0.36
+        env:
+          MYSQL_ROOT_PASSWORD: root_password
+          MYSQL_DATABASE: test_db
+        ports:
+          - 33061:3306
+        command: mysqld --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+      percona803628:
+        image: percona:8.0.36-28
+        env:
+          MYSQL_ROOT_PASSWORD: root_password
+          MYSQL_DATABASE: test_db
+        ports:
+          - 33062:3306
+        command: mysqld --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+      percona803527:
+        image: percona:8.0.35-27
+        env:
+          MYSQL_ROOT_PASSWORD: root_password
+          MYSQL_DATABASE: test_db
+        ports:
+          - 33063:3306
+        command: mysqld --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+        
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Connect to MySQL
+        run: mysql -h127.0.0.1 -uroot -proot_password -e "CREATE TABLE test_db.example_table (id INT PRIMARY KEY, name VARCHAR(50));"
+
+      - name: Insert data into MySQL
+        run: mysql -h127.0.0.1 -uroot -proot_password -e "INSERT INTO test_db.example_table (id, name) VALUES (1, 'example');"
+
+      - name: Query data from MySQL
+        run: mysql -h127.0.0.1 -uroot -proot_password -e "SELECT * FROM test_db.example_table;"
