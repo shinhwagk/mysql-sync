@@ -8,10 +8,6 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    container:
-      image: node:14
-      entrypoint: ["/bin/sh", "-c"]
-      args: ["echo Hello, world! && node your-script.js"]
     services:
       mysql8036:
         image: mysql:8.0.36
