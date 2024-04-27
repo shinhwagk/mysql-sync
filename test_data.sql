@@ -4,7 +4,7 @@
 flush logs;
 create database test;
 flush logs;
-create table test.tab1(a int primary key, b varhcar(10));
+create table test.tab1(a int primary key, b varchar(10));
 flush logs;
 insert into table test.tab1 values(1,'a');
 flush logs;
