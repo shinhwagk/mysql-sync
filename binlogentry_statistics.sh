@@ -24,15 +24,15 @@ declare STATS_BINLOGFILE=""
 
 _last_seconds=$SECONDS
 
-# update_or_initialize_key() {
-#     local -n arr=$1
-#     local key=$2
-#     if [[ -z "${arr[$key]}" ]]; then
-#         arr[$key]=1
-#     else
-#         ((arr[$key]++))
-#     fi
-# }
+update_or_initialize_key() {
+    local -n arr=$1
+    local key=$2
+    if [[ -z "${arr[$key]}" ]]; then
+        arr[$key]=1
+    else
+        ((arr[$key]++))
+    fi
+}
 
 function print_statistics() {
     echo "statistics ${SECONDS} {\"Write_rows\":${STATS_Write_rows},\"Delete_rows\":${STATS_Delete_rows},\"Update_rows\":${STATS_Update_rows},\"Table_map\":${STATS_Table_map},\"GTID_NEXT\":\"${STATS_GTID_NEXT}\",\"COMMIT\":${STATS_COMMIT},\"ROLLBACK\":${STATS_ROLLBACK},\"TIMESTAMP\":${STATS_TIMESTAMP},\"at\":${STATS_at},\"BINLOG\":${STATS_BINLOG},\"BINLOGFILE\":\"${STATS_BINLOGFILE}\",\"lines\":${STATS_lines}}" >&2
@@ -69,8 +69,7 @@ function statistics_binlogentry() {
                     # [[ -z "${STATS_Table_map_id[$tab_id]}" ]] && STATS_Table_map_id[$tab_id]="$tab_name"
                     ;;
                 "Write_rows:")
-                    # tab_id=$(echo "${parts[12]}")
-                    # update_or_initialize_key "STATS_Table_Write_rows_counter" $tab_id
+                    update_or_initialize_key "STATS_Table_Write_rows_counter" "${parts[12]}"
                     STATS_Write_rows=$((STATS_Write_rows+1))
                     ;;
                 "Delete_rows:")
@@ -150,6 +149,6 @@ done
 print_statistics
 
 
-# for key in "${!STATS_Table_Write_rows_counter[@]}"; do
-#     echo "$key: ${STATS_Table_Write_rows_counter[$key]}" >&2
-# done
+for key in "${!STATS_Table_Write_rows_counter[@]}"; do
+    echo "$key: ${STATS_Table_Write_rows_counter[$key]}" >&2
+done
