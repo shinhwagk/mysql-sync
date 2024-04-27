@@ -37,5 +37,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+      
+      - name: Check mysql client version
+        run: mysql --version
+        
 
       - run: mysql -h127.0.0.1 -P33061 -uroot -proot_password -e 'SELECT version()'
