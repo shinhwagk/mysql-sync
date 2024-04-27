@@ -10,10 +10,10 @@ jobs:
     runs-on: ubuntu-latest
     services:
       mysql8036:
-        image: mysql:8.0.36
+        image: shinhwagk/mysql:8.0.36
         env:
           MYSQL_ROOT_PASSWORD: root_password
-          MYSQL_DATABASE: test_db
+          MYSQL_MYSQLD_ARGS: '--server-id=1000 --log-bin=mysql-bin --gtid-mode=on --enforce-gtid-consistency=on'
         ports:
           - 33061:3306
         options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3 --entrypoint '/usr/local/bin/docker-entrypoint.sh --server_id=1'
