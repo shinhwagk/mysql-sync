@@ -2,6 +2,8 @@
 
 set -o pipefail
 
+mysqlbinlog | mysqlbinlog_statistics | mysql
+
 cmd1 | cmd2 | cmd3 
 
 status=$?
