@@ -1,13 +1,12 @@
 {
-	"name": "mysqlbinlog",
+	"name": "mysqlbinlog-statistics",
 	"dockerComposeFile": "docker-compose.yml",
 	"service": "app",
 	"workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
 	"customizations": {
 		"vscode": {
 			"extensions": [
-				// "ms-vscode.cpptools",
-				// "ms-vscode.cmake-tools"
+				"rust-lang.rust-analyzer"
 			]
 		}
 	}
