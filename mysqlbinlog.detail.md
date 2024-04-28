@@ -1,3 +1,21 @@
+## parameters
+
+- PSEUDO_SLAVE_MODE
+
+> PSEUDO_SLAVE_MODE 变量使得当前的 MySQL 会话行为得如同一个复制从服务器。这主要是为了在应用二进制日志时保持数据一致性和正确性。
+
+```sql
+/*!50530 SET @@SESSION.PSEUDO_SLAVE_MODE=1*/;
+/*!50530 SET @@SESSION.PSEUDO_SLAVE_MODE=0*/;
+```
+
+- COMPLETION_TYPE 
+> 系统变量定义了 SQL 语句完成后的行为。当值为 0 时，表示命令完成后没有特殊的行为。
+
+- OLD_COMPLETION_TYPE
+
+## events
+
 ### Query & Xid
 
 ```sql

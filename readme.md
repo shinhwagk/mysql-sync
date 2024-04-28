@@ -32,7 +32,7 @@ mysqlbinlog -hdb --user=repl --password=repl --read-from-remote-server --stop-ne
 
 
 
-mysqlbinlog -hdb --user=repl --password=example --read-from-remote-server --stop-never -vv --hexdump mysql-bin.000009 
+mysqlbinlog -hdb --user=root --password=example --read-from-remote-server --stop-never -vv mysql-bin.000005
 
 mysqlbinlog -hdb --user=repl --password=example --read-from-remote-server --stop-never -vv --base64-output=DECODE-ROWS mysql-bin.000008 | mysql -v -hdb2 -urepl --password=example
 
