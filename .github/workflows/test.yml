@@ -79,6 +79,7 @@ jobs:
 
           echo "check diff rows of tables"
           find ./ -type f -name '*.diff.*'
+          cat *.log
         env:
           ARGS_SOURCE_DSN: root/root_password@127.0.0.1:33061
           ARGS_TARGET_DSN: root/root_password@127.0.0.1:33062
