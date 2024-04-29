@@ -75,11 +75,14 @@ jobs:
       - run: |
           pip install mysql-compare
           curl -OLs https://raw.githubusercontent.com/shinhwagk/mysql-compare-tables/main/scripts/dbcompare.py
-          python dbcompare.py
 
-          echo "check diff rows of tables"
-          find ./ -type f -name '*.diff.*'
-          ls -l ./
+          mkdir mysql-compare
+          cd mysql-compare && python ../dbcompare.py && cat ./*
+
+          # echo "check diff rows of tables"
+          # find ./ -type f -name '*.diff.*'
+
+          # ls -l ./
         env:
           ARGS_SOURCE_DSN: root/root_password@127.0.0.1:33061
           ARGS_TARGET_DSN: root/root_password@127.0.0.1:33062
