@@ -72,7 +72,7 @@ jobs:
         with:
           python-version: '3.10'
       - run: |
-          pip install mysql-compose
+          pip install mysql-compare
           curl -OL https://raw.githubusercontent.com/shinhwagk/mysql-compare-tables/main/scripts/dbcompare.py
           python dbcompare.py
         env:
