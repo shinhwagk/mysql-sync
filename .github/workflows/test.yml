@@ -101,12 +101,11 @@ jobs:
           ARGS_DATABASES: test
 
       - name: Testing Gtid after using mysqlbinlog-statistics.
-        run:
+        run: |
           set -e
 
-          docker ps
-
           mysql -h127.0.0.1 -P33061 -uroot -proot_password -e "select @@hostname, @@port, @@server_uuid, @@server_id\G show master status\G"
+
           mysql -h127.0.0.1 -P33062 -uroot -proot_password -e "select @@hostname, @@port, @@server_uuid, @@server_id\G show master status\G"
 
       # - run: |
