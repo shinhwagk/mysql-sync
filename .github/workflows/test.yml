@@ -9,13 +9,21 @@ jobs:
   test:
     runs-on: ubuntu-latest
     services:
-      mysql8036:
+      mysql8036_1:
         image: shinhwagk/mysql:8.0.36
         env:
           MYSQL_ROOT_PASSWORD: root_password
           MYSQL_MYSQLD_ARGS: "--server-id=1000 --log-bin=mysql-bin --gtid-mode=on --enforce-gtid-consistency=on"
         ports:
           - 33061:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+      mysql8036_2:
+        image: shinhwagk/mysql:8.0.36
+        env:
+          MYSQL_ROOT_PASSWORD: root_password
+          MYSQL_MYSQLD_ARGS: "--server-id=1000 --log-bin=mysql-bin --gtid-mode=on --enforce-gtid-consistency=on"
+        ports:
+          - 33062:3306
         options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
     #   percona803628:
     #     image: percona:8.0.36-28
@@ -43,13 +51,26 @@ jobs:
         
       - run: mysql -h127.0.0.1 -P33061 -uroot -proot_password -e 'SELECT version()'
 
-      - run: mysql -h127.0.0.1 -P33061 -uroot -proot_password <test_data.sql
-
       - run: |
-          time mysqlbinlog -h127.0.0.1 -P33061 -uroot -proot_password --read-from-remote-server --to-last-log -v mysql-bin.000001 | bash ./binlogentry_statistics.sh >/dev/null
+          mysql -h127.0.0.1 -P33061 -uroot -proot_password <test_data.sql
+          function cmd1(){
+            mysqlbinlog -h127.0.0.1 -P33061 -uroot -proot_password --read-from-remote-server --to-last-log -v mysql-bin.000001
+          }
+          function cmd2(){
+            cargo run 2>binlog_stats.log
+          }
+          function cmd3(){
+            mysql -h127.0.0.1 -P33062 -uroot -proot_password
+          }
+          
+          cmd1 | cmd2 | cmd3
 
-          mysqlbinlog -h127.0.0.1 -P33061 -uroot -proot_password --read-from-remote-server --to-last-log -v mysql-bin.000001 | bash ./binlogentry_statistics.sh | grep -i 'create table '
 
-          [[ $? == 0 ]] && exit 0
-          mysqlbinlog -h127.0.0.1 -P33061 -uroot -proot_password --read-from-remote-server --to-last-log -v mysql-bin.000001 | bash -x ./binlogentry_statistics.sh
+      # - run: |
+      #     time mysqlbinlog -h127.0.0.1 -P33061 -uroot -proot_password --read-from-remote-server --to-last-log -v mysql-bin.000001 | bash ./binlogentry_statistics.sh >/dev/null
+
+      #     mysqlbinlog -h127.0.0.1 -P33061 -uroot -proot_password --read-from-remote-server --to-last-log -v mysql-bin.000001 | bash ./binlogentry_statistics.sh | grep -i 'create table '
+
+      #     [[ $? == 0 ]] && exit 0
+      #     mysqlbinlog -h127.0.0.1 -P33061 -uroot -proot_password --read-from-remote-server --to-last-log -v mysql-bin.000001 | bash -x ./binlogentry_statistics.sh
 
