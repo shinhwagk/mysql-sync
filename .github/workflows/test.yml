@@ -60,7 +60,7 @@ jobs:
             cargo run 2>binlog_stats.log
           }
           function cmd3(){
-            mysql -h127.0.0.1 -P33062 -uroot -proot_password
+            mysql -h127.0.0.1 -P33062 -uroot -proot_password -v
           }
           
           cmd1 | cmd2 | cmd3
