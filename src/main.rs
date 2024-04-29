@@ -2,11 +2,19 @@ use std::collections::HashMap;
 use std::io::{self, BufRead};
 
 enum BinlogState {
+    Head,
     None,
     Binlog,
+    BinlogEvent,
     SqlText,
     Gtid, // Pos,
 }
+
+enum BinlogEvent {
+    Gtid,
+    Start,
+}
+
 struct Event_base {}
 
 struct Event_gtid {
@@ -33,14 +41,20 @@ struct Event_query {
     error_code: u8,
     xid: Option<u16>,
 }
+
 use std::time::{Duration, Instant};
 
 fn process_line(stdin_lock: std::io::StdinLock) {
+    let mut version_identifier: HashMap<String, String> = HashMap::new();
+
+    version_identifier.insert("8.0.34-26".to_string(), "#691231".to_string());
+    version_identifier.insert("8.0.36".to_string(), "#700101".to_string());
+
     let mut update_rows: HashMap<String, i32> = HashMap::new();
     let mut delete_rows: HashMap<String, i32> = HashMap::new();
     let mut write_rows: HashMap<String, i32> = HashMap::new();
 
-    let mut binlog_state = BinlogState::None;
+    let mut binlog_state = BinlogState::Head;
 
     let mut table_map: String = String::new();
     let mut table_id: String = String::new();
@@ -52,13 +66,17 @@ fn process_line(stdin_lock: std::io::StdinLock) {
 
     let mut last_time = Instant::now();
 
+    let mut delimiter:String  = String::new();
+
     for line_result in stdin_lock.lines() {
         match line_result {
             Ok(line) => {
                 if !line.starts_with("#") {
+                    // stdout
                     println!("{}", line);
                 }
 
+                // stderr statistics
                 if last_time.elapsed() >= Duration::from_secs(1) {
                     let total: i32 = write_rows.values().sum();
 
@@ -70,9 +88,20 @@ fn process_line(stdin_lock: std::io::StdinLock) {
                     eprintln!("{}", json_string);
                     last_time = Instant::now();
                 }
+
+                // statistics
                 loop {
                     match binlog_state {
-                        BinlogState::None => {
+                        BinlogState::Head => {
+                            if line == "# The proper term is pseudo_replica_mode, but we use this compatibility alias" {
+                            }else if line.starts_with("/*!") {
+ 
+                            }else if  line.starts_with("DELIMITER"){
+                                delimiter =( &line[10..line.len() - 1]).to_string();
+                                binlog_state=BinlogState::BinlogEvent
+                            }
+                        }
+                        BinlogState::BinlogEvent => {
                             if line.starts_with("# at ") {
                                 let pos = &line[5..];
                                 binlog_pos = pos.to_string();
@@ -170,7 +199,7 @@ fn process_line(stdin_lock: std::io::StdinLock) {
                             if line.starts_with("SET @@SESSION.GTID_NEXT= '")
                                 && line.ends_with("'/*!*/;")
                             {
-                                eprintln!("{}", line);
+                                // eprintln!("{}", line);
                                 binlog_state = BinlogState::None;
                             }
                             break;

@@ -15,6 +15,21 @@
 - OLD_COMPLETION_TYPE
 
 ## events
+```sh
+cat mysql-bin.log | grep '^#2' | awk '{print $10}' | sort | uniq
+
+Delete_rows:
+GTID
+Previous-GTIDs
+Query
+Rotate
+Rows_query
+Start:
+Table_map:
+Update_rows:
+Write_rows:
+Xid
+```
 
 ### Query & Xid
 

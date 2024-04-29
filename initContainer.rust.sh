@@ -2,7 +2,7 @@
 
 set -e
 
-dnf install -y git jq diffutils cmake
+dnf install -y git jq diffutils gcc
 
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
