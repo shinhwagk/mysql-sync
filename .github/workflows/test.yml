@@ -49,6 +49,8 @@ jobs:
       - run: mysql -h127.0.0.1 -P33061 -uroot -proot_password -e 'SELECT version()'
 
       - run: |
+          set -e
+
           mysql -h127.0.0.1 -P33061 -uroot -proot_password <test_data.sql
           function cmd1(){
             mysqlbinlog -h127.0.0.1 -P33061 -uroot -proot_password --read-from-remote-server --to-last-log -v mysql-bin.000001
@@ -67,14 +69,15 @@ jobs:
 
           cat binlog_stats.log
 
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
       - run: |
           pip install mysql-compare
-          curl -OL https://raw.githubusercontent.com/shinhwagk/mysql-compare-tables/main/scripts/dbcompare.py
+          curl -OLs https://raw.githubusercontent.com/shinhwagk/mysql-compare-tables/main/scripts/dbcompare.py
           python dbcompare.py
+
+          ls -l ./
         env:
           ARGS_SOURCE_DSN: root/root_password@127.0.0.1:33061
           ARGS_TARGET_DSN: root/root_password@127.0.0.1:33062
