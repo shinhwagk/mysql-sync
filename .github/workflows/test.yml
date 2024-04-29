@@ -45,10 +45,15 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
         
       - run: mysql -h127.0.0.1 -P33061 -uroot -proot_password -e 'SELECT version()'
 
-      - run: |
+      - name: Testing mysqlbinlog-statistics.
+        run: |
           set -e
 
           mysql -h127.0.0.1 -P33061 -uroot -proot_password <test_data.sql
@@ -69,19 +74,17 @@ jobs:
 
           cat binlog_stats.log
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
       - name: Testing data validation after using mysqlbinlog-statistics.
         run: |
+          set -e
+
           pip install mysql-compare
           curl -OLs https://raw.githubusercontent.com/shinhwagk/mysql-compare-tables/main/scripts/dbcompare.py
 
           mkdir mysql-compare
           cd mysql-compare
           python ../dbcompare.py
-          
+
           ls -l ./
 
           find ./ -type f -name '*.err.log' | while read file; do
@@ -97,6 +100,8 @@ jobs:
           ARGS_DATABASES: test
       - name: Testing Gtid after using mysqlbinlog-statistics.
         run:
+          set -e
+
           mysql -h127.0.0.1 -P33061 -uroot -proot_password -e "select @@server_uuid; show master status\G"
           mysql -h127.0.0.1 -P33062 -uroot -proot_password -e "select @@server_uuid; show master status\G"
 
