@@ -72,12 +72,22 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      - run: |
+
+      - name: Test for sync data compare
+        run: |
           pip install mysql-compare
           curl -OLs https://raw.githubusercontent.com/shinhwagk/mysql-compare-tables/main/scripts/dbcompare.py
 
           mkdir mysql-compare
-          cd mysql-compare && python ../dbcompare.py && ls -l ./ && cat ./*.err.log
+          cd mysql-compare
+          python ../dbcompare.py
+          ls -l ./
+          find ./ -type f -name '*.err.log' | while read file; do
+            cat $file
+          done
+          find ./ -type f -name '*.diff.log' | while read file; do
+            cat $file
+          done
 
           # echo "check diff rows of tables"
           # find ./ -type f -name '*.diff.*'
