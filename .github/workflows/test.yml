@@ -99,8 +99,8 @@ jobs:
           ARGS_DATABASES: test
       - name: Testing Gtid after using mysqlbinlog-statistics.
         run:
-          mysql -h127.0.0.1 -P33061 -uroot -proot_password -e "show master status\G"
-          mysql -h127.0.0.1 -P33062 -uroot -proot_password -e "show master status\G"
+          mysql -h127.0.0.1 -P33061 -uroot -proot_password -e "select @@server_uuid; show master status\G"
+          mysql -h127.0.0.1 -P33062 -uroot -proot_password -e "select @@server_uuid; show master status\G"
 
       # - run: |
       #     time mysqlbinlog -h127.0.0.1 -P33061 -uroot -proot_password --read-from-remote-server --to-last-log -v mysql-bin.000001 | bash ./binlogentry_statistics.sh >/dev/null
