@@ -77,7 +77,7 @@ jobs:
           curl -OLs https://raw.githubusercontent.com/shinhwagk/mysql-compare-tables/main/scripts/dbcompare.py
 
           mkdir mysql-compare
-          cd mysql-compare && python ../dbcompare.py && cat ./*
+          cd mysql-compare && python ../dbcompare.py && ls -l ./ && cat ./*.err.log
 
           # echo "check diff rows of tables"
           # find ./ -type f -name '*.diff.*'
