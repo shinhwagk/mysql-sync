@@ -40,6 +40,29 @@ mysqlbinlog -hdb --user=root --password=example --read-from-remote-server --stop
 
 
 mysqlbinlog -vv --base64-output=DECODE-ROWS --host=127.0.0.1 --port=3306 --user=root --password=rootpassword mysql-bin.000001 | mysql -u target_user -p'target_password' -h target_host target_database
+
+
+mysqlbinlog --host=db1 --port=3306 --user=root --password=example --read-from-remote-server --to-last-log --verbose --verbose --idempotent --force-read --print-table-metadata mysql-bin.000001 >binlog/from-mysql-bin.000001.all-parameter.sql
+
+mysqlbinlog --host=db1 --port=3306 --user=root --password=example --read-from-remote-source=BINLOG-DUMP-NON-GTIDS --to-last-log --verbose --verbose --idempotent --force-read --print-table-metadata mysql-bin.000001 >binlog/from-mysql-bin.000001.BINLOG-DUMP-NON-GTIDS.sql
+mysqlbinlog --host=db1 --port=3306 --user=root --password=example --read-from-remote-source=BINLOG-DUMP-GTIDS --compression-algorithms=zstd --zstd-compression-level=3 --to-last-log --verbose --verbose --idempotent --force-read --print-table-metadata mysql-bin.000001 >binlog/from-mysql-bin.000001.BINLOG-DUMP-GTIDS.sql
+
+# --verify-binlog-checksum
+mysqlbinlog --host=db1 --port=3306 --user=root --password=example --read-from-remote-source=BINLOG-DUMP-GTIDS --compression-algorithms=zstd --zstd-compression-level=3 --verify-binlog-checksum --to-last-log --verbose --verbose --idempotent --force-read --print-table-metadata mysql-bin.000001 >binlog/from-mysql-bin.000001.verify-binlog-checksum.sql
+
+# --stop-never-slave-server-id
+mysqlbinlog --host=db1 --port=3306 --user=root --password=example --read-from-remote-source=BINLOG-DUMP-GTIDS --compression-algorithms=zstd --zstd-compression-level=3 --verify-binlog-checksum --to-last-log --connection-server-id=1111 --stop-never --verbose --verbose --idempotent --force-read --print-table-metadata mysql-bin.000001 >/dev/null
+
+# --connection-server-id
+mysqlbinlog --host=db1 --port=3306 --user=root --password=example --read-from-remote-source=BINLOG-DUMP-GTIDS --compression-algorithms=zstd --zstd-compression-level=3 --verify-binlog-checksum --to-last-log --connection-server-id=11121 --stop-never --verbose --verbose --idempotent --force-read --print-table-metadata mysql-bin.000001 >/dev/null
+
+
+
+mysqlbinlog --raw --read-from-remote-server \
+ --stop-never --connection-server-id=1234 \
+ --verify-binlog-checksum \
+  --host=db1 --port=3306 --user=root --password=example mysql-bin.000001
+
 ```
 
 ```sh

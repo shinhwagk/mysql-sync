@@ -59,7 +59,9 @@ jobs:
           mysql -h127.0.0.1 -P33061 -uroot -proot_password <test_data.sql
 
           function cmd1(){
-            mysqlbinlog -h127.0.0.1 -P33061 -uroot -proot_password --read-from-remote-server --to-last-log -v mysql-bin.000001
+            local MYSQLBINLOG_SERVER_ID=$((RANDOM + 1000000000))
+            # mysqlbinlog --host=127.0.0.1 --port=33061 --user=root --password=root_password --read-from-remote-server --to-last-log --verbose --idempotent mysql-bin.000001
+            mysqlbinlog --host=127.0.0.1 --port=33061 --user=root --password=root_password --read-from-remote-source=BINLOG-DUMP-GTIDS --compression-algorithms=zstd --zstd-compression-level=3 --verify-binlog-checksum --to-last-log --connection-server-id=${MYSQLBINLOG_SERVER_ID} --verbose --verbose --idempotent --force-read --print-table-metadata mysql-bin.000001
           }
           function cmd2(){
             cargo run 2>binlog_stats.log

@@ -4,13 +4,13 @@ set -o pipefail
 
 mysqlbinlog | mysqlbinlog_statistics | mysql
 
-cmd1 | cmd2 | cmd3 
+cmd1 | cmd2 | cmd3
 
-status=$?
+declare MYSQLBINLOG_SERVER_ID=$((RANDOM + 1000000000))
 
-echo "Exit status: $status"
-if [ $status -eq 0 ]; then
-    echo "All commands executed successfully"
-else
-    echo "cmd2 failed after 5 seconds"
-fi
+mysqlbinlog --host=db1 --port=3306 --user=root --password=example \
+  --read-from-remote-source=BINLOG-DUMP-GTIDS \
+  --compression-algorithms=zstd --zstd-compression-level=3 \
+  --verify-binlog-checksum \
+  --to-last-log \
+  --connection-server-id=11121 --verbose --verbose --idempotent --force-read --print-table-metadata mysql-bin.000001
