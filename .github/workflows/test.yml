@@ -77,7 +77,7 @@ jobs:
           curl -OLs https://raw.githubusercontent.com/shinhwagk/mysql-compare-tables/main/scripts/dbcompare.py
           python dbcompare.py
 
-          # check diff rows of tables
+          echo "check diff rows of tables"
           find ./ -type f -name '*.diff.*'
         env:
           ARGS_SOURCE_DSN: root/root_password@127.0.0.1:33061
