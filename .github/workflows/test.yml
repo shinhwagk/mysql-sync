@@ -81,18 +81,16 @@ jobs:
           mkdir mysql-compare
           cd mysql-compare
           python ../dbcompare.py
+          
           ls -l ./
+
           find ./ -type f -name '*.err.log' | while read file; do
             cat $file
           done
+
           find ./ -type f -name '*.diff.log' | while read file; do
             cat $file
           done
-
-          # echo "check diff rows of tables"
-          # find ./ -type f -name '*.diff.*'
-
-          # ls -l ./
         env:
           ARGS_SOURCE_DSN: root/root_password@127.0.0.1:33061
           ARGS_TARGET_DSN: root/root_password@127.0.0.1:33062
