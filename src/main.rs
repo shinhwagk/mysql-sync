@@ -119,6 +119,7 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
     let mut sql_statement2: Vec<String> = Vec::new();
 
     let mut binlog_timestamp: u32 = 0;
+    let mut binlog_event_timestamp: u16 = 0;
 
     let mut binlog_event_table_map: BinlogEventTableMap = BinlogEventTableMap::None;
     let mut binlog_event_insert_rows: BinlogEventInsertRows = BinlogEventInsertRows::None;
