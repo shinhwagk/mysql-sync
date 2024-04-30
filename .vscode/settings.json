@@ -1,4 +1,5 @@
 {
   "editor.formatOnSave": true,
   "editor.insertSpaces": true,
+  "editor.wordWrap": "on"
 }
