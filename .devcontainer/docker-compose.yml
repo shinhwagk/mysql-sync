@@ -19,6 +19,9 @@ services:
       - --log-bin=mysql-bin
       - --gtid-mode=on
       - --enforce-gtid-consistency=on
+      - --binlog-rows-query-log-events=on
+      - --binlog-format=ROW
+      - --binlog-row-image=FULL
 
   db2:
     image: mysql:8.0.36
