@@ -79,8 +79,10 @@ jobs:
       
       - name: Tetsting gh-ost
         run: |
-          wget https://github.com/github/gh-ost/releases/download/v1.1.6/gh-ost
-          chmod +x gh-ost
+          set -e
+          
+          curl -OLs https://github.com/github/gh-ost/releases/download/v1.1.6/gh-ost-binary-linux-amd64-20231207144046.tar.gz
+          tar zxvf gh-ost-binary-linux-amd64-20231207144046.tar.gz 
 
           gh-ost \
             --max-load=Threads_running=100 \
