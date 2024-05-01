@@ -86,12 +86,12 @@ jobs:
 
           ./gh-ost --version
 
-          gh-ost \
+          ./gh-ost \
             --max-load=Threads_running=100 \
             --critical-load=Threads_running=1000 \
             --chunk-size=3000 \
-            --user="ghost" \
-            --password="54448hotINBOX" \
+            --user="root" \
+            --password="root_password" \
             --host='127.0.0.1' \
             --port=33061 \
             --database="test" \
