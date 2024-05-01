@@ -8,7 +8,10 @@
 			"extensions": [
 				"rust-lang.rust-analyzer",
 				"ms-python.python",
-				"ms-python.isort"
+				"ms-python.isort",
+				"ms-azuretools.vscode-docker",
+				"redhat.vscode-yaml",
+				"ms-python.black-formatter"
 			]
 		}
 	}
