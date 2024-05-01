@@ -2,7 +2,7 @@
 
 set -e
 
-dnf install -y git jq diffutils gcc
+dnf install -y git jq diffutils gcc procps-ng
 
 dnf install -y python3.11 python3.11-pip
 
