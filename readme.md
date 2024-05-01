@@ -15,45 +15,11 @@ insert into test.tab1 values(1,'a');
 ```
 
 ```sh
-mysqlbinlog -hdb --user=repl --password=repl --read-from-remote-server --stop-never -v mysql-bin.000001 | mysql -hdb2 -urepl --password=example
+function test() {
+  BINLOGFILE=$1
+  mysqlbinlog --host=db1 --port=3306 --user=root --password=example --read-from-remote-source=BINLOG-DUMP-GTIDS --compression-algorithms=zstd --zstd-compression-level=3 --verify-binlog-checksum --to-last-log --connection-server-id=11121 --verbose --verbose --idempotent --force-read --print-table-metadata $BINLOGFILE
+}
 
-mysqlbinlog -hdb --user=repl --password=repl --read-from-remote-server --stop-never -v -i mysql-bin.000001 | mysql -v -hdb2 -urepl --password=example
-
-mysqlbinlog -hdb --user=repl --password=repl --read-from-remote-server --stop-never -v -i --bind-address mysql-bin.000009 
-
-mysqlbinlog -hdb --user=repl --password=repl --read-from-remote-server --stop-never -v -i --stop-never-slave-server-id=1111 mysql-bin.000009 
-
-mysqlbinlog -hdb --user=repl --password=repl --read-from-remote-server --stop-never -v -i --exclude-gtids=6af9e1aa-0225-11ef-8fee-0242ac140002:1-12 mysql-bin.000001
-
-
-
-mysqlbinlog -hdb --user=repl --password=repl --read-from-remote-server --stop-never -v --start-position=12345 mysql-bin.000006
-
-
-
-
-mysqlbinlog -hdb --user=root --password=example --read-from-remote-server --stop-never -vv mysql-bin.000005
-
-mysqlbinlog -hdb --user=repl --password=example --read-from-remote-server --stop-never -vv --base64-output=DECODE-ROWS mysql-bin.000008 | mysql -v -hdb2 -urepl --password=example
-
-mysqlbinlog -hdb --user=root --password=example --read-from-remote-server --stop-never -vv --base64-output=DECODE-ROWS mysql-bin.000008 | mysql -v -hdb2 -urepl --password=example
-
-
-mysqlbinlog -vv --base64-output=DECODE-ROWS --host=127.0.0.1 --port=3306 --user=root --password=rootpassword mysql-bin.000001 | mysql -u target_user -p'target_password' -h target_host target_database
-
-
-mysqlbinlog --host=db1 --port=3306 --user=root --password=example --read-from-remote-server --to-last-log --verbose --verbose --idempotent --force-read --print-table-metadata mysql-bin.000001 >binlog/from-mysql-bin.000001.all-parameter.sql
-
-mysqlbinlog --host=db1 --port=3306 --user=root --password=example --read-from-remote-source=BINLOG-DUMP-NON-GTIDS --to-last-log --verbose --verbose --idempotent --force-read --print-table-metadata mysql-bin.000001 >binlog/from-mysql-bin.000001.BINLOG-DUMP-NON-GTIDS.sql
-mysqlbinlog --host=db1 --port=3306 --user=root --password=example --read-from-remote-source=BINLOG-DUMP-GTIDS --compression-algorithms=zstd --zstd-compression-level=3 --to-last-log --verbose --verbose --idempotent --force-read --print-table-metadata mysql-bin.000001 >binlog/from-mysql-bin.000001.BINLOG-DUMP-GTIDS.sql
-
-# --verify-binlog-checksum
-mysqlbinlog --host=db1 --port=3306 --user=root --password=example --read-from-remote-source=BINLOG-DUMP-GTIDS --compression-algorithms=zstd --zstd-compression-level=3 --verify-binlog-checksum --to-last-log --verbose --verbose --idempotent --force-read --print-table-metadata mysql-bin.000001 >binlog/from-mysql-bin.000001.verify-binlog-checksum.sql
-
-# --stop-never-slave-server-id
-mysqlbinlog --host=db1 --port=3306 --user=root --password=example --read-from-remote-source=BINLOG-DUMP-GTIDS --compression-algorithms=zstd --zstd-compression-level=3 --verify-binlog-checksum --to-last-log --connection-server-id=1111 --stop-never --verbose --verbose --idempotent --force-read --print-table-metadata mysql-bin.000001 >/dev/null
-
-# --connection-server-id
 mysqlbinlog --host=db1 --port=3306 --user=root --password=example --read-from-remote-source=BINLOG-DUMP-GTIDS --compression-algorithms=zstd --zstd-compression-level=3 --verify-binlog-checksum --to-last-log --connection-server-id=111--verbose --verbose --idempotent --force-read --print-table-metadata mysql-bin.000001 >/dev/null
 
 mysqlbinlog --host=db1 --port=3306 --user=root --password=example --read-from-remote-source=BINLOG-DUMP-GTIDS --compression-algorithms=zstd --zstd-compression-level=3 --verify-binlog-checksum --to-last-log --connection-server-id=11121 --verbose --verbose --idempotent --force-read --print-table-metadata mysql-bin.000001 >binlog/mysql-bin.8.0.36.sql 

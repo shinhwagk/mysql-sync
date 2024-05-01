@@ -416,6 +416,11 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
                                         // error
                                     }
                                 }
+                            } else if line.starts_with("# original_commit_timestamp=") {
+                            } else if line.starts_with("# immediate_commit_timestamp=") {
+                            } else if line.starts_with("/*!80001 SET @@session.") {
+                            } else {
+                                // error
                             }
                         }
                         BinlogEvent::Start => {
@@ -428,6 +433,11 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
                         }
                         BinlogEvent::PreviousGTIDs => {
                             // #240429  2:41:49 server id 1  end_log_pos 197 CRC32 0x01882c96 	Previous-GTIDs
+                            // # [empty]
+                            if line == "# [empty]" {
+                            } else {
+                                // error
+                            }
                         }
                         BinlogEvent::Stop => {
                             // #240429  2:41:45 server id 1  end_log_pos 3040347 CRC32 0x6360bdb4 	Stop
