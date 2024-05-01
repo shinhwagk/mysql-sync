@@ -15,7 +15,7 @@ jobs:
           MYSQL_ROOT_PASSWORD: root_password
           MYSQL_MYSQLD_ARGS: "--server-id=1000 --log-bin=mysql-bin --binlog-format=ROW --gtid-mode=on --enforce-gtid-consistency=on --binlog-rows-query-log-events=on --binlog-row-image=FULL"
         ports:
-          - 33061:33061
+          - 33061:3306
         options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
       mysql8036_2:
         image: shinhwagk/mysql:8.0.36
@@ -23,7 +23,7 @@ jobs:
           MYSQL_ROOT_PASSWORD: root_password
           MYSQL_MYSQLD_ARGS: "--server-id=1001 --log-bin=mysql-bin --gtid-mode=on --enforce-gtid-consistency=on"
         ports:
-          - 33062:33061
+          - 33062:3306
         options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
     #   percona803628:
     #     image: percona:8.0.36-28
@@ -50,13 +50,13 @@ jobs:
         with:
           python-version: '3.10'
         
-      - run: mysql -h127.0.0.1 -P3306 -uroot -proot_password -e 'SELECT version()'
+      - run: mysql -h127.0.0.1 -P33061 -uroot -proot_password -e 'SELECT version()'
 
       - name: Testing mysqlbinlog-statistics.
         run: |
           set -e
 
-          mysql -h127.0.0.1 -P3306 -uroot -proot_password <test_data.sql
+          mysql -h127.0.0.1 -P33061 -uroot -proot_password <test_data.sql
 
           function cmd1(){
             local MYSQLBINLOG_SERVER_ID=$((RANDOM + 1000000000))
@@ -132,7 +132,7 @@ jobs:
         run: |
           set -e
 
-          mysql -h127.0.0.1 -P3306 -uroot -proot_password -e "select @@hostname, @@port, @@server_uuid, @@server_id\G show master status\G"
+          mysql -h127.0.0.1 -P33061 -uroot -proot_password -e "select @@hostname, @@port, @@server_uuid, @@server_id\G show master status\G"
 
           mysql -h127.0.0.1 -P33062 -uroot -proot_password -e "select @@hostname, @@port, @@server_uuid, @@server_id\G show master status\G"
 
