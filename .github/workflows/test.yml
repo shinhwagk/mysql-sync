@@ -85,9 +85,12 @@ jobs:
           tar zxvf gh-ost-binary-linux-amd64-20231207144046.tar.gz 
 
           ./gh-ost \
-            --max-load=Threads_running=10 \
-            --critical-load=Threads_running=100 \
-            --chunk-size=3000 \
+            --max-load=Threads_running=16 \
+            --critical-load=Threads_running=32 \
+            --chunk-size=1000 \
+            --initially-drop-old-table \
+            --initially-drop-ghost-table \
+            --initially-drop-socket-file \
             --user="root" \
             --password="root_password" \
             --assume-master-host="127.0.0.1:33061" \
@@ -98,10 +101,6 @@ jobs:
             --verbose \
             --alter="add column c varchar(100)" \
             --assume-rbr \
-            --initially-drop-old-table \
-            --cut-over=default \
-            --cut-over-lock-timeout-seconds=10 \
-            --initially-drop-ghost-table \
             --execute
 
       - name: Testing data validation after using mysqlbinlog-statistics.
