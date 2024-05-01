@@ -221,7 +221,7 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
                                 binlog_event = BinlogEvent::UpdateRows;
                                 binlog_event_update_rows = BinlogEventUpdateRows::None;
 
-                                if binlog_event_tokens.len() == 1 {
+                                if binlog_event_tokens.len() == 15 {
                                     if binlog_event_tokens[12].to_string() == table_id {
                                         *binlog_statistics.update_rows.entry(table_map.clone()).or_insert(0) += 1;
                                     } else {

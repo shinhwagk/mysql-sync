@@ -1,3 +1,35 @@
+# error
+
+```sql
+-- input
+# at 157
+#240501  3:32:37 server id 1  end_log_pos 234 CRC32 0xc6d6a036 	GTID	last_committed=0	sequence_number=1	rbr_only=no	original_committed_timestamp=1714534357425326	immediate_commit_timestamp=1714534357425326	transaction_length=217
+# original_commit_timestamp=1714534357425326 (2024-05-01 03:32:37.425326 UTC)
+# immediate_commit_timestamp=1714534357425326 (2024-05-01 03:32:37.425326 UTC)
+/*!80001 SET @@session.original_commit_timestamp=1714534357425326*//*!*/;
+/*!80014 SET @@session.original_server_version=80036*//*!*/;
+/*!80014 SET @@session.immediate_server_version=80036*//*!*/;
+SET @@SESSION.GTID_NEXT= '88ebc247-06ef-11ef-97ee-0242ac130004:1'/*!*/;
+# at 234
+#240501  3:32:37 server id 1  end_log_pos 374 CRC32 0x9f14b3d9 	Query	thread_id=42	exec_time=0	error_code=0	Xid = 1400
+SET TIMESTAMP=1714534357/*!*/;
+SET @@session.pseudo_thread_id=42/*!*/;
+SET @@session.foreign_key_checks=1, @@session.sql_auto_is_null=0, @@session.unique_checks=1, @@session.autocommit=1/*!*/;
+SET @@session.sql_mode=1168113696/*!*/;
+SET @@session.auto_increment_increment=1, @@session.auto_increment_offset=1/*!*/;
+/*!\C utf8mb4 *//*!*/;
+SET @@session.character_set_client=255,@@session.collation_connection=255,@@session.collation_server=255/*!*/;
+SET @@session.lc_time_names=0/*!*/;
+SET @@session.collation_database=DEFAULT/*!*/;
+/*!80011 SET @@session.default_collation_for_utf8mb4=255*//*!*/;
+/*!80016 SET @@session.default_table_encryption=0*//*!*/;
+CREATE DATABASE IF NOT EXISTS database_1
+/*!*/;
+
+-- error
+ERROR 1837 (HY000): When @@SESSION.GTID_NEXT is set to a GTID, you must explicitly set it to a different value after a COMMIT or ROLLBACK. Please check GTID_NEXT variable manual page for detailed explanation. Current @@SESSION.GTID_NEXT is '88ebc247-06ef-11ef-97ee-0242ac130004:1'.
+```
+
 ## parameters
 
 - PSEUDO_SLAVE_MODE
