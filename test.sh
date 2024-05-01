@@ -2,6 +2,8 @@
 
 set -exo pipefail
 
+mkdir temp; cd temp
+
 parse_connection_string() {
     local input=$1
     local username=$(echo $input | cut -d'/' -f1)
@@ -17,6 +19,9 @@ parse_connection_string() {
 # dnf install -y https://dev.mysql.com/get/mysql80-community-release-el9-5.noarch.rpm
 # dnf install -y mysql-community-client
 
-python3 generate_sql_statements.py | mysql $(parse_connection_string "root/example@db1:3306")
+python3 generate_sql_statements.py >test_data.sql
+mysql $(parse_connection_string "root/example@db1:3306") <test_data.sql
 
-mysqlbinlog $(parse_connection_string "root/example@db1:3306") --read-from-remote-source=BINLOG-DUMP-GTIDS --compression-algorithms=zstd --zstd-compression-level=3 --verify-binlog-checksum --connection-server-id=11121 --verbose --verbose --idempotent --force-read --print-table-metadata --to-last-log mysql-bin.000001 | cargo run 2>temp/mysqlbinlog_statistics.err.log | mysql $(parse_connection_string "root/example@db2:3306") 2>temp/db2.err.log
+mysqlbinlog $(parse_connection_string "root/example@db1:3306") --read-from-remote-source=BINLOG-DUMP-GTIDS --compression-algorithms=zstd --zstd-compression-level=3 --verify-binlog-checksum --connection-server-id=11121 --verbose --verbose --idempotent --force-read --print-table-metadata --to-last-log mysql-bin.000001 >mysql-bin.log
+
+cat mysql-bin.log | cargo run 2>temp/mysqlbinlog_statistics.err.log | mysql $(parse_connection_string "root/example@db2:3306") 2>temp/db2.err.log

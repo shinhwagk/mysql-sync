@@ -1,36 +1,6 @@
 import subprocess
 import datetime
 import threading
-import os
-
-def mkdirs ():
-    for d in ["lib","bin","logs"]:
-        os.mkdirs(d)
-
-def download_mysqlbinlog_statistics(version:str):
-    pass
-
-def download_mysql_client(version:str):
-    # must redhat family
-    for cmd in  [['dnf', 'install', '-y', 'https://dev.mysql.com/get/mysql80-community-release-el9-5.noarch.rpm'],['dnf', 'install', '-y', 'mysql-community-client']]:
-        try:
-            result = subprocess.run(commcmdand, check=True, text=True, capture_output=True)
-            print(result.stdout)
-        except subprocess.CalledProcessError as e:
-            print(e.stderr)
-
-
-def compare_gtid():
-    pass
-
-def make_cmd_cmd1()->list[str]:
-    pass
-
-def make_cmd_cmd2()->list[str]:
-    pass
-
-def make_cmd_cmd3()->list[str]:
-    pass
 
 def log_writer(log_pipe, prefix):
     """ 管理日志输出，根据日期切换文件 """
@@ -62,7 +32,7 @@ def run_pipeline():
     p2 = subprocess.Popen(mysqlbinlog_statistics_cmd, stdin=p1.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     p3 = subprocess.Popen(mysql_cmd, stdin=p2.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-
+    # 创建线程来处理每个进程的stderr输出
     thread_p1 = threading.Thread(target=log_writer, args=(p1.stderr, 'p1'))
     thread_p2 = threading.Thread(target=log_writer, args=(p2.stderr, 'p2'))
     thread_p3 = threading.Thread(target=log_writer, args=(p3.stderr, 'p3'))
