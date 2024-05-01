@@ -98,6 +98,7 @@ jobs:
             --database="test" \
             --table="tab1" \
             --verbose \
+            --allow-on-master \
             --alter="add column c varchar(100)" \
             --assume-rbr \
             --execute
