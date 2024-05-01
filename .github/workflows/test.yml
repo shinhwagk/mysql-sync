@@ -99,6 +99,7 @@ jobs:
             --table="tab1" \
             --verbose \
             --allow-on-master \
+            --assume-master-host="127.0.0.1:33061" \
             --alter="add column c varchar(100)" \
             --assume-rbr \
             --execute
