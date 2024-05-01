@@ -25,13 +25,23 @@ def is_redhat_family():
     return False
 
 
-def kill_p1(p1):
+def kill_p1(p1: subprocess.Popen):
     def signal_handler(signum: int, frame) -> NoReturn:
         print("Received SIGTERM, shutting down...")
-        if p1 is not None and p1.poll() is None:
-            p1.terminate()
-            p1.wait()
-        sys.exit(0)
+        kill = False
+        while True:
+            print(1111, p1, p1.poll())
+            if p1 is not None and p1.poll() is None and kill == False:
+                print("Received SIGTERM, shutting down...1")
+                p1.terminate()
+                print("kill1")
+                p1.wait()
+                print("kill1222")
+
+                break
+            kill = True
+            time.sleep(1)
+        # sys.exit(0)
 
     return signal_handler
 
@@ -51,7 +61,7 @@ def download_mysql_client(version: str):
         for cmd in [
             [
                 "dnf",
-                "insta1ll",
+                "install",
                 "-y",
                 "https://dev.mysql.com/get/mysql80-community-release-el9-5.noarch.rpm",
             ],
@@ -85,7 +95,8 @@ def make_cmd_cmd1(
         "--compression-algorithms=zstd",
         "--zstd-compression-level=3",
         "--verify-binlog-checksum",
-        "--to-last-log",
+        # "--to-last-log",
+        "--stop-never",
         f"--connection-server-id={server_id}",
         "--verbose",
         "--verbose",  # 重复的 '--verbose' 表示更详细的输出
@@ -123,6 +134,7 @@ def log_writer(log_pipe: Optional[IO[bytes]], prefix: str) -> None:
         while True:
             line = log_pipe.readline()
             if not line:
+                print("log none over.")
                 break
             today = datetime.datetime.now().strftime("%Y-%m-%d")
             if today != current_day:
@@ -161,7 +173,7 @@ def binlogReplicationWatcher(host, user, password):
         print(f"Error: {e}")
 
 
-def parse_connection_string(conn_str) -> dict:
+def parse_connection_string(conn_str: str) -> dict:
     user_info, host_info = conn_str.split("@")
     username, password = user_info.split("/")
     host, port = host_info.split(":")
@@ -189,13 +201,24 @@ def parse_args():
     args = parser.parse_args()
 
 
+def kill_p1():
+    global p1
+
+    def signal_handler(sig, frame):
+        if p1.poll() is None:
+            p1.terminate()
+            p1.wait()
+            print("子进程已终止。")
+
+    return signal_handler
+
+
 def run_pipeline(
-    p1,
     mysqlbinlog_cmd: list[str],
     mysqlbinlog_statistics_cmd: list[str],
     mysql_cmd: list[str],
 ):
-
+    global p1
     # mysqlbinlog_cmd = ["mysqlbinlog", "mysql-bin.000001"]
     # mysqlbinlog_statistics_cmd = ["mysqlbinlog_statistics"]
     # mysql_cmd = [
@@ -208,41 +231,61 @@ def run_pipeline(
     #     "hostname",
     #     "database_name",
     # ]
+    signal_handler = kill_p1()
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
 
     p1 = subprocess.Popen(
         mysqlbinlog_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
     )
 
-    p2 = subprocess.Popen(
-        mysqlbinlog_statistics_cmd,
-        stdin=p1.stdout,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    p3 = subprocess.Popen(
-        mysql_cmd, stdin=p2.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-    )
+    # print(1, p1, p1.poll())
+    # # p1.terminate()
+    # handler = kill_p1(p1)
 
-    thread_p1 = threading.Thread(target=log_writer, args=(p1.stderr, "p1"))
-    thread_p2 = threading.Thread(target=log_writer, args=(p2.stderr, "p2"))
-    thread_p3 = threading.Thread(target=log_writer, args=(p3.stderr, "p3"))
+    # signal.signal(signal.SIGTERM, handler)
 
+    # time.sleep(15)
+
+    # p2 = subprocess.Popen(
+    #     mysqlbinlog_statistics_cmd,
+    #     stdin=p1.stdout,
+    #     stdout=subprocess.PIPE,
+    #     stderr=subprocess.PIPE,
+    # )
+    # p3 = subprocess.Popen(
+    #     mysql_cmd, stdin=p2.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    # )
+
+    thread_p1 = threading.Thread(target=log_writer, args=(p1.stdout, "p1"))
+    # thread_p2 = threading.Thread(target=log_writer, args=(p2.stderr, "p2"))
+    # thread_p3 = threading.Thread(target=log_writer, args=(p3.stderr, "p3"))
+
+    print("end1")
     thread_p1.start()
-    thread_p2.start()
-    thread_p3.start()
 
-    p1.wait()
-    p2.wait()
-    p3.wait()
+    # print("sleep2")
+    # time.sleep(5)
+    # print("sleep1")
+    # p1.terminate()
+    # thread_p2.start()
+    # thread_p3.start()
+
+    print("end2")
+    p1.communicate()
+    print("end3")
+    # p2.wait()
+    # p3.wait()
 
     thread_p1.join()
-    thread_p2.join()
-    thread_p3.join()
+    print("end4")
+    # thread_p2.join()
+    # thread_p3.join()
 
 
 def main():
-    p1 = None
-    signal.signal(signal.SIGTERM, kill_p1(p1))
+    global p1
+    # handler =
 
     parse_args()
     if is_redhat_family():
@@ -255,7 +298,7 @@ def main():
         )
         cmd2 = make_cmd_cmd2()
         cmd3 = make_cmd_cmd3(**t_dsn)
-        run_pipeline(p1, cmd1, cmd2, cmd3)
+        run_pipeline(cmd1, cmd2, cmd3)
     # run_pipeline()
 
 
