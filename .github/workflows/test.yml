@@ -15,7 +15,7 @@ jobs:
           MYSQL_ROOT_PASSWORD: root_password
           MYSQL_MYSQLD_ARGS: "--server-id=1000 --log-bin=mysql-bin --binlog-format=ROW --gtid-mode=on --enforce-gtid-consistency=on --binlog-rows-query-log-events=on --binlog-row-image=FULL"
         ports:
-          - 33061:3306
+          - 3306:3306
         options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
       mysql8036_2:
         image: shinhwagk/mysql:8.0.36
@@ -50,18 +50,18 @@ jobs:
         with:
           python-version: '3.10'
         
-      - run: mysql -h127.0.0.1 -P33061 -uroot -proot_password -e 'SELECT version()'
+      - run: mysql -h127.0.0.1 -P3306 -uroot -proot_password -e 'SELECT version()'
 
       - name: Testing mysqlbinlog-statistics.
         run: |
           set -e
 
-          mysql -h127.0.0.1 -P33061 -uroot -proot_password <test_data.sql
+          mysql -h127.0.0.1 -P3306 -uroot -proot_password <test_data.sql
 
           function cmd1(){
             local MYSQLBINLOG_SERVER_ID=$((RANDOM + 1000000000))
-            # mysqlbinlog --host=127.0.0.1 --port=33061 --user=root --password=root_password --read-from-remote-server --to-last-log --verbose --idempotent mysql-bin.000001
-            mysqlbinlog --host=127.0.0.1 --port=33061 --user=root --password=root_password --read-from-remote-source=BINLOG-DUMP-GTIDS --compression-algorithms=zstd --zstd-compression-level=3 --verify-binlog-checksum --to-last-log --connection-server-id=${MYSQLBINLOG_SERVER_ID} --verbose --verbose --idempotent --force-read --print-table-metadata mysql-bin.000001
+            # mysqlbinlog --host=127.0.0.1 --port=3306 --user=root --password=root_password --read-from-remote-server --to-last-log --verbose --idempotent mysql-bin.000001
+            mysqlbinlog --host=127.0.0.1 --port=3306 --user=root --password=root_password --read-from-remote-source=BINLOG-DUMP-GTIDS --compression-algorithms=zstd --zstd-compression-level=3 --verify-binlog-checksum --to-last-log --connection-server-id=${MYSQLBINLOG_SERVER_ID} --verbose --verbose --idempotent --force-read --print-table-metadata mysql-bin.000001
           }
           function cmd2(){
             cargo run 2>binlog_stats.log
@@ -93,9 +93,9 @@ jobs:
             --initially-drop-socket-file \
             --user="root" \
             --password="root_password" \
-            --assume-master-host="127.0.0.1:33061" \
+            --assume-master-host="127.0.0.1:3306" \
             --host='127.0.0.1' \
-            --port=33061 \
+            --port=3306 \
             --database="test" \
             --table="tab1" \
             --verbose \
@@ -124,7 +124,7 @@ jobs:
             cat $file
           done
         env:
-          ARGS_SOURCE_DSN: root/root_password@127.0.0.1:33061
+          ARGS_SOURCE_DSN: root/root_password@127.0.0.1:3306
           ARGS_TARGET_DSN: root/root_password@127.0.0.1:33062
           ARGS_DATABASES: test
 
@@ -132,15 +132,15 @@ jobs:
         run: |
           set -e
 
-          mysql -h127.0.0.1 -P33061 -uroot -proot_password -e "select @@hostname, @@port, @@server_uuid, @@server_id\G show master status\G"
+          mysql -h127.0.0.1 -P3306 -uroot -proot_password -e "select @@hostname, @@port, @@server_uuid, @@server_id\G show master status\G"
 
           mysql -h127.0.0.1 -P33062 -uroot -proot_password -e "select @@hostname, @@port, @@server_uuid, @@server_id\G show master status\G"
 
       # - run: |
-      #     time mysqlbinlog -h127.0.0.1 -P33061 -uroot -proot_password --read-from-remote-server --to-last-log -v mysql-bin.000001 | bash ./binlogentry_statistics.sh >/dev/null
+      #     time mysqlbinlog -h127.0.0.1 -P3306 -uroot -proot_password --read-from-remote-server --to-last-log -v mysql-bin.000001 | bash ./binlogentry_statistics.sh >/dev/null
 
-      #     mysqlbinlog -h127.0.0.1 -P33061 -uroot -proot_password --read-from-remote-server --to-last-log -v mysql-bin.000001 | bash ./binlogentry_statistics.sh | grep -i 'create table '
+      #     mysqlbinlog -h127.0.0.1 -P3306 -uroot -proot_password --read-from-remote-server --to-last-log -v mysql-bin.000001 | bash ./binlogentry_statistics.sh | grep -i 'create table '
 
       #     [[ $? == 0 ]] && exit 0
-      #     mysqlbinlog -h127.0.0.1 -P33061 -uroot -proot_password --read-from-remote-server --to-last-log -v mysql-bin.000001 | bash -x ./binlogentry_statistics.sh
+      #     mysqlbinlog -h127.0.0.1 -P3306 -uroot -proot_password --read-from-remote-server --to-last-log -v mysql-bin.000001 | bash -x ./binlogentry_statistics.sh
 
