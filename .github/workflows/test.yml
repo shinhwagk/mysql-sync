@@ -103,8 +103,6 @@ jobs:
             --cut-over=default \
             --cut-over-lock-timeout-seconds=10 \
             --initially-drop-ghost-table \
-            --allow-on-master --assume-master-host="127.0.0.1:33061" \
-            --max-lag-millis=500 \
             --execute
 
       - name: Testing data validation after using mysqlbinlog-statistics.
