@@ -69,7 +69,12 @@ jobs:
             sysbench /usr/share/sysbench/oltp_read_only.lua --table-size=100000 --tables=10 --threads=100 --time=60 --mysql-db=testdb --mysql-user=root --mysql-host=127.0.0.1 --mysql-port=33061 --mysql-password=root_password --db-driver=mysql $action
           done
 
-          python main.py --source-dsn root/root_password@127.0.0.1:33061 --target-dsn root/root_password@127.0.0.1:33062
+          python main.py --source-dsn root/root_password@127.0.0.1:33061 --target-dsn root/root_password@127.0.0.1:33062 &
+
+          sleep 10
+
+          mysql -uroot -proot_password -h127.0.0.1 -P33061 -e "show master status\G";
+          mysql -uroot -proot_password -h127.0.0.1 -P33061 -e "show master status\G";
 
           # function cmd1(){
           #   local MYSQLBINLOG_SERVER_ID=$((RANDOM + 1000000000))
