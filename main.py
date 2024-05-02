@@ -234,8 +234,8 @@ def main():
     print("cmd3", " ".join(mysql_cmd))
 
     se = threading.Event()
-    t = threading.Thread(target=binlogReplicationWatcher, args=(s_conn, se))
-    t.start()
+    tx = threading.Thread(target=binlogReplicationWatcher, args=(s_conn, se))
+    tx.start()
 
     p1 = subprocess.Popen(mysqlbinlog_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     p2 = subprocess.Popen(mysqlbinlog_statistics_cmd, stdin=p1.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -273,6 +273,7 @@ def main():
 
     for t in threads:
         t.join()
+    tx.join()
 
     print("logger wait success")
 
