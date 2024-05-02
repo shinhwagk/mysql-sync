@@ -34,9 +34,7 @@ def kill_p1(p1: subprocess.Popen):
             if p1 is not None and p1.poll() is None and kill == False:
                 print("Received SIGTERM, shutting down...1")
                 p1.terminate()
-                print("kill1")
                 p1.wait()
-                print("kill1222")
 
                 break
             kill = True
@@ -84,31 +82,36 @@ def make_cmd_cmd1(
     password: str,
     server_id: str,
     start_binlogfile: str,
+    compression_level: Optional[str],
+    gtid: Optional[str] = None,
 ) -> list[str]:
-    return [
-        "mysqlbinlog",
-        f"--host={host}",
-        f"--port={port}",
-        f"--user={user}",
-        f"--password={password}",
-        "--read-from-remote-source=BINLOG-DUMP-GTIDS",
-        "--compression-algorithms=zstd",
-        "--zstd-compression-level=3",
-        "--verify-binlog-checksum",
-        # "--to-last-log",
-        "--stop-never",
-        f"--connection-server-id={server_id}",
-        "--verbose",
-        "--verbose",  # 重复的 '--verbose' 表示更详细的输出
-        "--idempotent",
-        "--force-read",
-        "--print-table-metadata",
-        start_binlogfile,
-    ]
+    return (
+        [
+            "mysqlbinlog",
+            f"--host={host}",
+            f"--port={port}",
+            f"--user={user}",
+            f"--password={password}",
+            "--read-from-remote-source=BINLOG-DUMP-GTIDS",
+            "--verify-binlog-checksum",
+            # "--to-last-log",
+            "--stop-never",
+            f"--connection-server-id={server_id}",
+            "--verbose",
+            "--verbose",
+            "--idempotent",
+            "--force-read",
+            "--print-table-metadata",
+        ]
+        + (["--compression-algorithms=zstd", f"--zstd-compression-level={compression_level}"] if compression_level else [])
+        + ([f"--exclude-gtids={gtid}"] if gtid else [])
+        + [start_binlogfile]
+    )
 
 
 def make_cmd_cmd2() -> list[str]:
-    return ["mysqlbinlog-statistics"]
+    return ["/workspaces/mysql-mysqlbinlog-replicaiton/target/debug/mysqlbinlog-statistics"]
+    # return ["mysqlbinlog-statistics"]
 
 
 def make_cmd_cmd3(host: str, port: str, user: str, password: str) -> list[str]:
@@ -124,17 +127,14 @@ def make_cmd_cmd3(host: str, port: str, user: str, password: str) -> list[str]:
     ]
 
 
-def log_writer(log_pipe: Optional[IO[bytes]], prefix: str) -> None:
+def log_writer(log_pipe: IO[bytes], prefix: str) -> None:
     current_day = None
     log_file: Optional[IO[str]] = None
     try:
-        if log_pipe is None:
-            raise ValueError("Log pipe cannot be None")
-
         while True:
             line = log_pipe.readline()
             if not line:
-                print("log none over.")
+                print(f"{prefix} log none over.")
                 break
             today = datetime.datetime.now().strftime("%Y-%m-%d")
             if today != current_day:
@@ -150,25 +150,21 @@ def log_writer(log_pipe: Optional[IO[bytes]], prefix: str) -> None:
             log_file.close()
 
 
-def binlogReplicationWatcher(host, user, password):
+def binlogReplicationWatcher(con: mysql.connector.MySQLConnection):
     try:
-        with mysql.connector.connect(host=host, user=user, password=password) as conn:
-            with conn.cursor() as cursor:
-                cursor.execute("CREATE DATABASE IF NOT EXISTS mysqlbinlogsync")
-                cursor.execute("USE mysqlbinlogsync")
-                cursor.execute(
-                    "CREATE TABLE IF NOT EXISTS sync_table (id INT PRIMARY KEY)"
-                )
+        with con.cursor() as cur:
+            cur.execute("CREATE DATABASE IF NOT EXISTS mysqlbinlogsync")
+            cur.execute("USE mysqlbinlogsync")
+            cur.execute("CREATE TABLE IF NOT EXISTS sync_table (id INT PRIMARY KEY)")
 
-                while True:
-                    cursor.execute("INSERT INTO sync_table VALUES (1)")
-                    conn.commit()
-                    time.sleep(0.1)
+            while True:
+                cur.execute("DELETE FROM sync_table")
+                con.commit()
+                time.sleep(0.2)
 
-                    cursor.execute("DELETE FROM sync_table WHERE id = 1")
-                    conn.commit()
-                    time.sleep(0.1)
-
+                cur.execute("INSERT INTO sync_table VALUES (1)")
+                con.commit()
+                time.sleep(0.2)
     except mysql.connector.Error as e:
         print(f"Error: {e}")
 
@@ -182,122 +178,110 @@ def parse_connection_string(conn_str: str) -> dict:
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Process some integers.")
+    parser.add_argument("--source-dsn", type=str, required=True, help="The DSN for the source database")
+    parser.add_argument("--target-dsn", type=str, required=True, help="The DSN for the target database")
+    parser.add_argument("--mysqlbinlog-zstd-compression-level", type=int, required=False, help="The DSN for the target database")
+    parser.add_argument("--mysqlbinlog-connection-server-id", type=int, required=False, help="The DSN for the target database")
+    parser.add_argument("--mysqlbinlog-exclude-gtids", type=str, required=False, help="The starting GTID for the operations")
 
-    parser.add_argument(
-        "--source_dsn", type=str, required=True, help="The DSN for the source database"
-    )
-
-    parser.add_argument(
-        "--target_dsn", type=str, required=True, help="The DSN for the target database"
-    )
-
-    parser.add_argument(
-        "--start_gtid",
-        type=str,
-        required=False,
-        help="The starting GTID for the operations",
-    )
-
-    args = parser.parse_args()
+    return parser.parse_args()
 
 
-def kill_p1():
-    global p1
+def query_first_binlogfile(con: mysql.connector.MySQLConnection) -> str:
+    with con.cursor(buffered=True) as cur:
+        cur.execute("SHOW BINARY LOGS")
+        return cur.fetchone()[0]
 
-    def signal_handler(sig, frame):
+
+def query_gtid_set(con: mysql.connector.MySQLConnection) -> str:
+    with con.cursor(buffered=True) as cur:
+        cur.execute("show master status")
+        return cur.fetchone()[4]
+
+
+def query_server_uuid(con: mysql.connector.MySQLConnection) -> str:
+    with con.cursor(buffered=True) as cur:
+        cur.execute("select @@server_uuid")
+        return cur.fetchone()[0]
+
+
+def run_pipeline(mysqlbinlog_cmd: list[str], mysqlbinlog_statistics_cmd: list[str], mysql_cmd: list[str]) -> NoReturn:
+    p1 = subprocess.Popen(mysqlbinlog_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    p2 = subprocess.Popen(mysqlbinlog_statistics_cmd, stdin=p1.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    p3 = subprocess.Popen(mysql_cmd, stdin=p2.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    p1.stdout.close()
+    p2.stdout.close()
+
+    def handler(sig, frame):
         if p1.poll() is None:
             p1.terminate()
-            p1.wait()
-            print("子进程已终止。")
 
-    return signal_handler
+    signal.signal(signal.SIGTERM, handler)
+    signal.signal(signal.SIGINT, handler)
+
+    threads: list[threading.Thread] = []
+
+    for proc, name in [(p1.stderr, "p1"), (p2.stderr, "p2"), (p3.stderr, "p3-stderr"), (p3.stdout, "p3-stdout")]:
+        t = threading.Thread(target=log_writer, args=(proc, name))
+        t.start()
+        threads.append(t)
+
+    print("process 1wait success")
+
+    for p in [p1, p2, p3]:
+        p.wait()
+        print(f"p shifang {p}")
+
+    print("process wait success")
+
+    for t in threads:
+        t.join()
+
+    print("logger wait success")
+
+    # for p in [p1.stderr, p2.stderr, p3.stderr, p3.stdout]:
+    #     p.close()
+
+    print("stder wait success")
 
 
-def run_pipeline(
-    mysqlbinlog_cmd: list[str],
-    mysqlbinlog_statistics_cmd: list[str],
-    mysql_cmd: list[str],
-):
-    global p1
-    # mysqlbinlog_cmd = ["mysqlbinlog", "mysql-bin.000001"]
-    # mysqlbinlog_statistics_cmd = ["mysqlbinlog_statistics"]
-    # mysql_cmd = [
-    #     "mysql",
-    #     "-u",
-    #     "username",
-    #     "-p",
-    #     "password",
-    #     "-h",
-    #     "hostname",
-    #     "database_name",
-    # ]
-    signal_handler = kill_p1()
-    signal.signal(signal.SIGTERM, signal_handler)
-    signal.signal(signal.SIGINT, signal_handler)
-
-    p1 = subprocess.Popen(
-        mysqlbinlog_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-    )
-
-    # print(1, p1, p1.poll())
-    # # p1.terminate()
-    # handler = kill_p1(p1)
-
-    # signal.signal(signal.SIGTERM, handler)
-
-    # time.sleep(15)
-
-    # p2 = subprocess.Popen(
-    #     mysqlbinlog_statistics_cmd,
-    #     stdin=p1.stdout,
-    #     stdout=subprocess.PIPE,
-    #     stderr=subprocess.PIPE,
-    # )
-    # p3 = subprocess.Popen(
-    #     mysql_cmd, stdin=p2.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-    # )
-
-    thread_p1 = threading.Thread(target=log_writer, args=(p1.stdout, "p1"))
-    # thread_p2 = threading.Thread(target=log_writer, args=(p2.stderr, "p2"))
-    # thread_p3 = threading.Thread(target=log_writer, args=(p3.stderr, "p3"))
-
-    print("end1")
-    thread_p1.start()
-
-    # print("sleep2")
-    # time.sleep(5)
-    # print("sleep1")
-    # p1.terminate()
-    # thread_p2.start()
-    # thread_p3.start()
-
-    print("end2")
-    p1.communicate()
-    print("end3")
-    # p2.wait()
-    # p3.wait()
-
-    thread_p1.join()
-    print("end4")
-    # thread_p2.join()
-    # thread_p3.join()
+def ext_gtid():
+    pass
 
 
 def main():
-    global p1
-    # handler =
+    args = parse_args()
 
-    parse_args()
     if is_redhat_family():
         download_mysql_client("8.0.36")
+        s_dsn = parse_connection_string(args.source_dsn)
+        t_dsn = parse_connection_string(args.target_dsn)
 
-        s_dsn = parse_connection_string("root/example@db1:3306")
-        t_dsn = parse_connection_string("root/example@db2:3306")
-        cmd1 = make_cmd_cmd1(
-            **s_dsn, server_id=111, start_binlogfile="mysql-bin.000001"
-        )
+        s_conn = mysql.connector.connect(**s_dsn)
+        t_conn = mysql.connector.connect(**t_dsn)
+
+        binlogfile = query_first_binlogfile(s_conn)
+        gtid_set = query_gtid_set(t_conn)
+
+        server_uuid = query_server_uuid(s_conn)
+
+        print("gtid_set", gtid_set)
+        gtida = None
+        if len(gtid_set) >= 1:
+            for gtid in gtid_set.split(","):
+                if gtid.startswith(server_uuid):
+                    gtida = gtid
+        cmd1 = make_cmd_cmd1(**s_dsn, server_id=111, start_binlogfile=binlogfile, gtid=gtida, compression_level=None)
+        print("cmd1", " ".join(cmd1))
         cmd2 = make_cmd_cmd2()
+        print("cmd2", " ".join(cmd2))
         cmd3 = make_cmd_cmd3(**t_dsn)
+        print("cmd3", " ".join(cmd3))
+
+        # t = threading.Thread(target=binlogReplicationWatcher, args=(s_conn,))
+        # t.start()
+
         run_pipeline(cmd1, cmd2, cmd3)
     # run_pipeline()
 

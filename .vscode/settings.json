@@ -10,6 +10,10 @@
       "source.organizeImports": "always"
     },
   },
+  "black-formatter.args": [
+    "--line-length",
+    "140"
+  ],
   "isort.args": [
     "--profile",
     "black"

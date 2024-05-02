@@ -146,6 +146,9 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
                     );
 
                     eprintln!("{}", json_string);
+                    eprintln!("insert_rows: {:?}", binlog_statistics.insert_rows);
+                    eprintln!("update_rows: {:?}", binlog_statistics.update_rows);
+                    eprintln!("delete_rows: {:?}", binlog_statistics.delete_rows);
                     last_time = Instant::now();
                 }
 
@@ -194,7 +197,7 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
                                     if binlog_event_tokens[12].to_string() == table_id {
                                         *binlog_statistics.insert_rows.entry(table_map.clone()).or_insert(0) += 1;
                                     } else {
-                                        eprintln!("error: {}", line)
+                                        // eprintln!("error: {}", line)
                                         // error
                                     }
                                 } else {
@@ -493,6 +496,7 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
         total, binlog_pos, binlog_file, binlog_statistics.transaction
     );
     eprintln!("{}", json_string);
+    eprintln!("sdfsdfsd");
     Ok(())
 }
 

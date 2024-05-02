@@ -13,4 +13,4 @@ mysqlbinlog --host=db1 --port=3306 --user=root --password=example \
   --compression-algorithms=zstd --zstd-compression-level=3 \
   --verify-binlog-checksum \
   --to-last-log \
-  --connection-server-id=11121 --verbose --verbose --idempotent --force-read --print-table-metadata mysql-bin.000001
+  --connection-server-id=11121 --verbose --verbose --idempotent --force-read --print-table-metadata mysql-bin.000001·

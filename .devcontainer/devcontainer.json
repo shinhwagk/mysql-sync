@@ -2,17 +2,5 @@
 	"name": "mysqlbinlog-statistics",
 	"dockerComposeFile": "docker-compose.yml",
 	"service": "app",
-	"workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
-	"customizations": {
-		"vscode": {
-			"extensions": [
-				"rust-lang.rust-analyzer",
-				"ms-python.python",
-				"ms-python.isort",
-				"ms-azuretools.vscode-docker",
-				"redhat.vscode-yaml",
-				"ms-python.black-formatter"
-			]
-		}
-	}
+	"workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}"
 }
