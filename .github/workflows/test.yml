@@ -65,9 +65,7 @@ jobs:
 
           mysql -h127.0.0.1 -P33061 -uroot -proot_password -e 'create database testdb;'
 
-          for action in prepare run; do
-            sysbench /usr/share/sysbench/oltp_read_only.lua --table-size=100000 --tables=10 --threads=100 --time=60 --mysql-db=testdb --mysql-user=root --mysql-host=127.0.0.1 --mysql-port=33061 --mysql-password=root_password --db-driver=mysql $action
-          done
+          sysbench /usr/share/sysbench/oltp_read_only.lua --table-size=100000 --tables=10 --threads=100 --time=60 --mysql-db=testdb --mysql-user=root --mysql-host=127.0.0.1 --mysql-port=33061 --mysql-password=root_password --db-driver=mysql prepare
 
           python main.py --source-dsn root/root_password@127.0.0.1:33061 --target-dsn root/root_password@127.0.0.1:33062 &
 
