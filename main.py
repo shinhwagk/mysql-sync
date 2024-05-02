@@ -12,44 +12,53 @@ from typing import IO, BinaryIO, NoReturn, Optional, TextIO
 import mysql.connector
 from mysql.connector import Error
 
+parser = argparse.ArgumentParser(description="Process some integers.")
+parser.add_argument("--source-dsn", type=str, required=True, help="The DSN for the source database")
+parser.add_argument("--target-dsn", type=str, required=True, help="The DSN for the target database")
+parser.add_argument("--mysqlbinlog-statistics", type=str, required=False, help="The DSN for the target database")
+parser.add_argument("--mysqlbinlog-zstd-compression-level", type=int, required=False, help="The DSN for the target database")
+parser.add_argument("--mysqlbinlog-connection-server-id", type=int, required=False, help="The DSN for the target database")
+parser.add_argument("--mysqlbinlog-exclude-gtids", type=str, required=False, help="The starting GTID for the operations")
+parser.add_argument("--mysqlbinlog-stop-never", type=bool, required=False, default=False, help="The starting GTID for the operations")
 
-def is_redhat_family():
-    os_release_file = "/etc/os-release"
+args = parser.parse_args()
+# def is_redhat_family():
+#     os_release_file = "/etc/os-release"
 
-    if os.path.exists(os_release_file):
-        with open(os_release_file, "r") as file:
-            for line in file:
-                key, value = line.strip().replace('"', "").split("=", 1)
-                if key == "ID" and value in {"rhel", "centos", "fedora", "rocky"}:
-                    return True
-    return False
-
-
-def mkdirs():
-    for d in ["bin", "logs"]:
-        os.mkdirs(d)
+#     if os.path.exists(os_release_file):
+#         with open(os_release_file, "r") as file:
+#             for line in file:
+#                 key, value = line.strip().replace('"', "").split("=", 1)
+#                 if key == "ID" and value in {"rhel", "centos", "fedora", "rocky"}:
+#                     return True
+#     return False
 
 
-def download_mysqlbinlog_statistics(version: str):
-    pass
+# def mkdirs():
+#     for d in ["bin", "logs"]:
+#         os.mkdirs(d)
 
 
-def download_mysql_client(version: str):
-    # must redhat family
-    try:
-        for cmd in [
-            [
-                "dnf",
-                "install",
-                "-y",
-                "https://dev.mysql.com/get/mysql80-community-release-el9-5.noarch.rpm",
-            ],
-            ["dnf", "install", "-y", f"mysql-community-client-{version}"],
-        ]:
-            subprocess.run(cmd, check=True, text=True, capture_output=True)
-        print("mysqlbinlog & mysql installed.")
-    except subprocess.CalledProcessError as e:
-        print(e.stderr)
+# def download_mysqlbinlog_statistics(version: str):
+#     pass
+
+
+# def download_mysql_client(version: str):
+#     # must redhat family
+#     try:
+#         for cmd in [
+#             [
+#                 "dnf",
+#                 "install",
+#                 "-y",
+#                 "https://dev.mysql.com/get/mysql80-community-release-el9-5.noarch.rpm",
+#             ],
+#             ["dnf", "install", "-y", f"mysql-community-client-{version}"],
+#         ]:
+#             subprocess.run(cmd, check=True, text=True, capture_output=True)
+#         print("mysqlbinlog & mysql installed.")
+#     except subprocess.CalledProcessError as e:
+#         print(e.stderr)
 
 
 def compare_gtid():
@@ -64,33 +73,30 @@ def make_cmd_cmd1(
     server_id: str,
     start_binlogfile: str,
     compression_level: Optional[str],
-    gtid: Optional[str] = None,
+    exclude_gtids: Optional[str] = None,
     stop_never: bool = False,
 ) -> list[str]:
-    return (
-        [
-            "mysqlbinlog",
-            f"--host={host}",
-            f"--port={port}",
-            f"--user={user}",
-            f"--password={password}",
-            "--read-from-remote-source=BINLOG-DUMP-GTIDS",
-            "--verify-binlog-checksum",
-        ]
-        + [("--stop-never" if stop_never else "--to-last-log")]
-        + [
-            "--stop-never",
-            f"--connection-server-id={server_id}",
-            "--verbose",
-            "--verbose",
-            "--idempotent",
-            "--force-read",
-            "--print-table-metadata",
-        ]
-        + (["--compression-algorithms=zstd", f"--zstd-compression-level={compression_level}"] if compression_level else [])
-        + ([f"--exclude-gtids={gtid}"] if gtid else [])
-        + [start_binlogfile]
-    )
+    command = [
+        "mysqlbinlog",
+        f"--host={host}",
+        f"--port={port}",
+        f"--user={user}",
+        f"--password={password}",
+        "--read-from-remote-source=BINLOG-DUMP-GTIDS",
+        "--verify-binlog-checksum",
+        f"--connection-server-id={server_id}",
+        "--verbose",
+        "--verbose",
+        "--idempotent",
+        "--force-read",
+        "--print-table-metadata",
+    ]
+    command += [f"--compression-algorithms=zstd", f"--zstd-compression-level={compression_level}"] if compression_level else []
+    command += [f"--exclude-gtids={exclude_gtids}"] if exclude_gtids else []
+    command.append("--stop-never" if stop_never else "--to-last-log")
+    command.append(start_binlogfile)
+
+    return command
 
 
 def make_cmd_cmd2() -> list[str]:
@@ -158,18 +164,6 @@ def parse_connection_string(conn_str: str) -> dict:
     username, password = user_info.split("/")
     host, port = host_info.split(":")
     return {"user": username, "password": password, "host": host, "port": port}
-
-
-def parse_args():
-    parser = argparse.ArgumentParser(description="Process some integers.")
-    parser.add_argument("--source-dsn", type=str, required=True, help="The DSN for the source database")
-    parser.add_argument("--target-dsn", type=str, required=True, help="The DSN for the target database")
-    parser.add_argument("--mysqlbinlog-zstd-compression-level", type=int, required=False, help="The DSN for the target database")
-    parser.add_argument("--mysqlbinlog-connection-server-id", type=int, required=False, help="The DSN for the target database")
-    parser.add_argument("--mysqlbinlog-exclude-gtids", type=str, required=False, help="The starting GTID for the operations")
-    parser.add_argument("--mysqlbinlog-stop-never", type=bool, required=False, default=False, help="The starting GTID for the operations")
-
-    return parser.parse_args()
 
 
 def query_first_binlogfile(con: mysql.connector.MySQLConnection) -> str:
@@ -241,11 +235,6 @@ def ext_gtid():
 
 
 def main():
-    args = parse_args()
-
-    if is_redhat_family():
-        download_mysql_client("8.0.36")
-
     s_dsn = parse_connection_string(args.source_dsn)
     t_dsn = parse_connection_string(args.target_dsn)
 
@@ -264,7 +253,12 @@ def main():
             if gtid.startswith(server_uuid):
                 gtida = gtid
     cmd1 = make_cmd_cmd1(
-        **s_dsn, server_id=111, start_binlogfile=binlogfile, gtid=gtida, compression_level=None, stop_never=args.mysqlbinlog_stop_never
+        **s_dsn,
+        server_id=111,
+        start_binlogfile=binlogfile,
+        exclude_gtids=gtida,
+        compression_level=None,
+        stop_never=args.mysqlbinlog_stop_never,
     )
     print("cmd1", " ".join(cmd1))
     cmd2 = make_cmd_cmd2()
