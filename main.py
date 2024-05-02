@@ -146,14 +146,14 @@ def log_writer(log_pipe: IO[bytes], prefix: str) -> None:
             log_file.close()
 
 
-def binlogReplicationWatcher(con: mysql.connector.MySQLConnection):
+def binlogReplicationWatcher(con: mysql.connector.MySQLConnection, stop_event: threading.Event):
     try:
         with con.cursor() as cur:
             cur.execute("CREATE DATABASE IF NOT EXISTS mysqlbinlogsync")
             cur.execute("USE mysqlbinlogsync")
             cur.execute("CREATE TABLE IF NOT EXISTS sync_table (id INT PRIMARY KEY)")
 
-            while True:
+            while not stop_event.is_set():
                 cur.execute("DELETE FROM sync_table")
                 con.commit()
                 time.sleep(0.2)
@@ -196,15 +196,55 @@ def query_server_id(con: mysql.connector.MySQLConnection) -> str:
         return cur.fetchone()[0]
 
 
-def run_pipeline(mysqlbinlog_cmd: list[str], mysqlbinlog_statistics_cmd: list[str], mysql_cmd: list[str]) -> NoReturn:
-    p1 = subprocess.Popen(mysqlbinlog_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+def ext_gtid():
+    pass
 
+
+def main():
+    s_dsn = parse_connection_string(args.source_dsn)
+    t_dsn = parse_connection_string(args.target_dsn)
+
+    s_conn = mysql.connector.connect(**s_dsn)
+    t_conn = mysql.connector.connect(**t_dsn)
+
+    binlogfile = query_first_binlogfile(s_conn)
+    gtid_set = query_gtid_set(t_conn)
+
+    server_uuid = query_server_uuid(s_conn)
+    server_id = query_server_id(s_conn)
+
+    print("gtid_set", gtid_set)
+    gtida = None
+    if len(gtid_set) >= 1:
+        for gtid in gtid_set.split(","):
+            if gtid.startswith(server_uuid):
+                gtida = gtid
+    mysqlbinlog_cmd = make_cmd_cmd1(
+        **s_dsn,
+        server_id=111,
+        start_binlogfile=binlogfile,
+        exclude_gtids=gtida,
+        compression_level=None,
+        stop_never=args.mysqlbinlog_stop_never,
+    )
+    print("cmd1", " ".join(mysqlbinlog_cmd))
+    mysqlbinlog_statistics_cmd = make_cmd_cmd2()
+    print("cmd2", " ".join(mysqlbinlog_statistics_cmd))
+    mysql_cmd = make_cmd_cmd3(**t_dsn)
+    print("cmd3", " ".join(mysql_cmd))
+
+    se = threading.Event()
+    t = threading.Thread(target=binlogReplicationWatcher, args=(s_conn, se))
+    t.start()
+
+    p1 = subprocess.Popen(mysqlbinlog_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     p2 = subprocess.Popen(mysqlbinlog_statistics_cmd, stdin=p1.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     p3 = subprocess.Popen(mysql_cmd, stdin=p2.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     p1.stdout.close()
     p2.stdout.close()
 
     def handler(sig, frame):
+        se.set()
         if p1.poll() is None:
             p1.terminate()
 
@@ -237,50 +277,6 @@ def run_pipeline(mysqlbinlog_cmd: list[str], mysqlbinlog_statistics_cmd: list[st
     print("logger wait success")
 
     print("stder wait success")
-
-
-def ext_gtid():
-    pass
-
-
-def main():
-    s_dsn = parse_connection_string(args.source_dsn)
-    t_dsn = parse_connection_string(args.target_dsn)
-
-    s_conn = mysql.connector.connect(**s_dsn)
-    t_conn = mysql.connector.connect(**t_dsn)
-
-    binlogfile = query_first_binlogfile(s_conn)
-    gtid_set = query_gtid_set(t_conn)
-
-    server_uuid = query_server_uuid(s_conn)
-    server_id = query_server_id(s_conn)
-
-    print("gtid_set", gtid_set)
-    gtida = None
-    if len(gtid_set) >= 1:
-        for gtid in gtid_set.split(","):
-            if gtid.startswith(server_uuid):
-                gtida = gtid
-    cmd1 = make_cmd_cmd1(
-        **s_dsn,
-        server_id=111,
-        start_binlogfile=binlogfile,
-        exclude_gtids=gtida,
-        compression_level=None,
-        stop_never=args.mysqlbinlog_stop_never,
-    )
-    print("cmd1", " ".join(cmd1))
-    cmd2 = make_cmd_cmd2()
-    print("cmd2", " ".join(cmd2))
-    cmd3 = make_cmd_cmd3(**t_dsn)
-    print("cmd3", " ".join(cmd3))
-
-    # t = threading.Thread(target=binlogReplicationWatcher, args=(s_conn,))
-    # t.start()
-
-    run_pipeline(cmd1, cmd2, cmd3)
-    # run_pipeline()
 
 
 if __name__ == "__main__":
