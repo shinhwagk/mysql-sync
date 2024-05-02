@@ -50,7 +50,10 @@ jobs:
         with:
           python-version: "3.11"
 
-      - run: mysql -h127.0.0.1 -P33061 -uroot -proot_password -e 'SELECT version()'
+      - run: |
+          mysql --version
+          mysqlbinlog --version
+          mysql -h127.0.0.1 -P33061 -uroot -proot_password -e 'SELECT version()'
 
       - name: Testing mysqlbinlog-statistics.
         run: |
@@ -75,25 +78,6 @@ jobs:
           mysql -uroot -proot_password -h127.0.0.1 -P33062 -e "show master status\G";
 
           cat *.stderr.*.log
-
-          # function cmd1(){
-          #   local MYSQLBINLOG_SERVER_ID=$((RANDOM + 1000000000))
-          #   # mysqlbinlog --host=127.0.0.1 --port=33061 --user=root --password=root_password --read-from-remote-server --to-last-log --verbose --idempotent mysql-bin.000001
-          #   mysqlbinlog --host=127.0.0.1 --port=33061 --user=root --password=root_password --read-from-remote-source=BINLOG-DUMP-GTIDS --compression-algorithms=zstd --zstd-compression-level=3 --verify-binlog-checksum --to-last-log --connection-server-id=${MYSQLBINLOG_SERVER_ID} --verbose --verbose --idempotent --force-read --print-table-metadata mysql-bin.000001
-          # }
-          # function cmd2(){
-          #   cargo run 2>binlog_stats.log
-          # }
-          # function cmd3(){
-          #   mysql -h127.0.0.1 -P33062 -uroot -proot_password -v >cmd3.out.log 2>cmd3.err.log
-          # }
-
-          # cmd1 | cmd2 | cmd3
-
-          # cat cmd3.err.log
-          # cat cmd3.out.log | wc -l
-
-          # cat binlog_stats.log
 
       # - name: Tetsting gh-ost
       #   run: |
