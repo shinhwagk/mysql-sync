@@ -65,6 +65,7 @@ def make_cmd_cmd1(
     start_binlogfile: str,
     compression_level: Optional[str],
     gtid: Optional[str] = None,
+    stop_never: bool = True,
 ) -> list[str]:
     return (
         [
@@ -75,7 +76,9 @@ def make_cmd_cmd1(
             f"--password={password}",
             "--read-from-remote-source=BINLOG-DUMP-GTIDS",
             "--verify-binlog-checksum",
-            # "--to-last-log",
+        ]
+        + [("--stop-never" if stop_never else "--to-last-log")]
+        + [
             "--stop-never",
             f"--connection-server-id={server_id}",
             "--verbose",
@@ -164,6 +167,7 @@ def parse_args():
     parser.add_argument("--mysqlbinlog-zstd-compression-level", type=int, required=False, help="The DSN for the target database")
     parser.add_argument("--mysqlbinlog-connection-server-id", type=int, required=False, help="The DSN for the target database")
     parser.add_argument("--mysqlbinlog-exclude-gtids", type=str, required=False, help="The starting GTID for the operations")
+    parser.add_argument("--mysqlbinlog-stop-never", type=bool, required=False, help="The starting GTID for the operations")
 
     return parser.parse_args()
 
@@ -258,7 +262,9 @@ def main():
             for gtid in gtid_set.split(","):
                 if gtid.startswith(server_uuid):
                     gtida = gtid
-        cmd1 = make_cmd_cmd1(**s_dsn, server_id=111, start_binlogfile=binlogfile, gtid=gtida, compression_level=None)
+        cmd1 = make_cmd_cmd1(
+            **s_dsn, server_id=111, start_binlogfile=binlogfile, gtid=gtida, compression_level=None, stop_never=args.stop_never
+        )
         print("cmd1", " ".join(cmd1))
         cmd2 = make_cmd_cmd2()
         print("cmd2", " ".join(cmd2))

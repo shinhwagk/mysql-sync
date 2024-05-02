@@ -72,7 +72,7 @@ jobs:
           sleep 10
 
           mysql -uroot -proot_password -h127.0.0.1 -P33061 -e "show master status\G";
-          mysql -uroot -proot_password -h127.0.0.1 -P33061 -e "show master status\G";
+          mysql -uroot -proot_password -h127.0.0.1 -P33062 -e "show master status\G";
 
           # function cmd1(){
           #   local MYSQLBINLOG_SERVER_ID=$((RANDOM + 1000000000))
