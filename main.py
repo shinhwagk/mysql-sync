@@ -274,11 +274,11 @@ def main():
 
     print("process wait success")
 
-    if args.mysqlbinlog_stop_never:
-        se.set()
     for t in threads:
         t.join()
-    tx.join()
+    if args.mysqlbinlog_stop_never:
+        se.set()
+        tx.join()
 
     print("logger wait success")
 
