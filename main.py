@@ -120,6 +120,7 @@ def make_cmd_cmd3(host: str, port: str, user: str, password: str) -> list[str]:
 def log_writer(log_pipe: IO[bytes], prefix: str) -> None:
     current_day = None
     log_file: Optional[IO[str]] = None
+    cnt = 1
     try:
         while True:
             line = log_pipe.readline()
@@ -132,6 +133,11 @@ def log_writer(log_pipe: IO[bytes], prefix: str) -> None:
                     log_file.close()
                 log_file = open(f"{prefix}.{today}.log", "a")
                 current_day = today
+
+            if prefix == "mysql.stdout":
+                cnt += 1
+                if cnt % 100 == 0:
+                    print("mysql.stdout", cnt)
 
             log_file.write(line.decode("utf-8"))
             log_file.flush()
@@ -184,6 +190,12 @@ def query_server_uuid(con: mysql.connector.MySQLConnection) -> str:
         return cur.fetchone()[0]
 
 
+def query_server_id(con: mysql.connector.MySQLConnection) -> str:
+    with con.cursor(buffered=True) as cur:
+        cur.execute("select @@server_id")
+        return cur.fetchone()[0]
+
+
 def run_pipeline(mysqlbinlog_cmd: list[str], mysqlbinlog_statistics_cmd: list[str], mysql_cmd: list[str]) -> NoReturn:
     p1 = subprocess.Popen(mysqlbinlog_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
@@ -224,9 +236,6 @@ def run_pipeline(mysqlbinlog_cmd: list[str], mysqlbinlog_statistics_cmd: list[st
 
     print("logger wait success")
 
-    # for p in [p1.stderr, p2.stderr, p3.stderr, p3.stdout]:
-    #     p.close()
-
     print("stder wait success")
 
 
@@ -245,6 +254,7 @@ def main():
     gtid_set = query_gtid_set(t_conn)
 
     server_uuid = query_server_uuid(s_conn)
+    server_id = query_server_id(s_conn)
 
     print("gtid_set", gtid_set)
     gtida = None
