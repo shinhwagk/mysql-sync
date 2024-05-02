@@ -17,7 +17,7 @@ parser.add_argument("--source-dsn", type=str, required=True, help="The DSN for t
 parser.add_argument("--target-dsn", type=str, required=True, help="The DSN for the target database")
 parser.add_argument("--mysqlbinlog-statistics", type=str, required=False, help="The DSN for the target database")
 parser.add_argument("--mysqlbinlog-zstd-compression-level", type=int, required=False, help="The DSN for the target database")
-parser.add_argument("--mysqlbinlog-connection-server-id", type=int, required=False, help="The DSN for the target database")
+parser.add_argument("--mysqlbinlog-connection-server-id", type=int, required=False, default=99999, help="The DSN for the target database")
 parser.add_argument("--mysqlbinlog-exclude-gtids", type=str, required=False, help="The starting GTID for the operations")
 parser.add_argument("--mysqlbinlog-stop-never", type=bool, required=False, default=False, help="The starting GTID for the operations")
 
@@ -213,6 +213,8 @@ def main():
     server_uuid = query_server_uuid(s_conn)
     server_id = query_server_id(s_conn)
 
+    mysqlbinlog_connection_server_id = args.mysqlbinlog_connection_server_id
+
     print("gtid_set", gtid_set)
     gtida = None
     if len(gtid_set) >= 1:
@@ -221,7 +223,7 @@ def main():
                 gtida = gtid
     mysqlbinlog_cmd = make_cmd_cmd1(
         **s_dsn,
-        server_id=111,
+        server_id=mysqlbinlog_connection_server_id,
         start_binlogfile=binlogfile,
         exclude_gtids=gtida,
         compression_level=None,
