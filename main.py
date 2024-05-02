@@ -276,8 +276,8 @@ def main():
     cmd3 = make_cmd_cmd3(**t_dsn)
     print("cmd3", " ".join(cmd3))
 
-    t = threading.Thread(target=binlogReplicationWatcher, args=(s_conn,))
-    t.start()
+    # t = threading.Thread(target=binlogReplicationWatcher, args=(s_conn,))
+    # t.start()
 
     run_pipeline(cmd1, cmd2, cmd3)
     # run_pipeline()
