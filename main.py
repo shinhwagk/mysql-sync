@@ -245,36 +245,37 @@ def main():
 
     if is_redhat_family():
         download_mysql_client("8.0.36")
-        s_dsn = parse_connection_string(args.source_dsn)
-        t_dsn = parse_connection_string(args.target_dsn)
 
-        s_conn = mysql.connector.connect(**s_dsn)
-        t_conn = mysql.connector.connect(**t_dsn)
+    s_dsn = parse_connection_string(args.source_dsn)
+    t_dsn = parse_connection_string(args.target_dsn)
 
-        binlogfile = query_first_binlogfile(s_conn)
-        gtid_set = query_gtid_set(t_conn)
+    s_conn = mysql.connector.connect(**s_dsn)
+    t_conn = mysql.connector.connect(**t_dsn)
 
-        server_uuid = query_server_uuid(s_conn)
+    binlogfile = query_first_binlogfile(s_conn)
+    gtid_set = query_gtid_set(t_conn)
 
-        print("gtid_set", gtid_set)
-        gtida = None
-        if len(gtid_set) >= 1:
-            for gtid in gtid_set.split(","):
-                if gtid.startswith(server_uuid):
-                    gtida = gtid
-        cmd1 = make_cmd_cmd1(
-            **s_dsn, server_id=111, start_binlogfile=binlogfile, gtid=gtida, compression_level=None, stop_never=args.mysqlbinlog_stop_never
-        )
-        print("cmd1", " ".join(cmd1))
-        cmd2 = make_cmd_cmd2()
-        print("cmd2", " ".join(cmd2))
-        cmd3 = make_cmd_cmd3(**t_dsn)
-        print("cmd3", " ".join(cmd3))
+    server_uuid = query_server_uuid(s_conn)
 
-        t = threading.Thread(target=binlogReplicationWatcher, args=(s_conn,))
-        t.start()
+    print("gtid_set", gtid_set)
+    gtida = None
+    if len(gtid_set) >= 1:
+        for gtid in gtid_set.split(","):
+            if gtid.startswith(server_uuid):
+                gtida = gtid
+    cmd1 = make_cmd_cmd1(
+        **s_dsn, server_id=111, start_binlogfile=binlogfile, gtid=gtida, compression_level=None, stop_never=args.mysqlbinlog_stop_never
+    )
+    print("cmd1", " ".join(cmd1))
+    cmd2 = make_cmd_cmd2()
+    print("cmd2", " ".join(cmd2))
+    cmd3 = make_cmd_cmd3(**t_dsn)
+    print("cmd3", " ".join(cmd3))
 
-        run_pipeline(cmd1, cmd2, cmd3)
+    t = threading.Thread(target=binlogReplicationWatcher, args=(s_conn,))
+    t.start()
+
+    run_pipeline(cmd1, cmd2, cmd3)
     # run_pipeline()
 
 
