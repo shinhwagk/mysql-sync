@@ -25,25 +25,6 @@ def is_redhat_family():
     return False
 
 
-def kill_p1(p1: subprocess.Popen):
-    def signal_handler(signum: int, frame) -> NoReturn:
-        print("Received SIGTERM, shutting down...")
-        kill = False
-        while True:
-            print(1111, p1, p1.poll())
-            if p1 is not None and p1.poll() is None and kill == False:
-                print("Received SIGTERM, shutting down...1")
-                p1.terminate()
-                p1.wait()
-
-                break
-            kill = True
-            time.sleep(1)
-        # sys.exit(0)
-
-    return signal_handler
-
-
 def mkdirs():
     for d in ["bin", "logs"]:
         os.mkdirs(d)
@@ -110,8 +91,8 @@ def make_cmd_cmd1(
 
 
 def make_cmd_cmd2() -> list[str]:
-    return ["/workspaces/mysql-mysqlbinlog-replicaiton/target/debug/mysqlbinlog-statistics"]
     # return ["mysqlbinlog-statistics"]
+    return ["./target/debug/mysqlbinlog-statistics"]
 
 
 def make_cmd_cmd3(host: str, port: str, user: str, password: str) -> list[str]:
@@ -140,7 +121,7 @@ def log_writer(log_pipe: IO[bytes], prefix: str) -> None:
             if today != current_day:
                 if log_file:
                     log_file.close()
-                log_file = open(f"{prefix}_errors_{today}.log", "a")
+                log_file = open(f"{prefix}.{today}.log", "a")
                 current_day = today
 
             log_file.write(line.decode("utf-8"))
@@ -222,7 +203,12 @@ def run_pipeline(mysqlbinlog_cmd: list[str], mysqlbinlog_statistics_cmd: list[st
 
     threads: list[threading.Thread] = []
 
-    for proc, name in [(p1.stderr, "p1"), (p2.stderr, "p2"), (p3.stderr, "p3-stderr"), (p3.stdout, "p3-stdout")]:
+    for proc, name in [
+        (p1.stderr, "mysqlbinlog.stderr"),
+        (p2.stderr, "mysqlbinlog-statistics.stderr"),
+        (p3.stderr, "mysql.stderr"),
+        (p3.stdout, "mysql.stdout"),
+    ]:
         t = threading.Thread(target=log_writer, args=(proc, name))
         t.start()
         threads.append(t)
@@ -279,8 +265,8 @@ def main():
         cmd3 = make_cmd_cmd3(**t_dsn)
         print("cmd3", " ".join(cmd3))
 
-        # t = threading.Thread(target=binlogReplicationWatcher, args=(s_conn,))
-        # t.start()
+        t = threading.Thread(target=binlogReplicationWatcher, args=(s_conn,))
+        t.start()
 
         run_pipeline(cmd1, cmd2, cmd3)
     # run_pipeline()

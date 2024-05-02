@@ -41,69 +41,81 @@ jobs:
     #     ports:
     #       - 33063:33061
     #     options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
-        
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-        
+          python-version: "3.11"
+
       - run: mysql -h127.0.0.1 -P33061 -uroot -proot_password -e 'SELECT version()'
 
       - name: Testing mysqlbinlog-statistics.
         run: |
           set -e
 
-          mysql -h127.0.0.1 -P33061 -uroot -proot_password <test_data.sql
+          pip install -r requirements.txt
 
-          function cmd1(){
-            local MYSQLBINLOG_SERVER_ID=$((RANDOM + 1000000000))
-            # mysqlbinlog --host=127.0.0.1 --port=33061 --user=root --password=root_password --read-from-remote-server --to-last-log --verbose --idempotent mysql-bin.000001
-            mysqlbinlog --host=127.0.0.1 --port=33061 --user=root --password=root_password --read-from-remote-source=BINLOG-DUMP-GTIDS --compression-algorithms=zstd --zstd-compression-level=3 --verify-binlog-checksum --to-last-log --connection-server-id=${MYSQLBINLOG_SERVER_ID} --verbose --verbose --idempotent --force-read --print-table-metadata mysql-bin.000001
-          }
-          function cmd2(){
-            cargo run 2>binlog_stats.log
-          }
-          function cmd3(){
-            mysql -h127.0.0.1 -P33062 -uroot -proot_password -v >cmd3.out.log 2>cmd3.err.log
-          }
-          
-          cmd1 | cmd2 | cmd3
+          curl -s https://packagecloud.io/install/repositories/akopytov/sysbench/script.rpm.sh | bash
+          yum -y install sysbench
 
-          cat cmd3.err.log
-          cat cmd3.out.log | wc -l
+          cargo build
 
-          cat binlog_stats.log
-      
-      - name: Tetsting gh-ost
-        run: |
-          set -e
-          
-          curl -OLs https://github.com/github/gh-ost/releases/download/v1.1.6/gh-ost-binary-linux-amd64-20231207144046.tar.gz
-          tar zxvf gh-ost-binary-linux-amd64-20231207144046.tar.gz 
+          for action in prepare run; do
+            sysbench /usr/share/sysbench/oltp_read_only.lua --table-size=100000 --tables=10 --threads=100 --time=60 --mysql-db=testdb --mysql-user=root --mysql-host=127.0.0.1 --mysql-port=33061 --mysql-password=root_password --db-driver=mysql $action
+          done
 
-          ./gh-ost \
-            --max-load=Threads_running=16 \
-            --critical-load=Threads_running=32 \
-            --chunk-size=1000 \
-            --initially-drop-old-table \
-            --initially-drop-ghost-table \
-            --initially-drop-socket-file \
-            --user="root" \
-            --password="root_password" \
-            --host='127.0.0.1' \
-            --port=33061 \
-            --database="test" \
-            --table="tab1" \
-            --verbose \
-            --allow-on-master \
-            --assume-master-host="127.0.0.1:33061" \
-            --aliyun-rds \
-            --alter="add column c varchar(100)" \
-            --assume-rbr \
-            --execute
+
+          python main.py --source-dsn root/root_password@127.0.0.1:33061 --target-dsn root/root_password@127.0.0.1:33062
+
+          # function cmd1(){
+          #   local MYSQLBINLOG_SERVER_ID=$((RANDOM + 1000000000))
+          #   # mysqlbinlog --host=127.0.0.1 --port=33061 --user=root --password=root_password --read-from-remote-server --to-last-log --verbose --idempotent mysql-bin.000001
+          #   mysqlbinlog --host=127.0.0.1 --port=33061 --user=root --password=root_password --read-from-remote-source=BINLOG-DUMP-GTIDS --compression-algorithms=zstd --zstd-compression-level=3 --verify-binlog-checksum --to-last-log --connection-server-id=${MYSQLBINLOG_SERVER_ID} --verbose --verbose --idempotent --force-read --print-table-metadata mysql-bin.000001
+          # }
+          # function cmd2(){
+          #   cargo run 2>binlog_stats.log
+          # }
+          # function cmd3(){
+          #   mysql -h127.0.0.1 -P33062 -uroot -proot_password -v >cmd3.out.log 2>cmd3.err.log
+          # }
+
+          # cmd1 | cmd2 | cmd3
+
+          # cat cmd3.err.log
+          # cat cmd3.out.log | wc -l
+
+          # cat binlog_stats.log
+
+      # - name: Tetsting gh-ost
+      #   run: |
+      #     set -e
+
+      #     curl -OLs https://github.com/github/gh-ost/releases/download/v1.1.6/gh-ost-binary-linux-amd64-20231207144046.tar.gz
+      #     tar zxvf gh-ost-binary-linux-amd64-20231207144046.tar.gz
+
+      #     ./gh-ost \
+      #       --max-load=Threads_running=16 \
+      #       --critical-load=Threads_running=32 \
+      #       --chunk-size=1000 \
+      #       --initially-drop-old-table \
+      #       --initially-drop-ghost-table \
+      #       --initially-drop-socket-file \
+      #       --user="root" \
+      #       --password="root_password" \
+      #       --host='127.0.0.1' \
+      #       --port=33061 \
+      #       --database="test" \
+      #       --table="tab1" \
+      #       --verbose \
+      #       --allow-on-master \
+      #       --assume-master-host="127.0.0.1:33061" \
+      #       --aliyun-rds \
+      #       --alter="add column c varchar(100)" \
+      #       --assume-rbr \
+      #       --execute
 
       - name: Testing data validation after using mysqlbinlog-statistics.
         run: |
@@ -145,4 +157,3 @@ jobs:
 
       #     [[ $? == 0 ]] && exit 0
       #     mysqlbinlog -h127.0.0.1 -P3306 -uroot -proot_password --read-from-remote-server --to-last-log -v mysql-bin.000001 | bash -x ./binlogentry_statistics.sh
-
