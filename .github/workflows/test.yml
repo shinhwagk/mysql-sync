@@ -58,8 +58,8 @@ jobs:
 
           pip install -r requirements.txt
 
-          curl -s https://packagecloud.io/install/repositories/akopytov/sysbench/script.rpm.sh | bash
-          yum -y install sysbench
+          curl -s https://packagecloud.io/install/repositories/akopytov/sysbench/script.deb.sh | bash
+          apt -y install sysbench
 
           cargo build
 
