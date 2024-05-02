@@ -65,7 +65,7 @@ def make_cmd_cmd1(
     start_binlogfile: str,
     compression_level: Optional[str],
     gtid: Optional[str] = None,
-    stop_never: bool = True,
+    stop_never: bool = False,
 ) -> list[str]:
     return (
         [
@@ -167,7 +167,7 @@ def parse_args():
     parser.add_argument("--mysqlbinlog-zstd-compression-level", type=int, required=False, help="The DSN for the target database")
     parser.add_argument("--mysqlbinlog-connection-server-id", type=int, required=False, help="The DSN for the target database")
     parser.add_argument("--mysqlbinlog-exclude-gtids", type=str, required=False, help="The starting GTID for the operations")
-    parser.add_argument("--mysqlbinlog-stop-never", type=bool, required=False, help="The starting GTID for the operations")
+    parser.add_argument("--mysqlbinlog-stop-never", type=bool, required=False, default=False, help="The starting GTID for the operations")
 
     return parser.parse_args()
 
@@ -263,7 +263,7 @@ def main():
                 if gtid.startswith(server_uuid):
                     gtida = gtid
         cmd1 = make_cmd_cmd1(
-            **s_dsn, server_id=111, start_binlogfile=binlogfile, gtid=gtida, compression_level=None, stop_never=args.stop_never
+            **s_dsn, server_id=111, start_binlogfile=binlogfile, gtid=gtida, compression_level=None, stop_never=args.mysqlbinlog_stop_never
         )
         print("cmd1", " ".join(cmd1))
         cmd2 = make_cmd_cmd2()
