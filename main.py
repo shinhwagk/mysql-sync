@@ -235,9 +235,10 @@ def main():
     mysql_cmd = make_cmd_cmd3(**t_dsn)
     print("cmd3", " ".join(mysql_cmd))
 
-    se = threading.Event()
-    tx = threading.Thread(target=binlogReplicationWatcher, args=(s_conn, se))
-    tx.start()
+    if args.mysqlbinlog_stop_never:
+        se = threading.Event()
+        tx = threading.Thread(target=binlogReplicationWatcher, args=(s_conn, se))
+        tx.start()
 
     p1 = subprocess.Popen(mysqlbinlog_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     p2 = subprocess.Popen(mysqlbinlog_statistics_cmd, stdin=p1.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -272,7 +273,9 @@ def main():
         print(f"p shifang {p}")
 
     print("process wait success")
-    se.set()
+
+    if args.mysqlbinlog_stop_never:
+        se.set()
     for t in threads:
         t.join()
     tx.join()
