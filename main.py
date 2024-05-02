@@ -136,7 +136,7 @@ def log_writer(log_pipe: IO[bytes], prefix: str) -> None:
 
             if prefix == "mysql.stdout":
                 cnt += 1
-                if cnt % 10000 == 0:
+                if cnt % 100000 == 0:
                     print("mysql.stdout", cnt)
 
             log_file.write(line.decode("utf-8"))
@@ -270,7 +270,7 @@ def main():
         print(f"p shifang {p}")
 
     print("process wait success")
-
+    se.set()
     for t in threads:
         t.join()
     tx.join()
