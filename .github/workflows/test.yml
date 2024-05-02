@@ -130,7 +130,7 @@ jobs:
         env:
           ARGS_SOURCE_DSN: root/root_password@127.0.0.1:33061
           ARGS_TARGET_DSN: root/root_password@127.0.0.1:33062
-          ARGS_DATABASES: test
+          ARGS_DATABASES: testdb
 
       - name: Testing Gtid after using mysqlbinlog-statistics.
         run: |
