@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -e
+set -ex
 
 # install packages
 dnf install -y git jq diffutils gcc procps-ng iproute iputils telnet dnf-utils epel-release
