@@ -27,22 +27,6 @@ jobs:
         ports:
           - 33062:3306
         options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
-    #   percona803628:
-    #     image: percona:8.0.36-28
-    #     env:
-    #       MYSQL_ROOT_PASSWORD: root_password
-    #       MYSQL_DATABASE: test_db
-    #     ports:
-    #       - 33062:33061
-    #     options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
-    #   percona803527:
-    #     image: percona:8.0.35-27
-    #     env:
-    #       MYSQL_ROOT_PASSWORD: root_password
-    #       MYSQL_DATABASE: test_db
-    #     ports:
-    #       - 33063:33061
-    #     options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
 
     steps:
       - name: Checkout code
@@ -52,7 +36,7 @@ jobs:
         run: bash scripts/initContainer.sh
 
       - name: Running testing
-        run: bash -x scripts/testing.sh
+        run: bash -x scripts/testing_ms.sh
         env:
           ARGS_SOURCE_HOST: mysql8036_1
           ARGS_SOURCE_PORT: 3306
