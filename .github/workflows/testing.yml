@@ -1,4 +1,4 @@
-name: MySQL Service Example
+name: Testing Mysqlbinlog Sync
 
 on:
   push:
