@@ -52,7 +52,9 @@ jobs:
         run: bash scripts/initContainer.sh
 
       - name: Running testing
-        run: bash -x scripts/testing.sh
+        run: |
+          mysql -uroot -proot_password -h127.0.0.1 -P33061 -e "show master status\G";
+          bash -x scripts/testing.sh
         env:
           ARGS_SOURCE_HOST: "127.0.0.1"
           ARGS_SOURCE_PORT: 33061
