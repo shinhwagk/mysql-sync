@@ -60,6 +60,10 @@ fi
 MYSQLBINLOG_SYNC_PID=$!
 echo "mysqlbinlog_sync3 pid ${MYSQLBINLOG_SYNC_PID}"
 
+sleep 5
+
+pstree $MYSQLBINLOG_SYNC_PID
+
 echo "start load data to source database"
 mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} -e 'CREATE DATABASE IF NOT EXISTS testdb;'
 # for testname in oltp_insert oltp_delete oltp_update_index oltp_update_non_index oltp_write_only bulk_insert; do
