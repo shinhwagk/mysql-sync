@@ -52,7 +52,7 @@ jobs:
         run: bash scripts/initContainer.sh
 
       - name: Running testing
-        run: bash scripts/initContainer.sh
+        run: bash -x scripts/testing.sh
         env:
           ARGS_SOURCE_HOST: "127.0.0.1"
           ARGS_SOURCE_PORT: 33061
