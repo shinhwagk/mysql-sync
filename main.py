@@ -227,16 +227,21 @@ def main():
     mysql_cmd = make_cmd_cmd3(**t_dsn)
     print("cmd3", " ".join(mysql_cmd))
 
-    if args.mysqlbinlog_stop_never:
-        se = threading.Event()
-        tx = threading.Thread(target=binlogReplicationWatcher, args=(s_conn, se))
-        tx.start()
+    # if args.mysqlbinlog_stop_never:
+    #     se = threading.Event()
+    #     tx = threading.Thread(target=binlogReplicationWatcher, args=(s_conn, se))
+    #     tx.start()
 
     p1 = subprocess.Popen(mysqlbinlog_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     p2 = subprocess.Popen(mysqlbinlog_statistics_cmd, stdin=p1.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     p3 = subprocess.Popen(mysql_cmd, stdin=p2.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     p1.stdout.close()
     p2.stdout.close()
+
+    p1.stderr.close()
+    p2.stderr.close()
+    p3.stderr.close()
+    p3.stdout.close()
 
     def handler(sig, frame):
         se.set()
@@ -248,15 +253,15 @@ def main():
 
     threads: list[threading.Thread] = []
 
-    for proc, name in [
-        (p1.stderr, "mysqlbinlog.stderr"),
-        (p2.stderr, "mysqlbinlog-statistics.stderr"),
-        (p3.stderr, "mysql.stderr"),
-        (p3.stdout, "mysql.stdout"),
-    ]:
-        t = threading.Thread(target=log_writer, args=(proc, name))
-        t.start()
-        threads.append(t)
+    # for proc, name in [
+    #     (p1.stderr, "mysqlbinlog.stderr"),
+    #     (p2.stderr, "mysqlbinlog-statistics.stderr"),
+    #     (p3.stderr, "mysql.stderr"),
+    #     (p3.stdout, "mysql.stdout"),
+    # ]:
+    #     t = threading.Thread(target=log_writer, args=(proc, name))
+    #     t.start()
+    #     threads.append(t)
 
     print("process 1wait success")
 
@@ -269,9 +274,9 @@ def main():
     for t in threads:
         t.join()
 
-    if args.mysqlbinlog_stop_never:
-        se.set()
-        tx.join()
+    # if args.mysqlbinlog_stop_never:
+    #     se.set()
+    #     tx.join()
 
     print("logger wait success")
 
