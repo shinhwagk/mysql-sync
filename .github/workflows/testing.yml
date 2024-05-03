@@ -53,7 +53,7 @@ jobs:
 
       - name: Running testing
         run: |
-          mysql -uroot -proot_password -hmysql8036_1 -P33061 -e "show master status\G";
+          mysql -uroot -proot_password -hmysql8036_1 -P3306 -e "show master status\G";
           bash -x scripts/testing.sh
         env:
           ARGS_SOURCE_HOST: mysql8036_1
