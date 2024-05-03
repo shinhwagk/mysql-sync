@@ -53,10 +53,10 @@ jobs:
 
       - name: Running testing
         run: |
-          mysql -uroot -proot_password -h127.0.0.1 -P33061 -e "show master status\G";
+          mysql -uroot -proot_password -hmysql8036_1 -P33061 -e "show master status\G";
           bash -x scripts/testing.sh
         env:
-          ARGS_SOURCE_HOST: "127.0.0.1"
+          ARGS_SOURCE_HOST: mysql8036_1
           ARGS_SOURCE_PORT: 33061
           ARGS_SOURCE_USER: root
           ARGS_SOURCE_PASSWORD: root_password
