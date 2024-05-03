@@ -25,9 +25,8 @@ mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET
 mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} -e "SHOW MASTER STATUS\G"
 mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} -e "SHOW MASTER STATUS\G"
 
-
-# echo "build mysqlbinlog-statistics"
-# $HOME/.cargo/bin/cargo build
+echo "build mysqlbinlog-statistics"
+$HOME/.cargo/bin/cargo build
 
 echo "start mysqlbinlog-sync"
 function mysqlbinlog_sync0() {
