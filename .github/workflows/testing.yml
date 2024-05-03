@@ -57,11 +57,11 @@ jobs:
           bash -x scripts/testing.sh
         env:
           ARGS_SOURCE_HOST: mysql8036_1
-          ARGS_SOURCE_PORT: 33061
+          ARGS_SOURCE_PORT: 3306
           ARGS_SOURCE_USER: root
           ARGS_SOURCE_PASSWORD: root_password
-          ARGS_TARGET_HOST: "127.0.0.1"
-          ARGS_TARGET_PORT: 33062
+          ARGS_TARGET_HOST: mysql8036_2
+          ARGS_TARGET_PORT: 3306
           ARGS_TARGET_USER: root
           ARGS_TARGET_PASSWORD: root_password
 
