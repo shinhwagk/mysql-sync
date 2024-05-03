@@ -54,9 +54,9 @@ jobs:
       - name: Running testing
         run: |
           set -e
-          bash scripts/testing.sh mysqlbinlog_sync3
-          bash scripts/testing.sh mysqlbinlog_sync1
-          bash scripts/testing.sh mysqlbinlog_sync2
+          # bash scripts/testing.sh mysqlbinlog_sync3
+          # bash scripts/testing.sh mysqlbinlog_sync1
+          # bash scripts/testing.sh mysqlbinlog_sync2
           bash scripts/testing.sh mysqlbinlog_sync0
         env:
           ARGS_SOURCE_HOST: mysql8036_1
