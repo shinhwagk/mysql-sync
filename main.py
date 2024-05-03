@@ -240,8 +240,8 @@ def main():
 
     p1.stderr.close()
     p2.stderr.close()
-    p3.stderr.close()
-    p3.stdout.close()
+    # p3.stderr.close()
+    # p3.stdout.close()
 
     def handler(sig, frame):
         se.set()
