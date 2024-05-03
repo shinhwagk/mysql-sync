@@ -2,6 +2,8 @@
 
 set -e
 
+mkdir temp
+
 declare ARGS_SOURCE_HOST="${ARGS_SOURCE_HOST:-db1}"
 declare ARGS_SOURCE_PORT="${ARGS_SOURCE_PORT:-3306}"
 declare ARGS_SOURCE_USER="${ARGS_SOURCE_USER:-root}"
@@ -45,7 +47,7 @@ function mysqlbinlog_sync3() {
 
 mysqlbinlog_sync3 & 
 MYSQLBINLOG_SYNC_PID=$!
-echo "mysqlbinlog_sync pid ${MYSQLBINLOG_SYNC_PID}"
+echo "mysqlbinlog_sync3 pid ${MYSQLBINLOG_SYNC_PID}"
 
 echo "start load data to source database"
 mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} -e 'CREATE DATABASE IF NOT EXISTS testdb;'
@@ -58,7 +60,7 @@ for testname in oltp_insert; do
 done
 
 start_ts=`date +%s`
-for i in `seq 1 10000`; do
+for i in `seq 1 600`; do
     SOURCE_GTID=$(mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} -e 'show master status\G' 2>/dev/null| grep Executed_Gtid_Set)
     TARGET_GTID=$(mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} -e 'show master status\G' 2>/dev/null| grep Executed_Gtid_Set)
     if [[ "$SOURCE_GTID" == "$TARGET_GTID" ]]; then
