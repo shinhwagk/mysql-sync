@@ -8,6 +8,15 @@ services:
     volumes:
       - ../..:/workspaces:cached
     command: sleep infinity
+    environment:
+      ARGS_SOURCE_HOST: db1
+      ARGS_SOURCE_PORT: 3306
+      ARGS_SOURCE_USER: root
+      ARGS_SOURCE_PASSWORD: root_password
+      ARGS_TARGET_HOST: db2
+      ARGS_TARGET_PORT: 3306
+      ARGS_TARGET_USER: root
+      ARGS_TARGET_PASSWORD: root_password
 
   db1:
     image: mysql:8.0.36
@@ -42,3 +51,13 @@ services:
       - --max-connections=3000
       - --innodb-flush-log-at-trx-commit=0
       - --sync-binlog=0
+  dtle-consul:
+    image: consul:1.13
+    platform: linux/amd64
+    ports:
+      - 8500:8500
+  dtle:
+    image: actiontech/dtle
+    platform: linux/amd64
+    ports:
+      - 4646:4646

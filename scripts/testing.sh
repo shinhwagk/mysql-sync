@@ -45,8 +45,24 @@ function mysqlbinlog_sync3() {
     mysqlbinlog --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} --read-from-remote-source=BINLOG-DUMP-GTIDS --verify-binlog-checksum --connection-server-id=99999 --idempotent --force-read --print-table-metadata --stop-never mysql-bin.000001 2>/tmp/mysqlbinlog.2.log | mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} >/dev/null 2>/tmp/mysql.2.log
 }
 
+function mysqlbinlog_sync4() {
+   mysqlbinlog --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} --read-from-remote-source=BINLOG-DUMP-GTIDS --verify-binlog-checksum --connection-server-id=99999 --idempotent --force-read --print-table-metadata --stop-never mysql-bin.000001 2>/dev/null | mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} &>/dev/null
+}
+
+# # 设置无缓冲执行命令
+# stdbuf -o0 command
+
+# # 设置行缓冲执行命令
+# stdbuf -oL command
+
+# # 设置1M缓冲区执行命令
+# stdbuf -o1M command
+# stdbuf -o0 echo aabc | stdbuf -o0 grep aa | tail -n 111
+
 if [[ $ARGS_TEST_NUM == 'mysqlbinlog_sync0' ]]; then
     mysqlbinlog_sync0 &
+elif [[ $ARGS_TEST_NUM == 'mysqlbinlog_sync4' ]]; then
+    mysqlbinlog_sync4 &
 elif [[ $ARGS_TEST_NUM == 'mysqlbinlog_sync1' ]]; then
     mysqlbinlog_sync1 &
 elif [[ $ARGS_TEST_NUM == 'mysqlbinlog_sync2' ]]; then
@@ -57,11 +73,11 @@ else
     :
 fi
 MYSQLBINLOG_SYNC_PID=$!
-echo "mysqlbinlog_sync3 pid ${MYSQLBINLOG_SYNC_PID}"
+echo "$ARGS_TEST_NUM pid ${MYSQLBINLOG_SYNC_PID}"
 
 sleep 5
 
-pstree $MYSQLBINLOG_SYNC_PID
+pstree -p $MYSQLBINLOG_SYNC_PID
 
 echo "start load data to source database"
 mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} -e 'CREATE DATABASE IF NOT EXISTS testdb;'
@@ -69,19 +85,27 @@ mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE
 for testname in oltp_insert; do
     for action in cleanup prepare run cleanup; do
         echo "sysbench ${testname}-${action}"
-        sysbench /usr/share/sysbench/${testname}.lua --table-size=100000 --tables=10 --threads=100 --time=10 --mysql-db=testdb --mysql-host=${ARGS_SOURCE_HOST} --mysql-port=${ARGS_SOURCE_PORT} --mysql-user=${ARGS_SOURCE_USER} --mysql-password=${ARGS_SOURCE_PASSWORD} --db-driver=mysql $action
+        sysbench /usr/share/sysbench/${testname}.lua --table-size=100000 --tables=10 --threads=100 --time=10 --mysql-db=testdb --mysql-host=${ARGS_SOURCE_HOST} --mysql-port=${ARGS_SOURCE_PORT} --mysql-user=${ARGS_SOURCE_USER} --mysql-password=${ARGS_SOURCE_PASSWORD} --db-driver=mysql $action >/dev/null
     done
 done
 
 start_ts=`date +%s`
+target_gtid_num=0
 for i in `seq 1 600`; do
     SOURCE_GTID=$(mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} -e 'show master status\G' 2>/dev/null| grep Executed_Gtid_Set)
     TARGET_GTID=$(mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} -e 'show master status\G' 2>/dev/null| grep Executed_Gtid_Set)
-    if [[ "$SOURCE_GTID" == "$TARGET_GTID" ]]; then
-        break
-    fi
+    
     echo "source gtid ${SOURCE_GTID}"
     echo "target gtid ${TARGET_GTID}"
+
+    curr_target_gtid_num="${TARGET_GTID#*:1-}"
+    echo "gtid add $((curr_target_gtid_num-target_gtid_num))/s"
+    target_gtid_num=$curr_target_gtid_num
+
+    if [[ "$SOURCE_GTID" == "$TARGET_GTID" ]]; then
+        break;
+    fi
+
     sleep 1
 done
 

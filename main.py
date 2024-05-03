@@ -149,12 +149,12 @@ def log_writer(log_pipe: IO[bytes], prefix: str) -> NoReturn:
 def binlogReplicationWatcher(con: mysql.connector.MySQLConnection, stop_event: threading.Event):
     try:
         with con.cursor() as cur:
+            cur.execute("DROP DATABASE IF EXISTS mysqlbinlogsync")
             cur.execute("CREATE DATABASE IF NOT EXISTS mysqlbinlogsync")
-            cur.execute("USE mysqlbinlogsync")
-            cur.execute("CREATE TABLE IF NOT EXISTS sync_table (id INT PRIMARY KEY, ts DATETIME)")
+            cur.execute("CREATE TABLE IF NOT EXISTS mysqlbinlogsync.sync_table (id INT PRIMARY KEY, ts DATETIME)")
 
             while not stop_event.is_set():
-                cur.execute("REPLACE INTO sync_table VALUES (1, now())")
+                cur.execute("REPLACE INTO mysqlbinlogsync.sync_table VALUES(1, now())")
                 con.commit()
                 time.sleep(0.2)
     except mysql.connector.Error as e:
