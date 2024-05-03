@@ -53,11 +53,11 @@ jobs:
 
       - name: Running testing
         run: |
-          set -xe
-          bash -x scripts/testing.sh mysqlbinlog_sync3
-          bash -x scripts/testing.sh mysqlbinlog_sync1
-          bash -x scripts/testing.sh mysqlbinlog_sync2
-          bash -x scripts/testing.sh mysqlbinlog_sync0
+          set -e
+          bash scripts/testing.sh mysqlbinlog_sync3
+          bash scripts/testing.sh mysqlbinlog_sync1
+          bash scripts/testing.sh mysqlbinlog_sync2
+          bash scripts/testing.sh mysqlbinlog_sync0
         env:
           ARGS_SOURCE_HOST: mysql8036_1
           ARGS_SOURCE_PORT: 3306
