@@ -99,14 +99,14 @@ for i in `seq 1 600`; do
     echo "target gtid ${TARGET_GTID}"
 
     curr_target_gtid_num="${TARGET_GTID#*:1-}"
-    echo "gtid add $((curr_target_gtid_num-target_gtid_num))/s"
+    echo "gtid add $(( (curr_target_gtid_num - target_gtid_num) / 10 ))/s"
     target_gtid_num=$curr_target_gtid_num
 
     if [[ "$SOURCE_GTID" == "$TARGET_GTID" ]]; then
         break;
     fi
 
-    sleep 1
+    sleep 10
 done
 
 echo "kill sync ${MYSQLBINLOG_SYNC_PID}"

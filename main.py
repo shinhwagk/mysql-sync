@@ -244,7 +244,7 @@ def main():
     # p3.stdout.close()
 
     def handler(sig, frame):
-        se.set()
+        # se.set()
         if p1.poll() is None:
             p1.terminate()
 
