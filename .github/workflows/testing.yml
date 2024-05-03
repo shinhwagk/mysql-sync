@@ -52,7 +52,11 @@ jobs:
         run: bash scripts/initContainer.sh
 
       - name: Running testing
-        run: bash -x scripts/testing.sh
+        run: |
+          bash -x scripts/testing.sh mysqlbinlog_sync0
+          bash -x scripts/testing.sh mysqlbinlog_sync1
+          bash -x scripts/testing.sh mysqlbinlog_sync2
+          bash -x scripts/testing.sh mysqlbinlog_sync3
         env:
           ARGS_SOURCE_HOST: mysql8036_1
           ARGS_SOURCE_PORT: 3306

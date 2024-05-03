@@ -2,7 +2,7 @@
 
 set -e
 
-mkdir temp
+declare ARGS_TEST_NUM=$1
 
 declare ARGS_SOURCE_HOST="${ARGS_SOURCE_HOST:-db1}"
 declare ARGS_SOURCE_PORT="${ARGS_SOURCE_PORT:-3306}"
@@ -34,18 +34,28 @@ function mysqlbinlog_sync0() {
 }
 
 function mysqlbinlog_sync1() {
-    mysqlbinlog --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} --read-from-remote-source=BINLOG-DUMP-GTIDS --verify-binlog-checksum --connection-server-id=99999 --verbose --verbose --idempotent --force-read --print-table-metadata --stop-never mysql-bin.000001 2>temp/mysqlbinlog.2.log | ./target/debug/mysqlbinlog-statistics 2>temp/mysqlbinlog-statistics.2.log | mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} >/dev/null 2>temp/mysql.2.log
+    mysqlbinlog --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} --read-from-remote-source=BINLOG-DUMP-GTIDS --verify-binlog-checksum --connection-server-id=99999 --verbose --verbose --idempotent --force-read --print-table-metadata --stop-never mysql-bin.000001 2>/tmp/mysqlbinlog.2.log | ./target/debug/mysqlbinlog-statistics 2>/tmp/mysqlbinlog-statistics.2.log | mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} >/dev/null 2>/tmp/mysql.2.log
 }
 
 function mysqlbinlog_sync2() {
-    mysqlbinlog --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} --read-from-remote-source=BINLOG-DUMP-GTIDS --verify-binlog-checksum --connection-server-id=99999 --verbose --verbose --idempotent --force-read --print-table-metadata --stop-never mysql-bin.000001 2>temp/mysqlbinlog.2.log | mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} >/dev/null 2>temp/mysql.2.log
+    mysqlbinlog --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} --read-from-remote-source=BINLOG-DUMP-GTIDS --verify-binlog-checksum --connection-server-id=99999 --verbose --verbose --idempotent --force-read --print-table-metadata --stop-never mysql-bin.000001 2>/tmp/mysqlbinlog.2.log | mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} >/dev/null 2>/tmp/mysql.2.log
 }
 
 function mysqlbinlog_sync3() {
-    mysqlbinlog --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} --read-from-remote-source=BINLOG-DUMP-GTIDS --verify-binlog-checksum --connection-server-id=99999 --idempotent --force-read --print-table-metadata --stop-never mysql-bin.000001 2>temp/mysqlbinlog.2.log | mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} >/dev/null 2>temp/mysql.2.log
+    mysqlbinlog --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} --read-from-remote-source=BINLOG-DUMP-GTIDS --verify-binlog-checksum --connection-server-id=99999 --idempotent --force-read --print-table-metadata --stop-never mysql-bin.000001 2>/tmp/mysqlbinlog.2.log | mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} >/dev/null 2>/tmp/mysql.2.log
 }
 
-mysqlbinlog_sync3 & 
+if [[ $ARGS_TEST_NUM == 'mysqlbinlog_sync0' ]]; then
+    mysqlbinlog_sync0 &
+elif [[ $ARGS_TEST_NUM == 'mysqlbinlog_sync1' ]]; then
+    mysqlbinlog_sync1 &
+elif [[ $ARGS_TEST_NUM == 'mysqlbinlog_sync2' ]]; then
+    mysqlbinlog_sync2 &
+elif [[ $ARGS_TEST_NUM == 'mysqlbinlog_sync3' ]]; then
+    mysqlbinlog_sync3 & 
+else
+    :
+fi
 MYSQLBINLOG_SYNC_PID=$!
 echo "mysqlbinlog_sync3 pid ${MYSQLBINLOG_SYNC_PID}"
 
