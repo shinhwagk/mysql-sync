@@ -15,15 +15,37 @@ declare ARGS_TARGET_PASSWORD="${ARGS_TARGET_PASSWORD:-example}"
 mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} -e 'SELECT version();'
 mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} -e 'SELECT version();'
 
+mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} -e 'stop slave; reset slave all;'
+
 mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} -e 'reset master;'
 mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} -e 'reset master;'
 
-echo "build mysqlbinlog-statistics"
-$HOME/.cargo/bin/cargo build
+mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} -e 'SELECT version();'
+
+
+# echo "build mysqlbinlog-statistics"
+# $HOME/.cargo/bin/cargo build
 
 echo "start mysqlbinlog-sync"
-python3.11 -u main.py --source-dsn "${ARGS_SOURCE_USER}/${ARGS_SOURCE_PASSWORD}@${ARGS_SOURCE_HOST}:${ARGS_SOURCE_PORT}" --target-dsn "${ARGS_TARGET_USER}/${ARGS_TARGET_PASSWORD}@${ARGS_TARGET_HOST}:${ARGS_TARGET_PORT}" --mysqlbinlog-stop-never &
+function mysqlbinlog_sync0() {
+    python3.11 -u main.py --source-dsn "${ARGS_SOURCE_USER}/${ARGS_SOURCE_PASSWORD}@${ARGS_SOURCE_HOST}:${ARGS_SOURCE_PORT}" --target-dsn "${ARGS_TARGET_USER}/${ARGS_TARGET_PASSWORD}@${ARGS_TARGET_HOST}:${ARGS_TARGET_PORT}" --mysqlbinlog-stop-never
+}
+
+function mysqlbinlog_sync1() {
+    mysqlbinlog --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} --read-from-remote-source=BINLOG-DUMP-GTIDS --verify-binlog-checksum --connection-server-id=99999 --verbose --verbose --idempotent --force-read --print-table-metadata --stop-never mysql-bin.000001 2>temp/mysqlbinlog.2.log | ./target/debug/mysqlbinlog-statistics 2>temp/mysqlbinlog-statistics.2.log | mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} >/dev/null 2>temp/mysql.2.log
+}
+
+function mysqlbinlog_sync2() {
+    mysqlbinlog --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} --read-from-remote-source=BINLOG-DUMP-GTIDS --verify-binlog-checksum --connection-server-id=99999 --verbose --verbose --idempotent --force-read --print-table-metadata --stop-never mysql-bin.000001 2>temp/mysqlbinlog.2.log | mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} >/dev/null 2>temp/mysql.2.log
+}
+
+function mysqlbinlog_sync3() {
+    mysqlbinlog --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} --read-from-remote-source=BINLOG-DUMP-GTIDS --verify-binlog-checksum --connection-server-id=99999 --idempotent --force-read --print-table-metadata --stop-never mysql-bin.000001 2>temp/mysqlbinlog.2.log | mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} >/dev/null 2>temp/mysql.2.log
+}
+
+mysqlbinlog_sync3 & 
 MYSQLBINLOG_SYNC_PID=$!
+echo "mysqlbinlog_sync pid ${MYSQLBINLOG_SYNC_PID}"
 
 echo "start load data to source database"
 mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} -e 'CREATE DATABASE IF NOT EXISTS testdb;'
@@ -35,32 +57,20 @@ for testname in oltp_insert; do
     done
 done
 
-# ./gh-ost \
-#  --max-load=Threads_running=16 \
-#  --critical-load=Threads_running=32 \
-#  --chunk-size=1000 \
-#  --initially-drop-old-table \
-#  --initially-drop-ghost-table \
-#  --initially-drop-socket-file \
-#  --user="root" \
-#  --password="root_password" \
-#  --host='127.0.0.1' \
-#  --port=33061 \
-#  --database="test" \
-#  --table="tab1" \
-#  --verbose \
-#  --allow-on-master \
-#  --assume-master-host="127.0.0.1:33061" \
-#  --aliyun-rds \
-#  --alter="add column c varchar(100)" \
-#  --assume-rbr \
-#  --execute
-
-# sleep 10
-
-while true; do
-    mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} -e 'show master status\G'
-    mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} -e 'show master status\G'
+start_ts=`date +%s`
+for i in `seq 1 10000`; do
+    SOURCE_GTID=$(mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} -e 'show master status\G' 2>/dev/null| grep Executed_Gtid_Set)
+    TARGET_GTID=$(mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} -e 'show master status\G' 2>/dev/null| grep Executed_Gtid_Set)
+    if [[ "$SOURCE_GTID" == "$TARGET_GTID" ]]; then
+        break
+    fi
+    echo "source gtid ${SOURCE_GTID}"
+    echo "target gtid ${TARGET_GTID}"
     sleep 1
 done
-# kill $MYSQLBINLOG_SYNC_PID
+
+echo "kill sync ${MYSQLBINLOG_SYNC_PID}"
+kill $MYSQLBINLOG_SYNC_PID
+
+end_ts=`date +%s`
+echo "sync $((end_ts-start_ts))s"
