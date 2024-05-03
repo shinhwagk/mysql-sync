@@ -6,9 +6,7 @@ set -e
 dnf install -y git jq diffutils gcc procps-ng iproute iputils telnet dnf-utils epel-release
 
 # install rustup
-if ! command -v cargo &> /dev/null; then 
-  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-fi
+[[ -z $(command -v cargo1) ]] && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
 # install mysql clients
 dnf install -y https://dev.mysql.com/get/mysql80-community-release-el9-5.noarch.rpm
