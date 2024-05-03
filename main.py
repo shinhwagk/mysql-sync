@@ -19,7 +19,7 @@ parser.add_argument("--mysqlbinlog-statistics", type=str, required=False, help="
 parser.add_argument("--mysqlbinlog-zstd-compression-level", type=int, required=False, help="The DSN for the target database")
 parser.add_argument("--mysqlbinlog-connection-server-id", type=int, required=False, default=99999, help="The DSN for the target database")
 parser.add_argument("--mysqlbinlog-exclude-gtids", type=str, required=False, help="The starting GTID for the operations")
-parser.add_argument("--mysqlbinlog-stop-never", type=bool, required=False, default=False, help="The starting GTID for the operations")
+parser.add_argument("--mysqlbinlog-stop-never", action="store_true", help="The starting GTID for the operations")
 
 args = parser.parse_args()
 # def is_redhat_family():

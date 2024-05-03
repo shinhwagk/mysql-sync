@@ -70,7 +70,7 @@ jobs:
           sysbench /usr/share/sysbench/oltp_insert.lua --table-size=100000 --tables=10 --threads=100 --time=60 --mysql-db=testdb --mysql-user=root --mysql-host=127.0.0.1 --mysql-port=33061 --mysql-password=root_password --db-driver=mysql prepare
 
           echo "start mysqlbinlog-sync"
-          python -u main.py --source-dsn root/root_password@127.0.0.1:33061 --target-dsn root/root_password@127.0.0.1:33062
+          python -u main.py --source-dsn root/root_password@127.0.0.1:33061 --target-dsn root/root_password@127.0.0.1:33062 --mysqlbinlog-stop-never &
 
           # sleep 10
 
@@ -139,6 +139,8 @@ jobs:
           mysql -h127.0.0.1 -P33061 -uroot -proot_password -e "select @@hostname, @@port, @@server_uuid, @@server_id\G show master status\G"
 
           mysql -h127.0.0.1 -P33062 -uroot -proot_password -e "select @@hostname, @@port, @@server_uuid, @@server_id\G show master status\G"
+
+          kill -9 $(ps -ef | grep python | grep main.py -w  | grep -v grep | awk '{print $2}')
 
       # - run: |
       #     time mysqlbinlog -h127.0.0.1 -P3306 -uroot -proot_password --read-from-remote-server --to-last-log -v mysql-bin.000001 | bash ./binlogentry_statistics.sh >/dev/null
