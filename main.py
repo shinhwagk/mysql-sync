@@ -151,14 +151,10 @@ def binlogReplicationWatcher(con: mysql.connector.MySQLConnection, stop_event: t
         with con.cursor() as cur:
             cur.execute("CREATE DATABASE IF NOT EXISTS mysqlbinlogsync")
             cur.execute("USE mysqlbinlogsync")
-            cur.execute("CREATE TABLE IF NOT EXISTS sync_table (id INT PRIMARY KEY)")
+            cur.execute("CREATE TABLE IF NOT EXISTS sync_table (id INT PRIMARY KEY, ts DATETIME)")
 
             while not stop_event.is_set():
-                cur.execute("DELETE FROM sync_table")
-                con.commit()
-                time.sleep(0.2)
-
-                cur.execute("INSERT INTO sync_table VALUES (1)")
+                cur.execute("REPLACE INTO sync_table VALUES (1, now())")
                 con.commit()
                 time.sleep(0.2)
     except mysql.connector.Error as e:
@@ -215,17 +211,13 @@ def main():
 
     mysqlbinlog_connection_server_id = args.mysqlbinlog_connection_server_id
 
-    print("gtid_set", gtid_set)
-    gtida = None
-    if len(gtid_set) >= 1:
-        for gtid in gtid_set.split(","):
-            if gtid.startswith(server_uuid):
-                gtida = gtid
+    exclude_gtids= gtid_set if len(gtid_set) >= 1 else None
+
     mysqlbinlog_cmd = make_cmd_cmd1(
         **s_dsn,
         server_id=mysqlbinlog_connection_server_id,
         start_binlogfile=binlogfile,
-        exclude_gtids=gtida,
+        exclude_gtids=exclude_gtids,
         compression_level=None,
         stop_never=args.mysqlbinlog_stop_never,
     )

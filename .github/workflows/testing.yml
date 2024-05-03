@@ -15,7 +15,7 @@ jobs:
         image: shinhwagk/mysql:8.0.36
         env:
           MYSQL_ROOT_PASSWORD: root_password
-          MYSQL_MYSQLD_ARGS: "--server-id=1000 --log-bin=mysql-bin --binlog-format=ROW --gtid-mode=on --enforce-gtid-consistency=on --binlog-rows-query-log-events=on --binlog-row-image=FULL --max_connections=5000"
+          MYSQL_MYSQLD_ARGS: "--server-id=1000 --log-bin=mysql-bin --binlog-format=ROW --gtid-mode=on --enforce-gtid-consistency=on --binlog-rows-query-log-events=on --binlog-row-image=FULL --max-connections=5000 --innodb-flush-log-at-trx-commit=0 --sync-binlog=0"
         ports:
           - 33061:3306
         options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
@@ -23,7 +23,7 @@ jobs:
         image: shinhwagk/mysql:8.0.36
         env:
           MYSQL_ROOT_PASSWORD: root_password
-          MYSQL_MYSQLD_ARGS: "--server-id=1001 --log-bin=mysql-bin --binlog-format=ROW --gtid-mode=on --enforce-gtid-consistency=on --binlog-rows-query-log-events=on --binlog-row-image=FULL --max_connections=5000"
+          MYSQL_MYSQLD_ARGS: "--server-id=1001 --log-bin=mysql-bin --binlog-format=ROW --gtid-mode=on --enforce-gtid-consistency=on --binlog-rows-query-log-events=on --binlog-row-image=FULL --max-connections=5000 --innodb-flush-log-at-trx-commit=0 --sync-binlog=0"
         ports:
           - 33062:3306
         options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
@@ -48,23 +48,26 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+      - name: Init container
+        run: bash scripts/initContainer.sh
 
-      - run: |
-          mysql --version
-          mysqlbinlog --version
-          mysql -h127.0.0.1 -P33061 -uroot -proot_password -e 'SELECT version()'
+      - name: Running testing
+        run: bash scripts/initContainer.sh
+        env:
+          ARGS_SOURCE_HOST: "127.0.0.1"
+          ARGS_SOURCE_PORT: 33061
+          ARGS_SOURCE_USER: root
+          ARGS_SOURCE_PASSWORD: root_password
+          ARGS_TARGET_HOST: "127.0.0.1"
+          ARGS_TARGET_PORT: 33062
+          ARGS_TARGET_USER: root
+          ARGS_TARGET_PASSWORD: root_password
 
       - name: Testing mysqlbinlog-statistics.
         run: |
           set -e
 
           pip install -r requirements.txt
-
-          curl -s https://packagecloud.io/install/repositories/akopytov/sysbench/script.deb.sh | sudo bash
-          sudo apt -y install sysbench
 
           cargo build
 

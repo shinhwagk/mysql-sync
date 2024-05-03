@@ -3,6 +3,7 @@
   "editor.insertSpaces": true,
   "editor.wordWrap": "on",
   "python.defaultInterpreterPath": "/usr/bin/python3.11",
+  "terminal.integrated.defaultProfile.linux": "zsh",
   "[python]": {
     "editor.defaultFormatter": "ms-python.black-formatter",
     "editor.formatOnSave": true,
