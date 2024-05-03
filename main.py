@@ -117,7 +117,7 @@ def make_cmd_cmd3(host: str, port: str, user: str, password: str) -> list[str]:
     ]
 
 
-def log_writer(log_pipe: IO[bytes], prefix: str) -> None:
+def log_writer(log_pipe: IO[bytes], prefix: str) -> NoReturn:
     current_day = None
     log_file: Optional[IO[str]] = None
     cnt = 1
@@ -276,6 +276,7 @@ def main():
 
     for t in threads:
         t.join()
+
     if args.mysqlbinlog_stop_never:
         se.set()
         tx.join()
