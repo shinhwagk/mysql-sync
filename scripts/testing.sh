@@ -28,7 +28,7 @@ mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET
 echo "build mysqlbinlog-statistics"
 $HOME/.cargo/bin/cargo build
 
-echo "start mysqlbinlog-sync"
+echo "start $ARGS_TEST_NUM"
 function mysqlbinlog_sync0() {
     python3.11 -u main.py --source-dsn "${ARGS_SOURCE_USER}/${ARGS_SOURCE_PASSWORD}@${ARGS_SOURCE_HOST}:${ARGS_SOURCE_PORT}" --target-dsn "${ARGS_TARGET_USER}/${ARGS_TARGET_PASSWORD}@${ARGS_TARGET_HOST}:${ARGS_TARGET_PORT}" --mysqlbinlog-stop-never
 }
