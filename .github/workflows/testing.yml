@@ -57,14 +57,12 @@ jobs:
           dd if=/dev/zero of=test.img bs=8k count=102400 oflag=direct
 
           # bash scripts/testing_ms.sh
-          function ioaaa() {
-            iostat -mx 2 4
-          }
 
-          bash scripts/testing.sh
+          bash scripts/testing.sh &
           for i in `seq 1 10`; do 
-            ioaaa
+            iostat -mx 2 4
           done
+          wait;
 
         env:
           ARGS_SOURCE_HOST: mysql8036_1

@@ -3,7 +3,8 @@
 set -ex
 
 # install packages
-dnf install -y git jq diffutils gcc procps-ng iproute iputils telnet dnf-utils epel-release sysstat
+dnf install -y git epel-release sysstat
+# dnf install -y gcc diffutils jq iproute iputils telnet dnf-utils jq procps-ng
 
 # install rustup
 # [[ -z $(command -v cargo) ]] && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
