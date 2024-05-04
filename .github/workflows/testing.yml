@@ -54,6 +54,8 @@ jobs:
       - name: Running testing
         run: |
           set -e
+          dd if=/dev/zero of=test.img bs=8k count=102400 oflag=direct
+
           # bash scripts/testing_ms.sh
           function ioaaa() {
             iostat -mx 2 4
