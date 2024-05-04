@@ -41,11 +41,24 @@ for dbid in `seq 1 3`; do
     sysbench_testing "testdb_${dbid}" &
 done
 
+start_ts=`date +%s`
+target_gtid_num=0
 for i in `seq 1 600`; do
-    mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} -e 'show master status\G'
-    mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} -e 'show master status\G'
-    sleep 1
+    SOURCE_GTID=$(mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} -e 'show master status\G' 2>/dev/null | grep Executed_Gtid_Set)
+    TARGET_GTID=$(mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} -e 'show master status\G' 2>/dev/null | grep Executed_Gtid_Set)
+    
+    echo "source gtid ${SOURCE_GTID}"
+    echo "target gtid ${TARGET_GTID}"
+
+    curr_target_gtid_num="${TARGET_GTID#*:1-}"
+    echo "gtid add $(( (curr_target_gtid_num - target_gtid_num) / 10 ))/s"
+    target_gtid_num=$curr_target_gtid_num
+
+    if [[ "$SOURCE_GTID" == "$TARGET_GTID" ]]; then
+        break;
+    fi
+
+    sleep 10
 done
 
 wait
-# kill $MYSQLBINLOG_SYNC_PID
