@@ -47,7 +47,7 @@ function mysqlbinlog_sync3() {
 }
 
 function mysqlbinlog_sync4() {
-   mysqlbinlog --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} --read-from-remote-source=BINLOG-DUMP-GTIDS --verify-binlog-checksum --connection-server-id=99999 --idempotent --force-read --print-table-metadata --stop-never mysql-bin.000001 2>/dev/null | mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} --verbose --verbose --verbose 2>/dev/null 1>/dev/shm/mysql-bin.sql
+   mysqlbinlog --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} --read-from-remote-source=BINLOG-DUMP-GTIDS --verify-binlog-checksum --connection-server-id=99999 --idempotent --force-read --print-table-metadata --stop-never mysql-bin.000001 2>/dev/null | mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} --verbose --verbose --verbose 2>/dev/null 1>/dev/null
 }
 
 # # 设置无缓冲执行命令
@@ -98,7 +98,7 @@ for dbid in `seq 1 3`; do
     sysbench_testing "testdb_${dbid}" &
 done
 
-wait
+# wait
 
 start_ts=`date +%s`
 target_gtid_num=0
@@ -119,6 +119,8 @@ for i in `seq 1 600`; do
 
     sleep 10
 done
+
+wait
 
 echo "kill sync ${MYSQLBINLOG_SYNC_PID}"
 kill $MYSQLBINLOG_SYNC_PID
