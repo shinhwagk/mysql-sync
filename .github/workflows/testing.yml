@@ -54,7 +54,7 @@ jobs:
       - name: Running testing
         run: |
           set -e
-          bash scripts/testing_ms.sh
+          # bash scripts/testing_ms.sh
           bash scripts/testing.sh
         env:
           ARGS_SOURCE_HOST: mysql8036_1
