@@ -105,7 +105,7 @@ function main_sync() {
   echo "mysqlbinlog $(parse_connection_string $source_dsn) $options $(query_first_master_log_file)"
   echo "mysql $(parse_connection_string $target_dsn) --verbose --verbose --verbose 1>/dev/null"
   
-  mysqlbinlog $(parse_connection_string $source_dsn) $options $(query_first_master_log_file) | grep -E -v '^#' | mysql $(parse_connection_string $target_dsn) --verbose --verbose --verbose 1>/dev/null
+  mysqlbinlog $(parse_connection_string $source_dsn) $options $(query_first_master_log_file) | mysql $(parse_connection_string $target_dsn) --verbose --verbose --verbose 1>/dev/null
 }
 
 main_sync
