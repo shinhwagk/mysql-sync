@@ -69,7 +69,7 @@ function parse_connection_string() {
 
 function query_executed_gtid_set() {
   local connection_string="$(parse_connection_string $target_dsn)";
-  mysql $connection_string -e "show master status\G" 2>/dev/null | grep Executed_Gtid_Set | awk '{print $2}'
+  mysql $connection_string -N -s -e "show master status\G" 2>/dev/null | grep Executed_Gtid_Set | awk '{print $2}'
 }
 
 function query_first_master_log_file() {
@@ -87,8 +87,9 @@ function main_sync() {
       options+=" --exclude-gtids=\"${mysqlbinlog_exclude_gtids}\""
   else
     local target_executed_gtid_set=$(query_executed_gtid_set)
-    if [ -n $target_executed_gtid_set ]; then
-        options+=" --exclude-gtids=${target_executed_gtid_set}"
+
+    if [ ! -z $target_executed_gtid_set ]; then
+        options+=" --exclude-gtids=\"${target_executed_gtid_set}\""
     fi
   fi
 
