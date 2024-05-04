@@ -23,7 +23,7 @@ jobs:
         image: shinhwagk/mysql:8.0.36
         env:
           MYSQL_ROOT_PASSWORD: root_password
-          MYSQL_MYSQLD_ARGS: "--server-id=1001 --log-bin=mysql-bin --binlog-format=ROW --gtid-mode=on --enforce-gtid-consistency=on --binlog-rows-query-log-events=on --binlog-row-image=FULL --max-connections=5000 --innodb-flush-log-at-trx-commit=1 --sync-binlog=1 --binlog-row-metadata=FULL"
+          MYSQL_MYSQLD_ARGS: "--server-id=1001 --log-bin=mysql-bin --binlog-format=ROW --gtid-mode=on --enforce-gtid-consistency=on --binlog-rows-query-log-events=on --binlog-row-image=FULL --max-connections=5000 --innodb-flush-log-at-trx-commit=1 --sync-binlog=1 --binlog-row-metadata=FULL --slave-parallel-workers=1"
         # ports:
         #   - 33062:3306
         options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
