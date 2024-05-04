@@ -62,3 +62,6 @@ for i in `seq 1 600`; do
 done
 
 wait
+
+end_ts=`date +%s`
+echo "sync $((end_ts-start_ts))s"
