@@ -12,19 +12,16 @@ declare ARGS_TARGET_PORT="${ARGS_SOURCE_PORT:-3306}"
 declare ARGS_TARGET_USER="${ARGS_SOURCE_USER:-root}"
 declare ARGS_TARGET_PASSWORD="${ARGS_TARGET_PASSWORD:-example}"
 
-mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} -e 'stop slave;'
-
-
 mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} -e 'SELECT version();'
 mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} -e 'SELECT version();'
 
-mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} -e 'reset master;'
-mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} -e 'reset master;'
+mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} -e 'stop slave; reset slave all;reset master;'
+mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} -e 'stop slave; reset slave all;reset master;'
 
 mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} -e "CHANGE REPLICATION SOURCE TO SOURCE_HOST=\"${ARGS_SOURCE_HOST}\",SOURCE_PORT=${ARGS_SOURCE_PORT},SOURCE_USER=\"${ARGS_SOURCE_USER}\",SOURCE_PASSWORD=\"${ARGS_SOURCE_PASSWORD}\",SOURCE_AUTO_POSITION=1;"
 # mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} -e "START SLAVE;"
 
-mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} -e "SHOW SLAVE STATUS;"
+mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} -e "SHOW SLAVE STATUS\G"
 
 
 echo "start load data to source database"
@@ -68,9 +65,11 @@ done
 
 # sleep 10
 
-for i in `seq 1 10000`;
+for i in `seq 1 600`;
     mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} -e 'show master status\G'
     mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} -e 'show master status\G'
     sleep 1
 done
+
+wait
 # kill $MYSQLBINLOG_SYNC_PID
