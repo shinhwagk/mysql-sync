@@ -25,8 +25,7 @@ mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET
 mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} -e "SHOW MASTER STATUS\G"
 mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} -e "SHOW MASTER STATUS\G"
 
-echo "build mysqlbinlog-statistics"
-$HOME/.cargo/bin/cargo build
+
 
 echo "start $ARGS_TEST_NUM"
 function mysqlbinlog_sync0() {
@@ -34,6 +33,8 @@ function mysqlbinlog_sync0() {
 }
 
 function mysqlbinlog_sync1() {
+    echo "build mysqlbinlog-statistics"
+    $HOME/.cargo/bin/cargo build
     mysqlbinlog --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} --read-from-remote-source=BINLOG-DUMP-GTIDS --verify-binlog-checksum --connection-server-id=99999 --verbose --verbose --idempotent --force-read --print-table-metadata --stop-never mysql-bin.000001 2>/tmp/mysqlbinlog.2.log | ./target/debug/mysqlbinlog-statistics 2>/tmp/mysqlbinlog-statistics.2.log | mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} >/dev/null 2>/tmp/mysql.2.log
 }
 
@@ -46,7 +47,7 @@ function mysqlbinlog_sync3() {
 }
 
 function mysqlbinlog_sync4() {
-   mysqlbinlog --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} --read-from-remote-source=BINLOG-DUMP-GTIDS --verify-binlog-checksum --connection-server-id=99999 --idempotent --force-read --print-table-metadata --stop-never mysql-bin.000001 2>/dev/null | mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} &>/dev/null
+   mysqlbinlog --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} --read-from-remote-source=BINLOG-DUMP-GTIDS --verify-binlog-checksum --connection-server-id=99999 --idempotent --force-read --print-table-metadata --stop-never mysql-bin.000001 2>/dev/null | mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} --verbose --verbose --verbose 2>/dev/null 1>/dev/shm/mysql-bin.sql
 }
 
 # # 设置无缓冲执行命令
@@ -80,14 +81,24 @@ sleep 5
 pstree -p $MYSQLBINLOG_SYNC_PID
 
 echo "start load data to source database"
-mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} -e 'CREATE DATABASE IF NOT EXISTS testdb;'
-# for testname in oltp_insert oltp_delete oltp_update_index oltp_update_non_index oltp_write_only bulk_insert; do
-for testname in oltp_insert; do
-    for action in cleanup prepare run cleanup; do
-        echo "sysbench ${testname}-${action}"
-        sysbench /usr/share/sysbench/${testname}.lua --table-size=100000 --tables=10 --threads=100 --time=10 --mysql-db=testdb --mysql-host=${ARGS_SOURCE_HOST} --mysql-port=${ARGS_SOURCE_PORT} --mysql-user=${ARGS_SOURCE_USER} --mysql-password=${ARGS_SOURCE_PASSWORD} --db-driver=mysql $action >/dev/null
+function sysbench_testing() {
+    local testdb=$1
+    mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} -e "CREATE DATABASE IF NOT EXISTS ${testdb};"
+    # for testname in oltp_insert oltp_delete oltp_update_index oltp_update_non_index oltp_write_only bulk_insert; do
+    for testname in oltp_insert oltp_delete oltp_update_index; do
+        for action in cleanup prepare run cleanup; do
+            echo "sysbench ${testdb}-${testname}-${action} start."
+            sysbench /usr/share/sysbench/${testname}.lua --table-size=10000 --tables=10 --threads=100 --time=10 --mysql-db=${testdb} --mysql-host=${ARGS_SOURCE_HOST} --mysql-port=${ARGS_SOURCE_PORT} --mysql-user=${ARGS_SOURCE_USER} --mysql-password=${ARGS_SOURCE_PASSWORD} --db-driver=mysql $action >/dev/null
+            echo "sysbench ${testdb}-${testname}-${action} done."
+        done
     done
+}
+
+for dbid in `seq 1 3`; do
+    sysbench_testing "testdb_${dbid}" &
 done
+
+wait
 
 start_ts=`date +%s`
 target_gtid_num=0

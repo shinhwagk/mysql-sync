@@ -34,6 +34,8 @@ services:
       - --max-connections=3000
       - --innodb-flush-log-at-trx-commit=0
       - --sync-binlog=0
+      - --transaction-write-set-extraction=XXHASH64
+      - --binlog-transaction-dependency-tracking=WRITESET_SESSION
 
   db2:
     image: mysql:8.0.36
