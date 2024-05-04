@@ -58,6 +58,7 @@ jobs:
           bash scripts/testing.sh mysqlbinlog_sync3
           bash scripts/testing.sh mysqlbinlog_sync1
           bash scripts/testing.sh mysqlbinlog_sync2
+          bash scripts/testing_ms.sh
         env:
           ARGS_SOURCE_HOST: mysql8036_1
           ARGS_SOURCE_PORT: 3306

@@ -15,13 +15,12 @@ declare ARGS_TARGET_PASSWORD="${ARGS_TARGET_PASSWORD:-example}"
 mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} -e 'SELECT version();'
 mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} -e 'SELECT version();'
 
-mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} -e 'stop slave; reset slave all;reset master;'
-mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} -e 'stop slave; reset slave all;reset master;'
+mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} -e 'stop slave; reset slave all; reset master;'
+mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} -e 'stop slave; reset slave all; reset master;'
 
 mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} -e "CHANGE REPLICATION SOURCE TO SOURCE_HOST=\"${ARGS_SOURCE_HOST}\",SOURCE_PORT=${ARGS_SOURCE_PORT},SOURCE_USER=\"${ARGS_SOURCE_USER}\",SOURCE_PASSWORD=\"${ARGS_SOURCE_PASSWORD}\",SOURCE_AUTO_POSITION=1;"
-# mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} -e "START SLAVE;"
+mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} -e "START SLAVE; SHOW SLAVE STATUS\G"
 
-mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} -e "SHOW SLAVE STATUS\G"
 
 
 echo "start load data to source database"
@@ -32,7 +31,7 @@ function sysbench_testing() {
     for testname in oltp_insert oltp_delete oltp_update_index; do
         for action in cleanup prepare run cleanup; do
             echo "sysbench ${testdb}-${testname}-${action} start."
-            sysbench /usr/share/sysbench/${testname}.lua --table-size=10000 --tables=10 --threads=100 --time=10 --mysql-db=${testdb} --mysql-host=${ARGS_SOURCE_HOST} --mysql-port=${ARGS_SOURCE_PORT} --mysql-user=${ARGS_SOURCE_USER} --mysql-password=${ARGS_SOURCE_PASSWORD} --db-driver=mysql $action >/dev/null
+            sysbench /usr/share/sysbench/${testname}.lua --table-size=100000 --tables=10 --threads=100 --time=10 --mysql-db=${testdb} --mysql-host=${ARGS_SOURCE_HOST} --mysql-port=${ARGS_SOURCE_PORT} --mysql-user=${ARGS_SOURCE_USER} --mysql-password=${ARGS_SOURCE_PASSWORD} --db-driver=mysql $action >/dev/null
             echo "sysbench ${testdb}-${testname}-${action} done."
         done
     done
@@ -42,30 +41,7 @@ for dbid in `seq 1 3`; do
     sysbench_testing "testdb_${dbid}" &
 done
 
-# ./gh-ost \
-#  --max-load=Threads_running=16 \
-#  --critical-load=Threads_running=32 \
-#  --chunk-size=1000 \
-#  --initially-drop-old-table \
-#  --initially-drop-ghost-table \
-#  --initially-drop-socket-file \
-#  --user="root" \
-#  --password="root_password" \
-#  --host='127.0.0.1' \
-#  --port=33061 \
-#  --database="test" \
-#  --table="tab1" \
-#  --verbose \
-#  --allow-on-master \
-#  --assume-master-host="127.0.0.1:33061" \
-#  --aliyun-rds \
-#  --alter="add column c varchar(100)" \
-#  --assume-rbr \
-#  --execute
-
-# sleep 10
-
-for i in `seq 1 600`;
+for i in `seq 1 600`; do
     mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} -e 'show master status\G'
     mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} -e 'show master status\G'
     sleep 1
