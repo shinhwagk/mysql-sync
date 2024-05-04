@@ -113,14 +113,14 @@ for i in `seq 1 600`; do
     echo "gtid add $(( (curr_target_gtid_num - target_gtid_num) / 10 ))/s"
     target_gtid_num=$curr_target_gtid_num
 
+    echo "sysbench process number: `ps -ef | grep sysbench | grep -v grep | wc -l`"
+
     if [[ "$SOURCE_GTID" == "$TARGET_GTID" && `ps -ef | grep sysbench | grep -v grep | wc -l` == 0 ]]; then
         break;
     fi
 
     sleep 10
 done
-
-wait
 
 echo "kill sync ${MYSQLBINLOG_SYNC_PID}"
 kill $MYSQLBINLOG_SYNC_PID
