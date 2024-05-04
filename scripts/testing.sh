@@ -115,6 +115,8 @@ for i in `seq 1 600`; do
 
     echo "sysbench process number: `ps -ef | grep sysbench | grep -v grep | wc -l`"
 
+    mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} -e 'show processlist;'
+
     if [[ "$SOURCE_GTID" == "$TARGET_GTID" && `ps -ef | grep sysbench | grep -v grep | wc -l` == 0 ]]; then
         break;
     fi
