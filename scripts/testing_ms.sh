@@ -21,8 +21,6 @@ mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET
 mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} -e "CHANGE REPLICATION SOURCE TO SOURCE_HOST=\"${ARGS_SOURCE_HOST}\",SOURCE_PORT=${ARGS_SOURCE_PORT},SOURCE_USER=\"${ARGS_SOURCE_USER}\",SOURCE_PASSWORD=\"${ARGS_SOURCE_PASSWORD}\",SOURCE_AUTO_POSITION=1;"
 mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} -e "START SLAVE; SHOW SLAVE STATUS\G"
 
-
-
 echo "start load data to source database"
 function sysbench_testing() {
     local testdb=$1
@@ -40,6 +38,8 @@ function sysbench_testing() {
 for dbid in `seq 1 3`; do
     sysbench_testing "testdb_${dbid}" &
 done
+
+sleep 5
 
 start_ts=`date +%s`
 target_gtid_num=0
