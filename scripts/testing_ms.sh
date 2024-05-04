@@ -51,7 +51,7 @@ for i in `seq 1 600`; do
     echo "target gtid ${TARGET_GTID}"
 
     curr_target_gtid_num="${TARGET_GTID#*:1-}"
-    echo "gtid add $(( (curr_target_gtid_num - target_gtid_num) / 10 ))/s"
+    echo "gtid sync $(( (curr_target_gtid_num - target_gtid_num) / 10 ))/s"
     target_gtid_num=$curr_target_gtid_num
 
     echo "sysbench process number: `ps -ef | grep sysbench | grep -v grep | wc -l`"
@@ -65,4 +65,4 @@ for i in `seq 1 600`; do
 done
 
 end_ts=`date +%s`
-echo "sync $((end_ts-start_ts))s"
+echo "sync success $((end_ts-start_ts))s"

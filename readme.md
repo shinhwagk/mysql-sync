@@ -81,3 +81,4 @@ generate_data() {
 - https://dev.mysql.com/doc/refman/8.0/en/mysqlbinlog-hexdump.html
 - https://dev.mysql.com/doc/refman/8.0/en/mysqlbinlog.html
 - https://www.baeldung.com/linux/pipe-buffer-capacity
+- https://www.mydbops.com/blog/fastest-parallel-replication-method-in-mysql-8/
