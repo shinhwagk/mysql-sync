@@ -55,6 +55,12 @@ jobs:
         run: |
           set -e
           # bash scripts/testing_ms.sh
+          function ioaaa() {
+            iostat -mx 2 4
+          }
+          for i in `seq 1 100`; do
+            ioaaa
+          done
           bash scripts/testing.sh
         env:
           ARGS_SOURCE_HOST: mysql8036_1
