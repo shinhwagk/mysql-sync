@@ -80,7 +80,7 @@ MYSQLBINLOG_SYNC_PID=$!
 
 sleep 5
 
-pstree -p $MYSQLBINLOG_SYNC_PID
+# pstree -p $MYSQLBINLOG_SYNC_PID
 
 echo "start load data to source database"
 function sysbench_testing() {
