@@ -3,7 +3,7 @@
 set -ex
 
 # install packages
-dnf install -y git epel-release sysstat
+dnf install -y git epel-release sysstat procps-ng
 # dnf install -y gcc diffutils jq iproute iputils telnet dnf-utils jq procps-ng
 
 # install rustup
