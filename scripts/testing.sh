@@ -26,6 +26,7 @@ mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE
 mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} -e "SHOW MASTER STATUS\G"
 
 
+echo "bash main.sh --source-dsn ${ARGS_SOURCE_USER}/${ARGS_SOURCE_PASSWORD}@${ARGS_SOURCE_HOST}:${ARGS_SOURCE_PORT} --target-dsn ${ARGS_TARGET_USER}/${ARGS_TARGET_PASSWORD}@${ARGS_TARGET_HOST}:${ARGS_TARGET_PORT} --mysqlbinlog-connection-server-id "8889" --mysqlbinlog-stop-never"
 bash main.sh --source-dsn ${ARGS_SOURCE_USER}/${ARGS_SOURCE_PASSWORD}@${ARGS_SOURCE_HOST}:${ARGS_SOURCE_PORT} --target-dsn ${ARGS_TARGET_USER}/${ARGS_TARGET_PASSWORD}@${ARGS_TARGET_HOST}:${ARGS_TARGET_PORT} --mysqlbinlog-connection-server-id "8889" --mysqlbinlog-stop-never &
 MYSQLBINLOG_SYNC_PID=$!
 
@@ -90,7 +91,7 @@ function sysbench_testing() {
     for testname in oltp_insert; do
         for action in cleanup prepare run cleanup; do
             echo "sysbench ${testdb}-${testname}-${action} start."
-            sysbench /usr/share/sysbench/${testname}.lua --table-size=1000 --tables=10 --threads=100 --time=10 --mysql-db=${testdb} --mysql-host=${ARGS_SOURCE_HOST} --mysql-port=${ARGS_SOURCE_PORT} --mysql-user=${ARGS_SOURCE_USER} --mysql-password=${ARGS_SOURCE_PASSWORD} --db-driver=mysql $action >/dev/null
+            sysbench /usr/share/sysbench/${testname}.lua --table-size=10000 --tables=10 --threads=100 --time=10 --mysql-db=${testdb} --mysql-host=${ARGS_SOURCE_HOST} --mysql-port=${ARGS_SOURCE_PORT} --mysql-user=${ARGS_SOURCE_USER} --mysql-password=${ARGS_SOURCE_PASSWORD} --db-driver=mysql $action >/dev/null
             echo "sysbench ${testdb}-${testname}-${action} done."
         done
     done

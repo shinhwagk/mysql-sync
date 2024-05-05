@@ -54,6 +54,15 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
+cleanup() {
+    echo "Received termination signal. Cleaning up..."
+    for pid in `pgrep -P $$`; do
+        [[ "`ps -o cmd= -p $pid | awk '{print $1}'`" == "mysqlbinlog" ]] && kill $pid
+    done
+}
+
+trap cleanup SIGINT SIGTERM
+
 function parse_connection_string() {
     local dsn=$1
     local user="${dsn%%/*}"
@@ -68,7 +77,8 @@ function parse_connection_string() {
 
 function query_executed_gtid_set() {
   local connection_string="$(parse_connection_string $target_dsn)";
-  mysql $connection_string -N -s -e "show master status\G" 2>/dev/null | grep Executed_Gtid_Set | awk '{print $2}'
+#   mysql $connection_string -N -s -e "show master status\G" 2>/dev/null | grep Executed_Gtid_Set | awk '{print $2}'
+  mysql $connection_string -N -s -e "show master status\G" 2>/dev/null | tail -n 1
 }   
 
 function query_first_master_log_file() {
@@ -76,16 +86,17 @@ function query_first_master_log_file() {
   mysql $connection_string -N -s -e 'show master logs' 2>/dev/null | awk '{print $1}'
 }
 
-function capture_timestamp_numbers() {
+function capture_timestamp() {
     local output_file="temp/xxxx"
     local regex1='^SET TIMESTAMP=([0-9]+)'
     local regex2='^#2'
     
     while IFS= read -r line; do
         if [[ "$line" =~ $regex1 ]]; then
-            # echo "${BASH_REMATCH[1]}" > "$output_file"
+            echo "${BASH_REMATCH[1]}" > "$output_file"
             :
         elif [[ "$line" =~ $regex2 ]]; then
+            echo $line
             date -d "${line:1:16}" +%s > "$output_file"
         fi
     done
@@ -102,8 +113,10 @@ function main_sync() {
   else
     local target_executed_gtid_set=$(query_executed_gtid_set)
 
+    echo $target_executed_gtid_set
+
     if [[ ! -z $target_executed_gtid_set ]]; then
-        options+=" --exclude-gtids=\"${target_executed_gtid_set}\""
+        options+=" --exclude-gtids=${target_executed_gtid_set}"
     fi
   fi
 
@@ -115,12 +128,10 @@ function main_sync() {
 
   options+=" ${start_binlogfile}"
 
-  echo "target $target_executed_gtid_set"
-  echo "command: "
   echo "mysqlbinlog $(parse_connection_string $source_dsn) $options $(query_first_master_log_file)"
-  echo "mysql $(parse_connection_string $target_dsn) --verbose --verbose --verbose 1>/dev/null"
+  echo "mysql $(parse_connection_string $target_dsn) --verbose --verbose --verbose"
   
-  mysqlbinlog $(parse_connection_string $source_dsn) $options $(query_first_master_log_file) | mysql $(parse_connection_string $target_dsn) --verbose --verbose --verbose | capture_timestamp_numbers
+  mysqlbinlog $(parse_connection_string $source_dsn) $options $(query_first_master_log_file) | mysql $(parse_connection_string $target_dsn) --verbose --verbose --verbose | capture_timestamp
 }
 
 main_sync
