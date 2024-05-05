@@ -91,7 +91,7 @@ function sysbench_testing() {
     for testname in oltp_insert; do
         for action in cleanup prepare run cleanup; do
             echo "sysbench ${testdb}-${testname}-${action} start."
-            sysbench /usr/share/sysbench/${testname}.lua --table-size=10000 --tables=10 --threads=100 --time=10 --mysql-db=${testdb} --mysql-host=${ARGS_SOURCE_HOST} --mysql-port=${ARGS_SOURCE_PORT} --mysql-user=${ARGS_SOURCE_USER} --mysql-password=${ARGS_SOURCE_PASSWORD} --db-driver=mysql $action >/dev/null
+            sysbench /usr/share/sysbench/${testname}.lua --table-size=1000 --tables=10 --threads=100 --time=10 --mysql-db=${testdb} --mysql-host=${ARGS_SOURCE_HOST} --mysql-port=${ARGS_SOURCE_PORT} --mysql-user=${ARGS_SOURCE_USER} --mysql-password=${ARGS_SOURCE_PASSWORD} --db-driver=mysql $action >/dev/null
             echo "sysbench ${testdb}-${testname}-${action} done."
         done
     done

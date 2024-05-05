@@ -75,6 +75,17 @@ function parse_connection_string() {
     echo "$output"
 }
 
+function generate_delay_data() {
+  local connection_string="$(parse_connection_string $source_dsn)";
+  mysql $connection_string -N -s -e "CREATE DATABASE IF NOT EXISTS mysqlbinlogsyncl;"
+  mysql $connection_string -N -s -e "CREATE TABLE IF NOT EXISTS mysqlbinlogsync.sync_table (id INT PRIMARY KEY, ts DATETIME);"
+  
+  while true; do
+    mysql $connection_string -N -s -e "REPLACE INTO mysqlbinlogsync.sync_table VALUES(1, now());" &>/dev/null
+    sleep 0.5
+  done
+}
+
 function query_executed_gtid_set() {
   local connection_string="$(parse_connection_string $target_dsn)";
 #   mysql $connection_string -N -s -e "show master status\G" 2>/dev/null | grep Executed_Gtid_Set | awk '{print $2}'
@@ -130,7 +141,7 @@ function main_sync() {
 
   echo "mysqlbinlog $(parse_connection_string $source_dsn) $options $(query_first_master_log_file)"
   echo "mysql $(parse_connection_string $target_dsn) --verbose --verbose --verbose"
-  
+
   mysqlbinlog $(parse_connection_string $source_dsn) $options $(query_first_master_log_file) | mysql $(parse_connection_string $target_dsn) --verbose --verbose --verbose | capture_timestamp
 }
 
