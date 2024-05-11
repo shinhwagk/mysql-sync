@@ -9,6 +9,34 @@ struct BinlogStatistics {
     transaction: u32,
 }
 
+struct BinlogDml {
+    gtid:String,
+    last_committed:u32
+    sequence_number:u32
+    log_file:String,
+    log_pos:u32,
+    row_events : Vec<i32>
+}
+
+struct UpdateRowsEvent, WriteRowsEvent, DeleteRowsEvent, TableMapEvent {
+
+}
+
+struct TableColumnMap{
+id:u8,
+name:String,
+data_type:String,
+not_null:bool
+primary_key:bool
+}
+
+struct TableMap{
+    map_num :u16
+    database_name:String,
+    table_name:String,
+    cols :Vec<TableColumnMap>
+    }
+
 // fn print_person(person: &Person) {
 //     println!("Name: {}, Age: {}", person.name, person.age);
 // }
