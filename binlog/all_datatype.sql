@@ -539,6 +539,329 @@ cnkgZGF0YSBoZXJlFABMb25nZXIgcGllY2Ugb2YgdGV4dAEDlVaKgQ==
 # at 6111
 #240512  9:09:59 server id 1  end_log_pos 6142 CRC32 0x94cc8cad 	Xid = 154
 COMMIT/*!*/;
+# at 6142
+#240512 13:09:11 server id 1  end_log_pos 6221 CRC32 0x5bf3180d 	GTID	last_committed=7	sequence_number=8	rbr_only=yes	original_committed_timestamp=1715519351489156	immediate_commit_timestamp=1715519351489156	transaction_length=1556
+/*!50718 SET TRANSACTION ISOLATION LEVEL READ COMMITTED*//*!*/;
+# original_commit_timestamp=1715519351489156 (2024-05-12 13:09:11.489156 UTC)
+# immediate_commit_timestamp=1715519351489156 (2024-05-12 13:09:11.489156 UTC)
+/*!80001 SET @@session.original_commit_timestamp=1715519351489156*//*!*/;
+/*!80014 SET @@session.original_server_version=80036*//*!*/;
+/*!80014 SET @@session.immediate_server_version=80036*//*!*/;
+SET @@SESSION.GTID_NEXT= '7f4be0b0-09b9-11ef-9bc6-0242ac130002:8'/*!*/;
+# at 6221
+#240512 13:09:11 server id 1  end_log_pos 6300 CRC32 0x27fd2d84 	Query	thread_id=58	exec_time=0	error_code=0
+SET TIMESTAMP=1715519351/*!*/;
+BEGIN
+/*!*/;
+# at 6300
+#240512 13:09:11 server id 1  end_log_pos 7166 CRC32 0x7842797a 	Rows_query
+# INSERT INTO test.data_types_demo (
+#    varchar_col, 
+#    char_col, 
+#    int_col, 
+#    smallint_col, 
+#    tinyint_col, 
+#    bigint_col, 
+#    float_col, 
+#    double_col, 
+#    decimal_col, 
+#    date_col, 
+#    time_col, 
+#    datetime_col, 
+#    timestamp_col, 
+#    year_col, 
+#    blob_col, 
+#    text_col, 
+#    enum_col, 
+#    set_col
+#  ) VALUES (
+#    'Example text',          
+#    'ABCDE',                 
+#    12345,                   
+#    32767,                   
+#    127,                     
+#    9223372036854775807,     
+#    12345.678,               
+#    12345678.91011,          
+#    12345.67,                
+#    '2024-05-10',            
+#    '15:30:00',              
+#    '2024-05-10 15:30:00',   
+#    CURRENT_TIMESTAMP,       
+#    2024,                    
+#    'binary data here',      
+#    'Longer piece of text',  
+#    'val1',                  
+#    'set1 '              
+#  )
+# at 7166
+#240512 13:09:11 server id 1  end_log_pos 7513 CRC32 0xe9b51922 	Table_map: `test`.`data_types_demo` mapped to number 119
+# has_generated_invisible_primary_key=0
+# Columns(`id` INT NOT NULL,
+#         `varchar_col` VARCHAR(255) CHARSET utf8mb4 COLLATE utf8mb4_0900_ai_ci,
+#         `char_col` CHAR(10) CHARSET utf8mb4 COLLATE utf8mb4_0900_ai_ci,
+#         `int_col` INT,
+#         `smallint_col` SMALLINT,
+#         `tinyint_col` TINYINT,
+#         `bigint_col` BIGINT,
+#         `float_col` FLOAT,
+#         `double_col` DOUBLE,
+#         `decimal_col` DECIMAL(10,2),
+#         `date_col` DATE,
+#         `time_col` TIME,
+#         `datetime_col` DATETIME,
+#         `timestamp_col` TIMESTAMP,
+#         `year_col` YEAR,
+#         `blob_col` BLOB,
+#         `text_col` TEXT CHARSET utf8mb4 COLLATE utf8mb4_0900_ai_ci,
+#         `enum_col` ENUM('val1', 'val2', 'val3') CHARSET utf8mb4 COLLATE utf8mb4_0900_ai_ci,
+#         `set_col` SET('set1', 'set2', 'set3') CHARSET utf8mb4 COLLATE utf8mb4_0900_ai_ci)
+# Primary Key(id)
+# at 7513
+#240512 13:09:11 server id 1  end_log_pos 7667 CRC32 0x02d34168 	Write_rows: table id 119 flags: STMT_END_F
+
+BINLOG '
+d79AZh0BAAAAYgMAAP4bAACAAEpJTlNFUlQgSU5UTyB0ZXN0LmRhdGFfdHlwZXNfZGVtbyAoCiAg
+IHZhcmNoYXJfY29sLCAKICAgY2hhcl9jb2wsIAogICBpbnRfY29sLCAKICAgc21hbGxpbnRfY29s
+LCAKICAgdGlueWludF9jb2wsIAogICBiaWdpbnRfY29sLCAKICAgZmxvYXRfY29sLCAKICAgZG91
+YmxlX2NvbCwgCiAgIGRlY2ltYWxfY29sLCAKICAgZGF0ZV9jb2wsIAogICB0aW1lX2NvbCwgCiAg
+IGRhdGV0aW1lX2NvbCwgCiAgIHRpbWVzdGFtcF9jb2wsIAogICB5ZWFyX2NvbCwgCiAgIGJsb2Jf
+Y29sLCAKICAgdGV4dF9jb2wsIAogICBlbnVtX2NvbCwgCiAgIHNldF9jb2wKICkgVkFMVUVTICgK
+ICAgJ0V4YW1wbGUgdGV4dCcsICAgICAgICAgIAogICAnQUJDREUnLCAgICAgICAgICAgICAgICAg
+CiAgIDEyMzQ1LCAgICAgICAgICAgICAgICAgICAKICAgMzI3NjcsICAgICAgICAgICAgICAgICAg
+IAogICAxMjcsICAgICAgICAgICAgICAgICAgICAgCiAgIDkyMjMzNzIwMzY4NTQ3NzU4MDcsICAg
+ICAKICAgMTIzNDUuNjc4LCAgICAgICAgICAgICAgIAogICAxMjM0NTY3OC45MTAxMSwgICAgICAg
+ICAgCiAgIDEyMzQ1LjY3LCAgICAgICAgICAgICAgICAKICAgJzIwMjQtMDUtMTAnLCAgICAgICAg
+ICAgIAogICAnMTU6MzA6MDAnLCAgICAgICAgICAgICAgCiAgICcyMDI0LTA1LTEwIDE1OjMwOjAw
+JywgICAKICAgQ1VSUkVOVF9USU1FU1RBTVAsICAgICAgIAogICAyMDI0LCAgICAgICAgICAgICAg
+ICAgICAgCiAgICdiaW5hcnkgZGF0YSBoZXJlJywgICAgICAKICAgJ0xvbmdlciBwaWVjZSBvZiB0
+ZXh0JywgIAogICAndmFsMScsICAgICAgICAgICAgICAgICAgCiAgICdzZXQxICcgICAgICAgICAg
+ICAgIAogKXp5Qng=
+d79AZhMBAAAAWwEAAFkdAAAAAHcAAAAAAAEABHRlc3QAD2RhdGFfdHlwZXNfZGVtbwATAw/+AwIB
+CAQF9goTEhEN/Pz+/hH8A/4oBAgKAgAAAAIC9wH4Af7/BwECAIACBfz/AAI/BL4CaWQLdmFyY2hh
+cl9jb2wIY2hhcl9jb2wHaW50X2NvbAxzbWFsbGludF9jb2wLdGlueWludF9jb2wKYmlnaW50X2Nv
+bAlmbG9hdF9jb2wKZG91YmxlX2NvbAtkZWNpbWFsX2NvbAhkYXRlX2NvbAh0aW1lX2NvbAxkYXRl
+dGltZV9jb2wNdGltZXN0YW1wX2NvbAh5ZWFyX2NvbAhibG9iX2NvbAh0ZXh0X2NvbAhlbnVtX2Nv
+bAdzZXRfY29sCgP8/wAFEAMEc2V0MQRzZXQyBHNldDMGEAMEdmFsMQR2YWwyBHZhbDMIAQAMA///
+4CIZtek=
+d79AZh4BAAAAmgAAAPMdAAAAAHcAAAAAAAEAAgAT////AAAAAwAAAAwARXhhbXBsZSB0ZXh0BUFC
+Q0RFOTAAAP9/f/////////9/tuZARgKfH90pjGdBgAAwOUOq0A+A94CZs1T3gGZAv3d8EABiaW5h
+cnkgZGF0YSBoZXJlFABMb25nZXIgcGllY2Ugb2YgdGV4dAEBaEHTAg==
+'/*!*/;
+### INSERT INTO `test`.`data_types_demo`
+### SET
+###   @1=3 /* INT meta=0 nullable=0 is_null=0 */
+###   @2='Example text' /* VARSTRING(1020) meta=1020 nullable=1 is_null=0 */
+###   @3='ABCDE' /* STRING(40) meta=65064 nullable=1 is_null=0 */
+###   @4=12345 /* INT meta=0 nullable=1 is_null=0 */
+###   @5=32767 /* SHORTINT meta=0 nullable=1 is_null=0 */
+###   @6=127 /* TINYINT meta=0 nullable=1 is_null=0 */
+###   @7=9223372036854775807 /* LONGINT meta=0 nullable=1 is_null=0 */
+###   @8=12345.7              /* FLOAT meta=4 nullable=1 is_null=0 */
+###   @9=12345678.910110000521 /* DOUBLE meta=8 nullable=1 is_null=0 */
+###   @10=12345.67 /* DECIMAL(10,2) meta=2562 nullable=1 is_null=0 */
+###   @11='2024:05:10' /* DATE meta=0 nullable=1 is_null=0 */
+###   @12='15:30:00' /* TIME(0) meta=0 nullable=1 is_null=0 */
+###   @13='2024-05-10 15:30:00' /* DATETIME(0) meta=0 nullable=1 is_null=0 */
+###   @14=1715519351 /* TIMESTAMP(0) meta=0 nullable=1 is_null=0 */
+###   @15=2024 /* YEAR meta=0 nullable=1 is_null=0 */
+###   @16='binary data here' /* BLOB/TEXT meta=2 nullable=1 is_null=0 */
+###   @17='Longer piece of text' /* BLOB/TEXT meta=2 nullable=1 is_null=0 */
+###   @18=1 /* ENUM(1 byte) meta=63233 nullable=1 is_null=0 */
+###   @19=b'00000001' /* SET(1 bytes) meta=63489 nullable=1 is_null=0 */
+# at 7667
+#240512 13:09:11 server id 1  end_log_pos 7698 CRC32 0x27c17152 	Xid = 188
+COMMIT/*!*/;
+# at 7698
+#240512 13:09:18 server id 1  end_log_pos 7777 CRC32 0x2d2f4e73 	GTID	last_committed=8	sequence_number=9	rbr_only=yes	original_committed_timestamp=1715519358364029	immediate_commit_timestamp=1715519358364029	transaction_length=1556
+/*!50718 SET TRANSACTION ISOLATION LEVEL READ COMMITTED*//*!*/;
+# original_commit_timestamp=1715519358364029 (2024-05-12 13:09:18.364029 UTC)
+# immediate_commit_timestamp=1715519358364029 (2024-05-12 13:09:18.364029 UTC)
+/*!80001 SET @@session.original_commit_timestamp=1715519358364029*//*!*/;
+/*!80014 SET @@session.original_server_version=80036*//*!*/;
+/*!80014 SET @@session.immediate_server_version=80036*//*!*/;
+SET @@SESSION.GTID_NEXT= '7f4be0b0-09b9-11ef-9bc6-0242ac130002:9'/*!*/;
+# at 7777
+#240512 13:09:18 server id 1  end_log_pos 7856 CRC32 0x2988b7ad 	Query	thread_id=58	exec_time=0	error_code=0
+SET TIMESTAMP=1715519358/*!*/;
+BEGIN
+/*!*/;
+# at 7856
+#240512 13:09:18 server id 1  end_log_pos 8722 CRC32 0x9dc21283 	Rows_query
+# INSERT INTO test.data_types_demo (    varchar_col,     char_col,     int_col,     smallint_col,     tinyint_col,     bigint_col,     float_col,     double_col,     decimal_col,     date_col,     time_col,     datetime_col,     timestamp_col,     year_col,     blob_col,     text_col,     enum_col,     set_col  ) VALUES (    'Example text',              'ABCDE',                     12345,                       32767,                       127,                         9223372036854775807,         12345.678,                   12345678.91011,              12345.67,                    '2024-05-10',                '15:30:00',                  '2024-05-10 15:30:00',       CURRENT_TIMESTAMP,           2024,                        'binary data here',          'Longer piece of text',      'val1',                      'set2 '                )
+# at 8722
+#240512 13:09:18 server id 1  end_log_pos 9069 CRC32 0xb95fb2a1 	Table_map: `test`.`data_types_demo` mapped to number 119
+# has_generated_invisible_primary_key=0
+# Columns(`id` INT NOT NULL,
+#         `varchar_col` VARCHAR(255) CHARSET utf8mb4 COLLATE utf8mb4_0900_ai_ci,
+#         `char_col` CHAR(10) CHARSET utf8mb4 COLLATE utf8mb4_0900_ai_ci,
+#         `int_col` INT,
+#         `smallint_col` SMALLINT,
+#         `tinyint_col` TINYINT,
+#         `bigint_col` BIGINT,
+#         `float_col` FLOAT,
+#         `double_col` DOUBLE,
+#         `decimal_col` DECIMAL(10,2),
+#         `date_col` DATE,
+#         `time_col` TIME,
+#         `datetime_col` DATETIME,
+#         `timestamp_col` TIMESTAMP,
+#         `year_col` YEAR,
+#         `blob_col` BLOB,
+#         `text_col` TEXT CHARSET utf8mb4 COLLATE utf8mb4_0900_ai_ci,
+#         `enum_col` ENUM('val1', 'val2', 'val3') CHARSET utf8mb4 COLLATE utf8mb4_0900_ai_ci,
+#         `set_col` SET('set1', 'set2', 'set3') CHARSET utf8mb4 COLLATE utf8mb4_0900_ai_ci)
+# Primary Key(id)
+# at 9069
+#240512 13:09:18 server id 1  end_log_pos 9223 CRC32 0xc8352f73 	Write_rows: table id 119 flags: STMT_END_F
+
+BINLOG '
+fr9AZh0BAAAAYgMAABIiAACAAEpJTlNFUlQgSU5UTyB0ZXN0LmRhdGFfdHlwZXNfZGVtbyAoICAg
+IHZhcmNoYXJfY29sLCAgICAgY2hhcl9jb2wsICAgICBpbnRfY29sLCAgICAgc21hbGxpbnRfY29s
+LCAgICAgdGlueWludF9jb2wsICAgICBiaWdpbnRfY29sLCAgICAgZmxvYXRfY29sLCAgICAgZG91
+YmxlX2NvbCwgICAgIGRlY2ltYWxfY29sLCAgICAgZGF0ZV9jb2wsICAgICB0aW1lX2NvbCwgICAg
+IGRhdGV0aW1lX2NvbCwgICAgIHRpbWVzdGFtcF9jb2wsICAgICB5ZWFyX2NvbCwgICAgIGJsb2Jf
+Y29sLCAgICAgdGV4dF9jb2wsICAgICBlbnVtX2NvbCwgICAgIHNldF9jb2wgICkgVkFMVUVTICgg
+ICAgJ0V4YW1wbGUgdGV4dCcsICAgICAgICAgICAgICAnQUJDREUnLCAgICAgICAgICAgICAgICAg
+ICAgIDEyMzQ1LCAgICAgICAgICAgICAgICAgICAgICAgMzI3NjcsICAgICAgICAgICAgICAgICAg
+ICAgICAxMjcsICAgICAgICAgICAgICAgICAgICAgICAgIDkyMjMzNzIwMzY4NTQ3NzU4MDcsICAg
+ICAgICAgMTIzNDUuNjc4LCAgICAgICAgICAgICAgICAgICAxMjM0NTY3OC45MTAxMSwgICAgICAg
+ICAgICAgIDEyMzQ1LjY3LCAgICAgICAgICAgICAgICAgICAgJzIwMjQtMDUtMTAnLCAgICAgICAg
+ICAgICAgICAnMTU6MzA6MDAnLCAgICAgICAgICAgICAgICAgICcyMDI0LTA1LTEwIDE1OjMwOjAw
+JywgICAgICAgQ1VSUkVOVF9USU1FU1RBTVAsICAgICAgICAgICAyMDI0LCAgICAgICAgICAgICAg
+ICAgICAgICAgICdiaW5hcnkgZGF0YSBoZXJlJywgICAgICAgICAgJ0xvbmdlciBwaWVjZSBvZiB0
+ZXh0JywgICAgICAndmFsMScsICAgICAgICAgICAgICAgICAgICAgICdzZXQyICcgICAgICAgICAg
+ICAgICAgKYMSwp0=
+fr9AZhMBAAAAWwEAAG0jAAAAAHcAAAAAAAEABHRlc3QAD2RhdGFfdHlwZXNfZGVtbwATAw/+AwIB
+CAQF9goTEhEN/Pz+/hH8A/4oBAgKAgAAAAIC9wH4Af7/BwECAIACBfz/AAI/BL4CaWQLdmFyY2hh
+cl9jb2wIY2hhcl9jb2wHaW50X2NvbAxzbWFsbGludF9jb2wLdGlueWludF9jb2wKYmlnaW50X2Nv
+bAlmbG9hdF9jb2wKZG91YmxlX2NvbAtkZWNpbWFsX2NvbAhkYXRlX2NvbAh0aW1lX2NvbAxkYXRl
+dGltZV9jb2wNdGltZXN0YW1wX2NvbAh5ZWFyX2NvbAhibG9iX2NvbAh0ZXh0X2NvbAhlbnVtX2Nv
+bAdzZXRfY29sCgP8/wAFEAMEc2V0MQRzZXQyBHNldDMGEAMEdmFsMQR2YWwyBHZhbDMIAQAMA///
+4KGyX7k=
+fr9AZh4BAAAAmgAAAAckAAAAAHcAAAAAAAEAAgAT////AAAABAAAAAwARXhhbXBsZSB0ZXh0BUFC
+Q0RFOTAAAP9/f/////////9/tuZARgKfH90pjGdBgAAwOUOq0A+A94CZs1T3gGZAv358EABiaW5h
+cnkgZGF0YSBoZXJlFABMb25nZXIgcGllY2Ugb2YgdGV4dAECcy81yA==
+'/*!*/;
+### INSERT INTO `test`.`data_types_demo`
+### SET
+###   @1=4 /* INT meta=0 nullable=0 is_null=0 */
+###   @2='Example text' /* VARSTRING(1020) meta=1020 nullable=1 is_null=0 */
+###   @3='ABCDE' /* STRING(40) meta=65064 nullable=1 is_null=0 */
+###   @4=12345 /* INT meta=0 nullable=1 is_null=0 */
+###   @5=32767 /* SHORTINT meta=0 nullable=1 is_null=0 */
+###   @6=127 /* TINYINT meta=0 nullable=1 is_null=0 */
+###   @7=9223372036854775807 /* LONGINT meta=0 nullable=1 is_null=0 */
+###   @8=12345.7              /* FLOAT meta=4 nullable=1 is_null=0 */
+###   @9=12345678.910110000521 /* DOUBLE meta=8 nullable=1 is_null=0 */
+###   @10=12345.67 /* DECIMAL(10,2) meta=2562 nullable=1 is_null=0 */
+###   @11='2024:05:10' /* DATE meta=0 nullable=1 is_null=0 */
+###   @12='15:30:00' /* TIME(0) meta=0 nullable=1 is_null=0 */
+###   @13='2024-05-10 15:30:00' /* DATETIME(0) meta=0 nullable=1 is_null=0 */
+###   @14=1715519358 /* TIMESTAMP(0) meta=0 nullable=1 is_null=0 */
+###   @15=2024 /* YEAR meta=0 nullable=1 is_null=0 */
+###   @16='binary data here' /* BLOB/TEXT meta=2 nullable=1 is_null=0 */
+###   @17='Longer piece of text' /* BLOB/TEXT meta=2 nullable=1 is_null=0 */
+###   @18=1 /* ENUM(1 byte) meta=63233 nullable=1 is_null=0 */
+###   @19=b'00000010' /* SET(1 bytes) meta=63489 nullable=1 is_null=0 */
+# at 9223
+#240512 13:09:18 server id 1  end_log_pos 9254 CRC32 0xc839fca1 	Xid = 189
+COMMIT/*!*/;
+# at 9254
+#240512 13:09:26 server id 1  end_log_pos 9333 CRC32 0x56787203 	GTID	last_committed=9	sequence_number=10	rbr_only=yes	original_committed_timestamp=1715519366279552	immediate_commit_timestamp=1715519366279552	transaction_length=1565
+/*!50718 SET TRANSACTION ISOLATION LEVEL READ COMMITTED*//*!*/;
+# original_commit_timestamp=1715519366279552 (2024-05-12 13:09:26.279552 UTC)
+# immediate_commit_timestamp=1715519366279552 (2024-05-12 13:09:26.279552 UTC)
+/*!80001 SET @@session.original_commit_timestamp=1715519366279552*//*!*/;
+/*!80014 SET @@session.original_server_version=80036*//*!*/;
+/*!80014 SET @@session.immediate_server_version=80036*//*!*/;
+SET @@SESSION.GTID_NEXT= '7f4be0b0-09b9-11ef-9bc6-0242ac130002:10'/*!*/;
+# at 9333
+#240512 13:09:26 server id 1  end_log_pos 9412 CRC32 0x8137da75 	Query	thread_id=58	exec_time=0	error_code=0
+SET TIMESTAMP=1715519366/*!*/;
+BEGIN
+/*!*/;
+# at 9412
+#240512 13:09:26 server id 1  end_log_pos 10287 CRC32 0x46d3bca2 	Rows_query
+# INSERT INTO test.data_types_demo (    varchar_col,     char_col,     int_col,     smallint_col,     tinyint_col,     bigint_col,     float_col,     double_col,     decimal_col,     date_col,     time_col,     datetime_col,     timestamp_col,     year_col,     blob_col,     text_col,     enum_col,     set_col  ) VALUES (    'Example text',              'ABCDE',                     12345,                       32767,                       127,                         9223372036854775807,         12345.678,                   12345678.91011,              12345.67,                    '2024-05-10',                '15:30:00',                  '2024-05-10 15:30:00',       CURRENT_TIMESTAMP,           2024,                        'binary data here',          'Longer piece of text',      'val1',                      'set2,set3,set1'                )
+# at 10287
+#240512 13:09:26 server id 1  end_log_pos 10634 CRC32 0x9bb97082 	Table_map: `test`.`data_types_demo` mapped to number 119
+# has_generated_invisible_primary_key=0
+# Columns(`id` INT NOT NULL,
+#         `varchar_col` VARCHAR(255) CHARSET utf8mb4 COLLATE utf8mb4_0900_ai_ci,
+#         `char_col` CHAR(10) CHARSET utf8mb4 COLLATE utf8mb4_0900_ai_ci,
+#         `int_col` INT,
+#         `smallint_col` SMALLINT,
+#         `tinyint_col` TINYINT,
+#         `bigint_col` BIGINT,
+#         `float_col` FLOAT,
+#         `double_col` DOUBLE,
+#         `decimal_col` DECIMAL(10,2),
+#         `date_col` DATE,
+#         `time_col` TIME,
+#         `datetime_col` DATETIME,
+#         `timestamp_col` TIMESTAMP,
+#         `year_col` YEAR,
+#         `blob_col` BLOB,
+#         `text_col` TEXT CHARSET utf8mb4 COLLATE utf8mb4_0900_ai_ci,
+#         `enum_col` ENUM('val1', 'val2', 'val3') CHARSET utf8mb4 COLLATE utf8mb4_0900_ai_ci,
+#         `set_col` SET('set1', 'set2', 'set3') CHARSET utf8mb4 COLLATE utf8mb4_0900_ai_ci)
+# Primary Key(id)
+# at 10634
+#240512 13:09:26 server id 1  end_log_pos 10788 CRC32 0x3fbda99e 	Write_rows: table id 119 flags: STMT_END_F
+
+BINLOG '
+hr9AZh0BAAAAawMAAC8oAACAAFNJTlNFUlQgSU5UTyB0ZXN0LmRhdGFfdHlwZXNfZGVtbyAoICAg
+IHZhcmNoYXJfY29sLCAgICAgY2hhcl9jb2wsICAgICBpbnRfY29sLCAgICAgc21hbGxpbnRfY29s
+LCAgICAgdGlueWludF9jb2wsICAgICBiaWdpbnRfY29sLCAgICAgZmxvYXRfY29sLCAgICAgZG91
+YmxlX2NvbCwgICAgIGRlY2ltYWxfY29sLCAgICAgZGF0ZV9jb2wsICAgICB0aW1lX2NvbCwgICAg
+IGRhdGV0aW1lX2NvbCwgICAgIHRpbWVzdGFtcF9jb2wsICAgICB5ZWFyX2NvbCwgICAgIGJsb2Jf
+Y29sLCAgICAgdGV4dF9jb2wsICAgICBlbnVtX2NvbCwgICAgIHNldF9jb2wgICkgVkFMVUVTICgg
+ICAgJ0V4YW1wbGUgdGV4dCcsICAgICAgICAgICAgICAnQUJDREUnLCAgICAgICAgICAgICAgICAg
+ICAgIDEyMzQ1LCAgICAgICAgICAgICAgICAgICAgICAgMzI3NjcsICAgICAgICAgICAgICAgICAg
+ICAgICAxMjcsICAgICAgICAgICAgICAgICAgICAgICAgIDkyMjMzNzIwMzY4NTQ3NzU4MDcsICAg
+ICAgICAgMTIzNDUuNjc4LCAgICAgICAgICAgICAgICAgICAxMjM0NTY3OC45MTAxMSwgICAgICAg
+ICAgICAgIDEyMzQ1LjY3LCAgICAgICAgICAgICAgICAgICAgJzIwMjQtMDUtMTAnLCAgICAgICAg
+ICAgICAgICAnMTU6MzA6MDAnLCAgICAgICAgICAgICAgICAgICcyMDI0LTA1LTEwIDE1OjMwOjAw
+JywgICAgICAgQ1VSUkVOVF9USU1FU1RBTVAsICAgICAgICAgICAyMDI0LCAgICAgICAgICAgICAg
+ICAgICAgICAgICdiaW5hcnkgZGF0YSBoZXJlJywgICAgICAgICAgJ0xvbmdlciBwaWVjZSBvZiB0
+ZXh0JywgICAgICAndmFsMScsICAgICAgICAgICAgICAgICAgICAgICdzZXQyLHNldDMsc2V0MScg
+ICAgICAgICAgICAgICAgKaK800Y=
+hr9AZhMBAAAAWwEAAIopAAAAAHcAAAAAAAEABHRlc3QAD2RhdGFfdHlwZXNfZGVtbwATAw/+AwIB
+CAQF9goTEhEN/Pz+/hH8A/4oBAgKAgAAAAIC9wH4Af7/BwECAIACBfz/AAI/BL4CaWQLdmFyY2hh
+cl9jb2wIY2hhcl9jb2wHaW50X2NvbAxzbWFsbGludF9jb2wLdGlueWludF9jb2wKYmlnaW50X2Nv
+bAlmbG9hdF9jb2wKZG91YmxlX2NvbAtkZWNpbWFsX2NvbAhkYXRlX2NvbAh0aW1lX2NvbAxkYXRl
+dGltZV9jb2wNdGltZXN0YW1wX2NvbAh5ZWFyX2NvbAhibG9iX2NvbAh0ZXh0X2NvbAhlbnVtX2Nv
+bAdzZXRfY29sCgP8/wAFEAMEc2V0MQRzZXQyBHNldDMGEAMEdmFsMQR2YWwyBHZhbDMIAQAMA///
+4IJwuZs=
+hr9AZh4BAAAAmgAAACQqAAAAAHcAAAAAAAEAAgAT////AAAABQAAAAwARXhhbXBsZSB0ZXh0BUFC
+Q0RFOTAAAP9/f/////////9/tuZARgKfH90pjGdBgAAwOUOq0A+A94CZs1T3gGZAv4Z8EABiaW5h
+cnkgZGF0YSBoZXJlFABMb25nZXIgcGllY2Ugb2YgdGV4dAEHnqm9Pw==
+'/*!*/;
+### INSERT INTO `test`.`data_types_demo`
+### SET
+###   @1=5 /* INT meta=0 nullable=0 is_null=0 */
+###   @2='Example text' /* VARSTRING(1020) meta=1020 nullable=1 is_null=0 */
+###   @3='ABCDE' /* STRING(40) meta=65064 nullable=1 is_null=0 */
+###   @4=12345 /* INT meta=0 nullable=1 is_null=0 */
+###   @5=32767 /* SHORTINT meta=0 nullable=1 is_null=0 */
+###   @6=127 /* TINYINT meta=0 nullable=1 is_null=0 */
+###   @7=9223372036854775807 /* LONGINT meta=0 nullable=1 is_null=0 */
+###   @8=12345.7              /* FLOAT meta=4 nullable=1 is_null=0 */
+###   @9=12345678.910110000521 /* DOUBLE meta=8 nullable=1 is_null=0 */
+###   @10=12345.67 /* DECIMAL(10,2) meta=2562 nullable=1 is_null=0 */
+###   @11='2024:05:10' /* DATE meta=0 nullable=1 is_null=0 */
+###   @12='15:30:00' /* TIME(0) meta=0 nullable=1 is_null=0 */
+###   @13='2024-05-10 15:30:00' /* DATETIME(0) meta=0 nullable=1 is_null=0 */
+###   @14=1715519366 /* TIMESTAMP(0) meta=0 nullable=1 is_null=0 */
+###   @15=2024 /* YEAR meta=0 nullable=1 is_null=0 */
+###   @16='binary data here' /* BLOB/TEXT meta=2 nullable=1 is_null=0 */
+###   @17='Longer piece of text' /* BLOB/TEXT meta=2 nullable=1 is_null=0 */
+###   @18=1 /* ENUM(1 byte) meta=63233 nullable=1 is_null=0 */
+###   @19=b'00000111' /* SET(1 bytes) meta=63489 nullable=1 is_null=0 */
+# at 10788
+#240512 13:09:26 server id 1  end_log_pos 10819 CRC32 0xa8a4c6bd 	Xid = 190
+COMMIT/*!*/;
 SET @@SESSION.GTID_NEXT= 'AUTOMATIC' /* added by mysqlbinlog */ /*!*/;
 DELIMITER ;
 # End of log file
