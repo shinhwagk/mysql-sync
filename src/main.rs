@@ -1,41 +1,42 @@
 use std::collections::HashMap;
 use std::io::{self, BufRead};
+use std::os::linux::raw::stat;
 use std::time::{self, Duration, Instant};
 
 struct BinlogStatistics {
     update_rows: HashMap<String, u32>,
     delete_rows: HashMap<String, u32>,
-    insert_rows: HashMap<String, u32>,
+    write_rows: HashMap<String, u32>,
     transaction: u32,
 }
 
 struct BinlogDml {
-    gtid:String,
-    last_committed:u32
-    sequence_number:u32
-    log_file:String,
-    log_pos:u32,
-    row_events : Vec<i32>
+    gtid: String,
+    last_committed: u32,
+    sequence_number: u32,
+    log_file: String,
+    log_pos: u32,
+    row_events: Vec<i32>,
 }
 
-struct UpdateRowsEvent, WriteRowsEvent, DeleteRowsEvent, TableMapEvent {
+struct UpdateRowsEvent {}
+struct WriteRowsEvent {}
+struct DeleteRowsEvent {}
+struct TableMapEvent {}
 
+struct TableColumnMap {
+    name: String,
+    // data_type: String,
+    // not_null: bool,
+    // primary_key: bool,
 }
 
-struct TableColumnMap{
-id:u8,
-name:String,
-data_type:String,
-not_null:bool
-primary_key:bool
+struct TableMap {
+    map_num: u16,
+    database_name: String,
+    table_name: String,
+    cols: Vec<String>,
 }
-
-struct TableMap{
-    map_num :u16
-    database_name:String,
-    table_name:String,
-    cols :Vec<TableColumnMap>
-    }
 
 // fn print_person(person: &Person) {
 //     println!("Name: {}, Age: {}", person.name, person.age);
@@ -67,7 +68,7 @@ enum BinlogEvent {
     Xid,
     DeleteRows,
     UpdateRows,
-    InsertRows, // as alias for WriteRows
+    WriteRows, // as alias for WriteRows
     Query,
     TableMap,
     RotateTo,
@@ -81,13 +82,13 @@ enum BinlogEventTableMap {
     Columns,
 }
 
-enum BinlogEventInsertRows {
+enum BinlogEventWriteRows {
     None,
     Binlog,
 }
 
-type BinlogEventUpdateRows = BinlogEventInsertRows;
-type BinlogEventDeleteRows = BinlogEventInsertRows;
+type BinlogEventUpdateRows = BinlogEventWriteRows;
+type BinlogEventDeleteRows = BinlogEventWriteRows;
 
 // struct Event_base {}
 
@@ -121,7 +122,7 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
 
     let mut binlog_statistics = BinlogStatistics {
         delete_rows: HashMap::new(),
-        insert_rows: HashMap::new(),
+        write_rows: HashMap::new(),
         update_rows: HashMap::new(),
         transaction: 0,
     };
@@ -150,9 +151,18 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
     let mut binlog_event_timestamp: u16 = 0;
 
     let mut binlog_event_table_map: BinlogEventTableMap = BinlogEventTableMap::None;
-    let mut binlog_event_insert_rows: BinlogEventInsertRows = BinlogEventInsertRows::None;
+    let mut binlog_event_write_rows: BinlogEventWriteRows = BinlogEventWriteRows::None;
     let mut binlog_event_update_rows: BinlogEventUpdateRows = BinlogEventUpdateRows::None;
     let mut binlog_event_delete_rows: BinlogEventDeleteRows = BinlogEventDeleteRows::None;
+
+    // let mut column_names = Vec::new();
+
+    let mut cache_table = TableMap {
+        map_num: 0,
+        database_name: String::new(),
+        table_name: String::new(),
+        cols: Vec::new(),
+    };
 
     for line_result in stdin_lock.lines() {
         let mut binlog_event_tokens: Vec<&str> = Vec::new();
@@ -161,12 +171,12 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
             Ok(line) => {
                 if !line.starts_with("#") {
                     // stdout
-                    println!("{}", line);
+                    // println!("{}", line);
                 }
 
                 // stderr statistics
                 if last_time.elapsed() >= Duration::from_secs(1) {
-                    let total: u32 = binlog_statistics.insert_rows.values().sum();
+                    let total: u32 = binlog_statistics.write_rows.values().sum();
 
                     let json_string = format!(
                         r#"{{"Write_rows": {}, "Binlog_pos": {}, "Binlog_file": {}, "Commit":{}}}"#,
@@ -174,7 +184,7 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
                     );
 
                     eprintln!("{}", json_string);
-                    eprintln!("insert_rows: {:?}", binlog_statistics.insert_rows);
+                    eprintln!("insert_rows: {:?}", binlog_statistics.write_rows);
                     eprintln!("update_rows: {:?}", binlog_statistics.update_rows);
                     eprintln!("delete_rows: {:?}", binlog_statistics.delete_rows);
                     last_time = Instant::now();
@@ -182,13 +192,91 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
 
                 // statistics
                 if line.starts_with("# at ") {
+                    let mut statement: Vec<String> = Vec::new();
                     match binlog_event {
-                        BinlogEvent::UpdateRows | BinlogEvent::DeleteRows | BinlogEvent::InsertRows => {
+                        BinlogEvent::WriteRows => {
+                            for item in sql_statement1.clone() {
+                                if item.starts_with("@") {
+                                    if let Some(end) = item.find('=') {
+                                        let ci: i32 = item[1..end]
+                                            .parse()
+                                            .expect("Failed to parse the string into an integer");
+                                        let val = &item[end + 1..];
+                                        let cols = cache_table.cols.clone();
+                                        let cn = &cols[(ci - 1) as usize];
+
+                                        statement.push(format!("{}={},", cn, val));
+
+                                        // println!("{}={}", cn, val.to_string());
+                                    }
+                                } else {
+                                    // println!("{}  ", item);
+                                    statement.push(item);
+                                }
+                            }
+                            println!("Write_rows {}", statement.join(" "));
+                        }
+                        BinlogEvent::UpdateRows => {
+                            for item in sql_statement1.clone() {
+                                if item.starts_with("@") {
+                                    if let Some(end) = item.find('=') {
+                                        let ci: i32 = item[1..end]
+                                            .parse()
+                                            .expect("Failed to parse the string into an integer");
+                                        let val = &item[end + 1..];
+                                        let cols = cache_table.cols.clone();
+                                        let cn = &cols[(ci - 1) as usize];
+
+                                        statement.push(format!("{}={},", cn, val));
+
+                                        // println!("{}={}", cn, val.to_string());
+                                    }
+                                } else {
+                                    // println!("{}  ", item);
+                                    statement.push(item);
+                                }
+                            }
+                            println!("Update_rows {}", statement.join(" "));
+                        }
+                        BinlogEvent::DeleteRows => {
+                            for item in sql_statement1.clone() {
+                                if item.starts_with("@") {
+                                    if let Some(end) = item.find('=') {
+                                        let ci: i32 = item[1..end]
+                                            .parse()
+                                            .expect("Failed to parse the string into an integer");
+                                        let val = &item[end + 1..];
+                                        let cols = cache_table.cols.clone();
+                                        let cn = &cols[(ci - 1) as usize];
+
+                                        statement.push(format!("{}={},", cn, val));
+
+                                        // println!("{}={}", cn, val.to_string());
+                                    }
+                                } else {
+                                    // println!("{}  ", item);
+                                    statement.push(item);
+                                }
+                            }
+                            println!("Delete_rows {}", statement.join(" "));
+                            // if sql_statement1[0].starts_with("INSERT INTO ") {
+                            // } else if sql_statement1[0].starts_with("UPDATE ") {
+                            // } else if sql_statement1[0].starts_with("DELETE FROM ") {
+                            // }
+
+                            // for statment in sql_statement1.into_iter() {
+                            //     println!("{}", statment);
+                            //     // let stmt = statment.strip_prefix()
+                            // }
+
+                            // println!("{:?}", sql_statement1);
                             // eprintln!("{:?}", sql_statement)
                         }
                         _ => {}
                     }
                     binlog_event = BinlogEvent::None;
+
+                    sql_statement1.clear();
 
                     let pos = &line[5..];
                     binlog_pos = pos.to_string();
@@ -218,12 +306,12 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
                             }
                             "Write_rows:" => {
                                 // #240429  2:41:42 server id 1  end_log_pos 1681 CRC32 0x3d5e28c2 	Write_rows: table id 104 flags: STMT_END_F
-                                binlog_event = BinlogEvent::InsertRows;
-                                binlog_event_insert_rows = BinlogEventInsertRows::None;
+                                binlog_event = BinlogEvent::WriteRows;
+                                binlog_event_write_rows = BinlogEventWriteRows::None;
 
                                 if binlog_event_tokens.len() == 15 {
                                     if binlog_event_tokens[12].to_string() == table_id {
-                                        *binlog_statistics.insert_rows.entry(table_map.clone()).or_insert(0) += 1;
+                                        *binlog_statistics.write_rows.entry(table_map.clone()).or_insert(0) += 1;
                                     } else {
                                         // eprintln!("error: {}", line)
                                         // error
@@ -265,11 +353,32 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
                             "Table_map:" => {
                                 // #240413  5:14:13 server id 161183306  end_log_pos 1628 CRC32 0x33192119 	Table_map: `merchant_center_vela_v1`.`v3_express_recommend` mapped to number 394
                                 binlog_event = BinlogEvent::TableMap;
-
                                 binlog_event_table_map = BinlogEventTableMap::None;
 
-                                table_map = binlog_event_tokens[10].replace("`", "");
-                                table_id = binlog_event_tokens[14].to_string();
+                                match binlog_event_tokens[14].parse() {
+                                    Ok(num) => {
+                                        if num != cache_table.map_num {
+                                            cache_table = TableMap {
+                                                map_num: 0,
+                                                database_name: String::new(),
+                                                table_name: String::new(),
+                                                cols: Vec::new(),
+                                            };
+                                            cache_table.map_num = num
+                                        } else {
+                                            binlog_event = BinlogEvent::None;
+                                        }
+                                    }
+                                    Err(e) => println!("Error converting to an integer: {}", e),
+                                }
+
+                                let db_tab: Vec<&str> = binlog_event_tokens[10].split('.').collect();
+                                if db_tab.len() == 2 {
+                                    cache_table.database_name = db_tab[0].to_string();
+                                    cache_table.table_name = db_tab[1].to_string();
+                                } else {
+                                    // error
+                                }
                             }
                             "Rotate" if binlog_event_tokens.get(10) == Some(&"to") => {
                                 // #240427  5:14:18 server id 161933306  end_log_pos 1073747122 CRC32 0xd6395e4f 	Rotate to mysql-bin.000031  pos: 4
@@ -320,28 +429,48 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
                             }
                         }
                         BinlogEvent::TableMap => {
+                            sql_statement1.clear();
                             // # has_generated_invisible_primary_key=0
                             // # Columns(INT UNSIGNED NOT NULL,
                             // #         ENUM NOT NULL)
 
                             match binlog_event_table_map {
                                 BinlogEventTableMap::Columns => {
-                                    if line.starts_with("#         ") {
-                                        // append column
-                                        if line.ends_with(")") {
-                                            binlog_event_table_map = BinlogEventTableMap::None
+                                    // append column
+                                    if let Some(start) = line.find('`') {
+                                        if let Some(end) = line[start + 1..].find('`') {
+                                            let column_name = &line[start..start + end + 2];
+                                            cache_table.cols.push(column_name.to_string());
                                         }
+                                    } else {
+                                        // error: not exist of column name
+                                    }
+
+                                    if line.ends_with(")") {
+                                        binlog_event_table_map = BinlogEventTableMap::None
                                     }
                                 }
                                 BinlogEventTableMap::None => {
                                     if line.starts_with("# Columns(") {
-                                        binlog_event_table_map = BinlogEventTableMap::Columns
-                                        // append column
+                                        binlog_event_table_map = BinlogEventTableMap::Columns;
+                                    }
+                                    // append column
+                                    if let Some(start) = line.find('`') {
+                                        if let Some(end) = line[start + 1..].find('`') {
+                                            let column_name = &line[start..start + end + 2];
+                                            cache_table.cols.push(column_name.to_string());
+                                        }
+                                    } else {
+                                        // error: not exist of column name
+                                    }
+
+                                    if line.ends_with(")") {
+                                        binlog_event_table_map = BinlogEventTableMap::None
                                     }
                                 }
                             }
                         }
-                        BinlogEvent::InsertRows => {
+                        BinlogEvent::WriteRows => {
                             /*
                             BINLOG '
                             5ggvZhMBAAAAOwAAAGgGAAAAAGgAAAAAAAEABW15c3FsAAl0aW1lX3pvbmUAAgP+AvcBAAEBgHkO
@@ -353,25 +482,31 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
                             ###   @1=2 /* INT meta=0 nullable=0 is_null=0 */
                             ###   @2=2 /* ENUM(1 byte) meta=63233 nullable=0 is_null=0 */
                             */
-                            match binlog_event_insert_rows {
-                                BinlogEventInsertRows::Binlog => {
+                            match binlog_event_write_rows {
+                                BinlogEventWriteRows::Binlog => {
                                     if line == "'/*!*/;" {
-                                        binlog_event_insert_rows = BinlogEventInsertRows::None
+                                        binlog_event_write_rows = BinlogEventWriteRows::None
                                     }
                                 }
-                                BinlogEventInsertRows::None => {
+                                BinlogEventWriteRows::None => {
                                     if line.starts_with("### ") {
-                                        binlog_event_insert_rows = BinlogEventInsertRows::None;
+                                        binlog_event_write_rows = BinlogEventWriteRows::None;
 
                                         match line.strip_prefix("### ") {
-                                            Some(token) => sql_statement1.push(token.to_string()),
+                                            Some(token) => {
+                                                if let Some(start) = token.find("/*") {
+                                                    sql_statement1.push((&token[..start]).trim().to_string())
+                                                } else {
+                                                    sql_statement1.push((&token).trim().to_string())
+                                                }
+                                            }
                                             None => {
                                                 // error
                                             }
                                         }
                                         // append column
                                     } else if line == "BINLOG '" {
-                                        binlog_event_insert_rows = BinlogEventInsertRows::Binlog
+                                        binlog_event_write_rows = BinlogEventWriteRows::Binlog
                                     } else {
                                     }
                                 }
@@ -389,7 +524,13 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
                                         binlog_event_delete_rows = BinlogEventDeleteRows::None;
 
                                         match line.strip_prefix("### ") {
-                                            Some(token) => sql_statement1.push(token.to_string()),
+                                            Some(token) => {
+                                                if let Some(start) = token.find("/*") {
+                                                    sql_statement1.push((&token[..start]).trim().to_string())
+                                                } else {
+                                                    sql_statement1.push((&token).trim().to_string())
+                                                }
+                                            }
                                             None => {
                                                 // error
                                             }
@@ -409,12 +550,18 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
                                         binlog_event_update_rows = BinlogEventUpdateRows::None
                                     }
                                 }
-                                BinlogEventInsertRows::None => {
+                                BinlogEventUpdateRows::None => {
                                     if line.starts_with("### ") {
                                         binlog_event_update_rows = BinlogEventUpdateRows::None;
 
                                         match line.strip_prefix("### ") {
-                                            Some(token) => sql_statement1.push(token.to_string()),
+                                            Some(token) => {
+                                                if let Some(start) = token.find("/*") {
+                                                    sql_statement1.push((&token[..start]).trim().to_string())
+                                                } else {
+                                                    sql_statement1.push((&token).trim().to_string())
+                                                }
+                                            }
                                             None => {
                                                 // error
                                             }
@@ -513,11 +660,11 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
             }
         }
     }
-    eprintln!("insert_rows: {:?}", binlog_statistics.insert_rows);
+    eprintln!("insert_rows: {:?}", binlog_statistics.write_rows);
     eprintln!("update_rows: {:?}", binlog_statistics.update_rows);
     eprintln!("delete_rows: {:?}", binlog_statistics.delete_rows);
 
-    let total: u32 = binlog_statistics.insert_rows.values().sum();
+    let total: u32 = binlog_statistics.write_rows.values().sum();
 
     let json_string = format!(
         r#"{{"Write_rows": {}, "Binlog_pos": {}, "Binlog_file": {}, "Commit":{}}}"#,
