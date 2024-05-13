@@ -1,3 +1,5 @@
+reset master;
+drop database if exists test;
 create database test;
 CREATE TABLE test.data_types_demo (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
