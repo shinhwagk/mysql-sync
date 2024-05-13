@@ -1,1 +1,2 @@
 - binlog_rows_query_log_events
+- binlog_row_metadata

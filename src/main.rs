@@ -26,7 +26,7 @@ struct TableMapEvent {}
 
 struct TableColumnMap {
     name: String,
-    // data_type: String,
+    types: String,
     // not_null: bool,
     // primary_key: bool,
 }
@@ -35,7 +35,7 @@ struct TableMap {
     map_num: u16,
     database_name: String,
     table_name: String,
-    cols: Vec<String>,
+    cols: Vec<TableColumnMap>,
 }
 
 // fn print_person(person: &Person) {
@@ -117,6 +117,88 @@ type BinlogEventDeleteRows = BinlogEventWriteRows;
 //     xid: Option<u16>,
 // }
 
+// process mysql data type 'set'
+fn binary_to_set(binary_str: &str, set_options: &Vec<String>) -> String {
+    let num = usize::from_str_radix(binary_str, 2).unwrap();
+
+    set_options
+        .iter()
+        .enumerate()
+        .filter(|&(i, _)| (num >> i) & 1 == 1)
+        .map(|(_, name)| name.as_str())
+        .collect::<Vec<&str>>()
+        .join(",")
+}
+fn parse_col_types_set(input: &str) -> Vec<String> {
+    let trimmed = input.trim_start_matches("SET(").trim_end_matches(')');
+
+    let mut elements = Vec::new();
+    let mut temp = String::new();
+    let mut in_quotes = false;
+
+    for c in trimmed.chars() {
+        match c {
+            '\'' if in_quotes => {
+                // 如果已经在引号内，则结束引号
+                in_quotes = false;
+            }
+            '\'' => {
+                in_quotes = true;
+            }
+            ',' if !in_quotes => {
+                if !temp.trim().is_empty() {
+                    elements.push(temp.trim().to_string());
+                    temp.clear();
+                }
+            }
+            _ => {
+                temp.push(c);
+            }
+        }
+    }
+
+    if !temp.trim().is_empty() {
+        elements.push(temp.trim().to_string());
+    }
+
+    elements
+}
+
+fn parse_col_types_enum(input: &str) -> Vec<String> {
+    let trimmed = input.trim_start_matches("ENUM(").trim_end_matches(')');
+
+    let mut elements = Vec::new();
+    let mut temp = String::new();
+    let mut in_quotes = false;
+
+    for c in trimmed.chars() {
+        match c {
+            '\'' if in_quotes => {
+                // 如果已经在引号内，则结束引号
+                in_quotes = false;
+            }
+            '\'' => {
+                in_quotes = true;
+            }
+            ',' if !in_quotes => {
+                if !temp.trim().is_empty() {
+                    elements.push(temp.trim().to_string());
+                    temp.clear();
+                }
+            }
+            _ => {
+                temp.push(c);
+            }
+        }
+    }
+
+    if !temp.trim().is_empty() {
+        elements.push(temp.trim().to_string());
+    }
+
+    elements
+}
+
 fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
     let mut version_identifier: HashMap<String, String> = HashMap::new();
 
@@ -157,12 +239,17 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
 
     // let mut column_names = Vec::new();
 
+    let mut cache_columns_str: Vec<String> = Vec::new();
+    let mut cache_sql_str: Vec<String> = Vec::new();
+
     let mut cache_table = TableMap {
         map_num: 0,
         database_name: String::new(),
         table_name: String::new(),
         cols: Vec::new(),
     };
+
+    let mut cache_stdout: Vec<String> = Vec::new();
 
     for line_result in stdin_lock.lines() {
         let mut binlog_event_tokens: Vec<&str> = Vec::new();
@@ -194,70 +281,173 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
                 if line.starts_with("# at ") {
                     let mut statement: Vec<String> = Vec::new();
                     match binlog_event {
-                        BinlogEvent::WriteRows => {
-                            for item in sql_statement1.clone() {
-                                if item.starts_with("@") {
-                                    if let Some(end) = item.find('=') {
-                                        let ci: i32 = item[1..end]
-                                            .parse()
-                                            .expect("Failed to parse the string into an integer");
-                                        let val = &item[end + 1..];
-                                        let cols = cache_table.cols.clone();
-                                        let cn = &cols[(ci - 1) as usize];
+                        BinlogEvent::TableMap => {
+                            for col_str in cache_columns_str.clone() {
+                                let start = col_str.find('`').unwrap();
+                                let end = col_str[start + 1..].find('`').unwrap();
 
-                                        statement.push(format!("{}={},", cn, val));
+                                let col_name = &col_str[start..start + end + 2];
+                                let mut col_types = "";
 
-                                        // println!("{}={}", cn, val.to_string());
+                                if let Some(start) = col_str.find("ENUM(") {
+                                    let end = col_str[start..].find(')').unwrap() + start + 1;
+                                    col_types = &col_str[start..end]
+                                } else if let Some(start) = col_str.find("SET(") {
+                                    let end = col_str[start..].find(')').unwrap() + start + 1;
+                                    col_types = &col_str[start..end]
+                                } else {
+                                    let tokens: Vec<&str> = col_str.split_whitespace().collect();
+                                    if tokens.len() >= 2 {
+                                        col_types = tokens[1];
+                                    } else {
+                                        // error
                                     }
+                                }
+                                let col = TableColumnMap {
+                                    name: col_name.to_string(),
+                                    types: col_types.to_string(),
+                                };
+
+                                cache_table.cols.push(col)
+                            }
+                            cache_columns_str.clear()
+                        }
+                        BinlogEvent::WriteRows => {
+                            for sql_str in cache_sql_str.clone() {
+                                if sql_str.starts_with("###   @") {
+                                    let end = sql_str.find('=').unwrap();
+                                    let cmt_start = sql_str.find("/*").unwrap();
+
+                                    let ci: i32 = sql_str[7..end]
+                                        .parse()
+                                        .expect("Failed to parse the string into an integer");
+
+                                    let val = sql_str[end + 1..cmt_start].trim();
+                                    let col = &(cache_table.cols)[(ci - 1) as usize];
+                                    // let cn = &cols[(ci - 1) as usize];
+
+                                    if col.types.starts_with("VARCHAR")
+                                        || col.types.starts_with("CHAR")
+                                        || col.types == "INT"
+                                        || col.types == "SMALLINT"
+                                        || col.types == "BIGINT"
+                                        || col.types == "FLOAT"
+                                        || col.types == "DOUBLE"
+                                        || col.types.starts_with("DECIMAL")
+                                        || col.types == "DATE"
+                                        || col.types == "TIME"
+                                        || col.types == "DATETIME"
+                                        || col.types == "YEAR"
+                                        || col.types == "BLOB"
+                                        || col.types == "TEXT"
+                                    {
+                                        statement.push(format!("{}={},", col.name, val));
+                                    } else if col.types.starts_with("ENUM(") {
+                                        let format_enum = parse_col_types_enum(&col.types);
+
+                                        match val.parse::<usize>() {
+                                            Ok(index) => {
+                                                statement.push(format!("{}='{}',", col.name, format_enum[index]));
+                                            }
+                                            Err(_) => {
+                                                println!("Failed to parse index");
+                                            }
+                                        }
+                                    } else if col.types.starts_with("SET(") {
+                                        let format_set = parse_col_types_set(&col.types);
+                                        // println!("ssss   {:?}  ", x);
+
+                                        // let trim_start = col.types.trim_start_matches("SET(");
+                                        // let trim_end = trim_start.trim_end_matches(')');
+                                        // let set_options: Vec<String> = trim_end
+                                        //     .split(",")
+                                        //     .map(|s| s.trim().trim_matches('\'').to_string())
+                                        //     .collect();
+
+                                        let set_val = &val[2..val.len() - 1];
+
+                                        // println!("ssss {:?} {} {}", set_options, set_val, col.types);
+
+                                        let val = binary_to_set(set_val, &format_set);
+                                        // println!("ssss1   {}  ", x);
+                                        statement.push(format!("{}='{}',", col.name, val));
+                                        // println!("{} {}", col.name, set_val)
+                                        // statement.push(format!("{}={},", col.name, x));
+                                    } else if col.types == "TIMESTAMP" {
+                                    } else {
+                                        // error
+                                    }
+
+                                    // println!("{}={}", cn, val.to_string());
                                 } else {
                                     // println!("{}  ", item);
-                                    statement.push(item);
+                                    statement.push((&sql_str[4..]).to_string());
                                 }
                             }
+
+                            // for item in sql_statement1.clone() {
+                            //     if item.starts_with("@") {
+                            //         if let Some(end) = item.find('=') {
+                            //             let ci: i32 = item[1..end]
+                            //                 .parse()
+                            //                 .expect("Failed to parse the string into an integer");
+                            //             let val = &item[end + 1..];
+                            //             let cols = cache_table.cols.clone();
+                            //             let cn = &cols[(ci - 1) as usize];
+
+                            //             statement.push(format!("{}={},", cn, val));
+
+                            //             // println!("{}={}", cn, val.to_string());
+                            //         }
+                            //     } else {
+                            //         // println!("{}  ", item);
+                            //         statement.push(item);
+                            //     }
+                            // }
                             println!("Write_rows {}", statement.join(" "));
                         }
                         BinlogEvent::UpdateRows => {
-                            for item in sql_statement1.clone() {
-                                if item.starts_with("@") {
-                                    if let Some(end) = item.find('=') {
-                                        let ci: i32 = item[1..end]
-                                            .parse()
-                                            .expect("Failed to parse the string into an integer");
-                                        let val = &item[end + 1..];
-                                        let cols = cache_table.cols.clone();
-                                        let cn = &cols[(ci - 1) as usize];
+                            // for item in sql_statement1.clone() {
+                            //     if item.starts_with("@") {
+                            //         if let Some(end) = item.find('=') {
+                            //             let ci: i32 = item[1..end]
+                            //                 .parse()
+                            //                 .expect("Failed to parse the string into an integer");
+                            //             let val = &item[end + 1..];
+                            //             let cols = cache_table.cols.clone();
+                            //             let cn = &cols[(ci - 1) as usize];
 
-                                        statement.push(format!("{}={},", cn, val));
+                            //             statement.push(format!("{}={},", cn, val));
 
-                                        // println!("{}={}", cn, val.to_string());
-                                    }
-                                } else {
-                                    // println!("{}  ", item);
-                                    statement.push(item);
-                                }
-                            }
+                            //             // println!("{}={}", cn, val.to_string());
+                            //         }
+                            //     } else {
+                            //         // println!("{}  ", item);
+                            //         statement.push(item);
+                            //     }
+                            // }
                             println!("Update_rows {}", statement.join(" "));
                         }
                         BinlogEvent::DeleteRows => {
-                            for item in sql_statement1.clone() {
-                                if item.starts_with("@") {
-                                    if let Some(end) = item.find('=') {
-                                        let ci: i32 = item[1..end]
-                                            .parse()
-                                            .expect("Failed to parse the string into an integer");
-                                        let val = &item[end + 1..];
-                                        let cols = cache_table.cols.clone();
-                                        let cn = &cols[(ci - 1) as usize];
+                            // for item in sql_statement1.clone() {
+                            //     if item.starts_with("@") {
+                            //         if let Some(end) = item.find('=') {
+                            //             let ci: i32 = item[1..end]
+                            //                 .parse()
+                            //                 .expect("Failed to parse the string into an integer");
+                            //             let val = &item[end + 1..];
+                            //             let cols = cache_table.cols.clone();
+                            //             let cn = &cols[(ci - 1) as usize];
 
-                                        statement.push(format!("{}={},", cn, val));
+                            //             statement.push(format!("{}={},", cn, val));
 
-                                        // println!("{}={}", cn, val.to_string());
-                                    }
-                                } else {
-                                    // println!("{}  ", item);
-                                    statement.push(item);
-                                }
-                            }
+                            //             // println!("{}={}", cn, val.to_string());
+                            //         }
+                            //     } else {
+                            //         // println!("{}  ", item);
+                            //         statement.push(item);
+                            //     }
+                            // }
                             println!("Delete_rows {}", statement.join(" "));
                             // if sql_statement1[0].starts_with("INSERT INTO ") {
                             // } else if sql_statement1[0].starts_with("UPDATE ") {
@@ -277,6 +467,8 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
                     binlog_event = BinlogEvent::None;
 
                     sql_statement1.clear();
+                    cache_sql_str.clear();
+                    cache_columns_str.clear();
 
                     let pos = &line[5..];
                     binlog_pos = pos.to_string();
@@ -429,22 +621,14 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
                             }
                         }
                         BinlogEvent::TableMap => {
-                            sql_statement1.clear();
                             // # has_generated_invisible_primary_key=0
-                            // # Columns(INT UNSIGNED NOT NULL,
-                            // #         ENUM NOT NULL)
-
+                            // # Columns(`a` INT UNSIGNED NOT NULL,
+                            // #         `b` ENUM NOT NULL)
                             match binlog_event_table_map {
                                 BinlogEventTableMap::Columns => {
                                     // append column
-                                    if let Some(start) = line.find('`') {
-                                        if let Some(end) = line[start + 1..].find('`') {
-                                            let column_name = &line[start..start + end + 2];
-                                            cache_table.cols.push(column_name.to_string());
-                                        }
-                                    } else {
-                                        // error: not exist of column name
-                                    }
+                                    cache_columns_str.push((&line[10..line.len() - 1]).to_string());
+                                    let col_str = (&line[9..]).to_string();
 
                                     if line.ends_with(")") {
                                         binlog_event_table_map = BinlogEventTableMap::None
@@ -453,19 +637,12 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
                                 BinlogEventTableMap::None => {
                                     if line.starts_with("# Columns(") {
                                         binlog_event_table_map = BinlogEventTableMap::Columns;
-                                    }
-                                    // append column
-                                    if let Some(start) = line.find('`') {
-                                        if let Some(end) = line[start + 1..].find('`') {
-                                            let column_name = &line[start..start + end + 2];
-                                            cache_table.cols.push(column_name.to_string());
-                                        }
-                                    } else {
-                                        // error: not exist of column name
-                                    }
+                                        let col_str = (&line[10..line.len() - 1]).to_string();
 
-                                    if line.ends_with(")") {
-                                        binlog_event_table_map = BinlogEventTableMap::None
+                                        cache_columns_str.push(col_str);
+                                        if line.ends_with(")") {
+                                            binlog_event_table_map = BinlogEventTableMap::None
+                                        }
                                     }
                                 }
                             }
@@ -492,18 +669,21 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
                                     if line.starts_with("### ") {
                                         binlog_event_write_rows = BinlogEventWriteRows::None;
 
-                                        match line.strip_prefix("### ") {
-                                            Some(token) => {
-                                                if let Some(start) = token.find("/*") {
-                                                    sql_statement1.push((&token[..start]).trim().to_string())
-                                                } else {
-                                                    sql_statement1.push((&token).trim().to_string())
-                                                }
-                                            }
-                                            None => {
-                                                // error
-                                            }
-                                        }
+                                        cache_sql_str.push(line);
+                                        // match line.strip_prefix("### ") {
+                                        //     Some(token) => {
+                                        //         cache_sql_str.push(token.to_string());
+                                        //         // if let Some(start) = token.find("/*") {
+                                        //         //     // sql_statement1.push((&token[..start]).trim().to_string())
+                                        //         //     cache_sql.push(token)
+                                        //         // } else {
+                                        //         //     sql_statement1.push((&token).trim().to_string())
+                                        //         // }
+                                        //     }
+                                        //     None => {
+                                        //         // error
+                                        //     }
+                                        // }
                                         // append column
                                     } else if line == "BINLOG '" {
                                         binlog_event_write_rows = BinlogEventWriteRows::Binlog
@@ -525,11 +705,12 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
 
                                         match line.strip_prefix("### ") {
                                             Some(token) => {
-                                                if let Some(start) = token.find("/*") {
-                                                    sql_statement1.push((&token[..start]).trim().to_string())
-                                                } else {
-                                                    sql_statement1.push((&token).trim().to_string())
-                                                }
+                                                cache_sql_str.push(token.to_string());
+                                                // if let Some(start) = token.find("/*") {
+                                                //     sql_statement1.push((&token[..start]).trim().to_string())
+                                                // } else {
+                                                //     sql_statement1.push((&token).trim().to_string())
+                                                // }
                                             }
                                             None => {
                                                 // error
@@ -556,11 +737,12 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
 
                                         match line.strip_prefix("### ") {
                                             Some(token) => {
-                                                if let Some(start) = token.find("/*") {
-                                                    sql_statement1.push((&token[..start]).trim().to_string())
-                                                } else {
-                                                    sql_statement1.push((&token).trim().to_string())
-                                                }
+                                                cache_sql_str.push(token.to_string());
+                                                // if let Some(start) = token.find("/*") {
+                                                //     sql_statement1.push((&token[..start]).trim().to_string())
+                                                // } else {
+                                                //     sql_statement1.push((&token).trim().to_string())
+                                                // }
                                             }
                                             None => {
                                                 // error
@@ -653,6 +835,12 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
                         }
                     }
                 }
+
+                // output
+                for output in cache_stdout.clone() {
+                    println!("{}", output);
+                }
+                cache_stdout.clear();
             }
             Err(e) => {
                 eprintln!("Error reading line: {}", e);

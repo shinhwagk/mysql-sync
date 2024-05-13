@@ -2,3 +2,5 @@
 
 mysql-connector-python==8.0.29
 mysql-compare
+
+mysql-replication
