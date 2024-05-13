@@ -22,7 +22,6 @@ function test() {
 
 
 #
-/usr/local/Percona-Server-8.0.34-26/bin/mysqlbinlog -S /data/mysql/litb_zeus_8_0/mysql.sock --user=repl --password=repl --read-from-remote-source=BINLOG-DUMP-GTIDS --compression-algorithms=zstd --zstd-compression-level=3 --verify-binlog-checksum --to-last-log --connection-server-id=11121 --verbose --verbose --idempotent --force-read --print-table-metadata mysql-bin.000029 >mysql-bin.log
 
 python3.11 main.py --source-dsn root/example@db1:3306 --target-dsn root/example@db2:3306
 
@@ -71,6 +70,26 @@ generate_data() {
   mysqlbinlog -hdb --user=repl --password=repl --read-from-remote-server --stop-never -v -i mysql-bin.000001
 } | ./main
 ```
+
+### suppert data types
+- VARCHAR
+- CHAR
+- INT
+- SMALLINT
+- TINYINT
+- BIGINT
+- FLOAT
+- DOUBLE
+- DECIMAL
+- DATE
+- TIME
+- DATETIME
+- TIMESTAMP
+- YEAR
+- BLOB
+- TEXT
+- ENUM
+- SET
 
 ## links
 - https://dev.mysql.com/doc/refman/8.0/en/mysqlbinlog-hexdump.html

@@ -689,7 +689,10 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
                                     .strip_prefix("SET @@SESSION.GTID_NEXT= '")
                                     .and_then(|s| s.strip_suffix("'/*!*/;"))
                                 {
-                                    Some(gtid_next) => gtid = gtid_next.to_string(),
+                                    Some(gtid_next) => {
+                                        gtid = gtid_next.to_string();
+                                        cache_stdout.push(format!("# gtid: {}", gtid));
+                                    }
                                     None => {
                                         // error
                                     }
