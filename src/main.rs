@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::io::{self, BufRead};
-use std::os::linux::raw::stat;
-use std::time::{self, Duration, Instant};
+
+use std::time::{Duration, Instant};
 
 struct BinlogStatistics {
     update_rows: HashMap<String, u32>,
@@ -69,9 +69,9 @@ enum BinlogEvent {
     Xid,
     DeleteRows,
     UpdateRows,
-    WriteRows, // as alias for WriteRows
+    WriteRows,
     Query,
-    QueryXid,
+    QueryXid, // same for Query
     TableMap,
     RotateTo,
     Stop,
@@ -213,6 +213,8 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
     version_identifier.insert("8.0.34-26".to_string(), "#691231".to_string());
     version_identifier.insert("8.0.36".to_string(), "#700101".to_string());
 
+    let args_raw = false;
+
     let mut binlog_state = BinlogState::Head;
     let mut binlog_event = BinlogEvent::None;
     let mut binlog_last_event = BinlogEvent::None;
@@ -260,7 +262,9 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
             Ok(line) => {
                 if !line.starts_with("#") {
                     // stdout
-                    // println!("{}", line);
+                    if args_raw {
+                        println!("{}", line);
+                    }
                 }
 
                 // stderr statistics
@@ -565,7 +569,9 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
                             } else if line.starts_with("/*!") {
                             } else if line == "/*!*/;" {
                             } else if line.starts_with("use `") {
-                                cache_stdout.push(line);
+                                // binlog entry: use `database_1`/*!*/;
+
+                                cache_stdout.push(line.replace("/*!*/", ""));
                             } else {
                                 cache_sql_str.push(line.trim().to_string());
                             }
@@ -700,8 +706,9 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
                         }
                         BinlogEvent::RotateTo => {}
                         BinlogEvent::Xid => {
+                            // binlog entry: COMMIT/*!*/;
                             if line == "COMMIT/*!*/;" {
-                                cache_stdout.push("COMMIT;".to_string());
+                                cache_stdout.push("COMMIT;".replace("/*!*/", "").to_string());
                             }
                             // table_id = "".to_string();
                         }
@@ -751,10 +758,12 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
                 }
 
                 // output
-                for output in cache_stdout.clone() {
-                    println!("{}", output);
+                if !args_raw {
+                    for output in cache_stdout.clone() {
+                        println!("{}", output);
+                    }
+                    cache_stdout.clear();
                 }
-                cache_stdout.clear();
             }
             Err(e) => {
                 eprintln!("Error reading line: {}", e);
