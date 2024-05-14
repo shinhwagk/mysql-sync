@@ -398,6 +398,10 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
         pseudo_sql: Vec::new(),
     };
 
+    let mut tmp_cache_stdout: Vec<String> = Vec::new();
+
+    let native = true;
+
     // let mut temp_cache_event_query
 
     for line_result in stdin_lock.lines() {
@@ -597,6 +601,7 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
                     } else {
                         // error
                     }
+                    // skip event head line
                     continue;
                 } else if line.starts_with("#691231") || line.starts_with("#700101") {
                     let tokens: Vec<&str> = line.split_whitespace().collect();
@@ -627,9 +632,17 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
                                         // error
                                     }
                                 }
+                                tmp_cache_stdout.push(line);
+                            } else if line.starts_with("SET ") {
+                                tmp_cache_stdout.push(line);
+                            } else if line.starts_with("/*!") {
+                                tmp_cache_stdout.push(line);
                             } else if line == "BEGIN" {
-                                cache_stdout.push("BEGIN;".to_string());
+                                tmp_cache_stdout.push(line);
+                            } else if line == "/*!*/;" {
+                                tmp_cache_stdout.push(line);
                             } else {
+                                // error
                             }
                         }
                         BinlogEvent::QueryXid => {
@@ -682,6 +695,9 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
                                             binlog_event_table_map = BinlogEventTableMap::None
                                             // tmp_cache_event_rows_mult_pseudo_sql.push(tmp_c)
                                         }
+                                    } else if line.starts_with("# Primary Key(") {
+                                    } else {
+                                        // error
                                     }
                                 }
                             }
@@ -794,7 +810,6 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
                                 /*!80014 SET @@session.immediate_server_version=80036*//*!*/;
                                 SET @@SESSION.GTID_NEXT= 'fae48e3d-05d1-11ef-9575-0242ac140002:1'/*!*/;
                             */
-
                             if line.starts_with("SET @@SESSION.GTID_NEXT= '") && line.ends_with("'/*!*/;") {
                                 match line
                                     .strip_prefix("SET @@SESSION.GTID_NEXT= '")
@@ -808,15 +823,20 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
                                         // error
                                     }
                                 }
+                                tmp_cache_stdout.push(line);
                             } else if line.starts_with("# original_commit_timestamp=") {
                             } else if line.starts_with("# immediate_commit_timestamp=") {
-                            } else if line.starts_with("/*!80001 SET @@session.") {
+                            } else if line.starts_with("/*!800") {
+                                tmp_cache_stdout.push(line);
+                            } else if line.starts_with("/*!507") {
+                                tmp_cache_stdout.push(line);
                             } else {
                                 // error
                             }
                         }
                         BinlogEvent::Start => {
                             // #240429  2:41:49 server id 1  end_log_pos 126 CRC32 0x2db1350e 	Start: binlog v 4, server v 8.0.36 created 240429  2:41:49 at startup
+                            tmp_cache_stdout.push(line);
                         }
                         BinlogEvent::RotateTo => {}
                         BinlogEvent::Xid => {
@@ -849,12 +869,12 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
                             // binlog entry: SET @@SESSION.GTID_NEXT= 'AUTOMATIC' /* added by mysqlbinlog */ /*!*/;
                         }
                         BinlogEvent::RowsQuery => {
-                            match line.strip_prefix("# ") {
-                                Some(token) => sql_statement2.push(token.to_string()),
-                                None => {
-                                    // error
-                                }
-                            }
+                            // match line.strip_prefix("# ") {
+                            //     Some(token) => sql_statement2.push(token.to_string()),
+                            //     None => {
+                            //         // error
+                            //     }
+                            // }
                         }
                         BinlogEvent::None => {}
                         _ => {
@@ -865,9 +885,11 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
                         if line == "# The proper term is pseudo_replica_mode, but we use this compatibility alias" {
                         } else if line == "" {
                         } else if line.starts_with("/*!") {
+                            tmp_cache_stdout.push(line);
                         } else if line.starts_with("DELIMITER ") {
                             binlog_delimiter = (&line[10..line.len() - 1]).to_string();
-                            binlog_state = BinlogState::BinlogEvent
+                            binlog_state = BinlogState::BinlogEvent;
+                            tmp_cache_stdout.push(line);
                         } else {
                             // error
                         }
@@ -875,30 +897,29 @@ fn process_lines(stdin_lock: std::io::StdinLock) -> Result<(), String> {
                 }
 
                 if output {
-                    if tmp_cache_binlog_event_data_rows.tab_id == tmp_cache_event_table_map.map_num
-                        && tmp_cache_event_table_map.database_name != "`test`"
-                    {
-                        for sql in &tmp_cache_binlog_event_data_rows.pseudo_sql {
-                            println!("xxxx {}", sql)
+                    if native {
+                        for output in &tmp_cache_stdout {
+                            println!("{}", output);
                         }
+                        if tmp_cache_binlog_event_data_rows.tab_id == tmp_cache_event_table_map.map_num
+                            && tmp_cache_event_table_map.database_name != "`test`"
+                        {
+                            // for sql in &tmp_cache_binlog_event_data_rows {
+                            //     println!("xxxx {}", sql)
+                            // }
+                            for binlogs in &tmp_cache_binlog_event_data_rows.binlog {
+                                for binlog in binlogs {
+                                    println!("{}", binlog)
+                                }
+                            }
+                        }
+                        // }
+                        println!("{}", "COMMIT/*!*/;");
+                        output = false;
+                        tmp_cache_stdout.clear();
+                    } else {
                     }
-
-                    // for binlogs in &tmp_cache_binlog_event_data_rows.binlog {
-                    //     for binlog in binlogs {
-                    //         println!("xxxx {}", binlog)
-                    //     }
-                    // }
-
-                    output = false;
                 }
-
-                // output
-                // if !args_raw {
-                //     for output in cache_stdout.clone() {
-                //         println!("{}", output);
-                //     }
-                //     cache_stdout.clear();
-                // }
             }
             Err(e) => {
                 eprintln!("Error reading line: {}", e);
@@ -927,6 +948,6 @@ fn main() {
 
     match process_lines(stdin_lock) {
         Ok(_) => {}
-        Err(e) => eprintln!("错误: {}", e),
+        Err(e) => eprintln!("error: {}", e),
     }
 }
