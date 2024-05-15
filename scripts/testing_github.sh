@@ -26,8 +26,8 @@ mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE
 mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} -e "SHOW MASTER STATUS\G"
 
 
-echo "bash main.sh --source-dsn ${ARGS_SOURCE_USER}/${ARGS_SOURCE_PASSWORD}@${ARGS_SOURCE_HOST}:${ARGS_SOURCE_PORT} --target-dsn ${ARGS_TARGET_USER}/${ARGS_TARGET_PASSWORD}@${ARGS_TARGET_HOST}:${ARGS_TARGET_PORT} --mysqlbinlog-connection-server-id "8889" --mysqlbinlog-stop-never"
-bash main.sh --source-dsn ${ARGS_SOURCE_USER}/${ARGS_SOURCE_PASSWORD}@${ARGS_SOURCE_HOST}:${ARGS_SOURCE_PORT} --target-dsn ${ARGS_TARGET_USER}/${ARGS_TARGET_PASSWORD}@${ARGS_TARGET_HOST}:${ARGS_TARGET_PORT} --mysqlbinlog-connection-server-id "8889" 
+# echo "bash main.sh --source-dsn ${ARGS_SOURCE_USER}/${ARGS_SOURCE_PASSWORD}@${ARGS_SOURCE_HOST}:${ARGS_SOURCE_PORT} --target-dsn ${ARGS_TARGET_USER}/${ARGS_TARGET_PASSWORD}@${ARGS_TARGET_HOST}:${ARGS_TARGET_PORT} --mysqlbinlog-connection-server-id "8889" --mysqlbinlog-stop-never"
+# bash main.sh --source-dsn ${ARGS_SOURCE_USER}/${ARGS_SOURCE_PASSWORD}@${ARGS_SOURCE_HOST}:${ARGS_SOURCE_PORT} --target-dsn ${ARGS_TARGET_USER}/${ARGS_TARGET_PASSWORD}@${ARGS_TARGET_HOST}:${ARGS_TARGET_PORT} --mysqlbinlog-connection-server-id "8889" 
 
 
 # echo "start $ARGS_TEST_NUM"
@@ -89,7 +89,7 @@ function sysbench_testing() {
     mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} -e "CREATE DATABASE IF NOT EXISTS ${testdb};"
     # for testname in oltp_insert oltp_delete oltp_update_index oltp_update_non_index oltp_write_only bulk_insert; do
     for testname in oltp_insert; do
-        for action in cleanup prepare run cleanup; do
+        for action in cleanup prepare run; do
             echo "sysbench ${testdb}-${testname}-${action} start."
             sysbench /usr/share/sysbench/${testname}.lua --table-size=1000 --tables=10 --threads=100 --time=10 --mysql-db=${testdb} --mysql-host=${ARGS_SOURCE_HOST} --mysql-port=${ARGS_SOURCE_PORT} --mysql-user=${ARGS_SOURCE_USER} --mysql-password=${ARGS_SOURCE_PASSWORD} --db-driver=mysql $action >/dev/null
             echo "sysbench ${testdb}-${testname}-${action} done."
@@ -97,38 +97,13 @@ function sysbench_testing() {
     done
 }
 
-for dbid in `seq 1 1`; do
-    sysbench_testing "testdb_${dbid}" &
-done
 
-#wait
+sysbench_testing "testdb_1"
 
-start_ts=`date +%s`
-target_gtid_num=0
-for i in `seq 1 600`; do
-    SOURCE_GTID=$(mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} -e 'show master status\G' 2>/dev/null| grep Executed_Gtid_Set)
-    TARGET_GTID=$(mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} -e 'show master status\G' 2>/dev/null| grep Executed_Gtid_Set)
-    
-    echo "source gtid ${SOURCE_GTID}"
-    echo "target gtid ${TARGET_GTID}"
+mysqlbinlog -host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} --read-from-remote-source=BINLOG-DUMP-GTIDS --compression-algorithms=zstd --zstd-compression-level=3 --verify-binlog-checksum --to-last-log --connection-server-id=111 --verbose --verbose --idempotent --force-read --print-table-metadata mysql-bin.000001 | cargo run | mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} -v -v
 
-    curr_target_gtid_num="${TARGET_GTID#*:1-}"
-    echo "gtid add $(( (curr_target_gtid_num - target_gtid_num) / 10 ))/s"
-    target_gtid_num=$curr_target_gtid_num
-
-    echo "sysbench process number: `ps -ef | grep sysbench | grep -v grep | wc -l`"
-
-    # mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} -e 'show processlist;'
-
-    if [[ "$SOURCE_GTID" == "$TARGET_GTID" && `ps -ef | grep sysbench | grep -v grep | wc -l` == 0 ]]; then
-        break;
-    fi
-
-    sleep 10
-done
-
-echo "kill sync ${MYSQLBINLOG_SYNC_PID}"
-kill $MYSQLBINLOG_SYNC_PID
-
-end_ts=`date +%s`
-echo "sync $((end_ts-start_ts))s"
+export ARGS_SOURCE_DSN="${ARGS_SOURCE_USER}/${ARGS_SOURCE_PASSWORD}@${ARGS_SOURCE_HOST}:${ARGS_SOURCE_PORT}"
+export ARGS_TARGET_DSN="${ARGS_TARGET_USER}/${ARGS_TARGET_PASSWORD}@${ARGS_TARGET_HOST}:${ARGS_TARGET_PORT}"
+export ARGS_DATABASES=testdb_1
+curl -OLs https://raw.githubusercontent.com/shinhwagk/mysql-compare-tables/main/scripts/dbcompare.py
+python /dbcompare.py

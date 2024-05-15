@@ -56,7 +56,7 @@ jobs:
           set -e
           # bash scripts/testing_ms.sh
 
-          bash scripts/testing.sh
+          bash scripts/testing_github.sh
         env:
           ARGS_SOURCE_HOST: mysql8036_1
           ARGS_SOURCE_PORT: 3306
