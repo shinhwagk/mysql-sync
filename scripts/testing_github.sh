@@ -106,4 +106,4 @@ export ARGS_SOURCE_DSN="${ARGS_SOURCE_USER}/${ARGS_SOURCE_PASSWORD}@${ARGS_SOURC
 export ARGS_TARGET_DSN="${ARGS_TARGET_USER}/${ARGS_TARGET_PASSWORD}@${ARGS_TARGET_HOST}:${ARGS_TARGET_PORT}"
 export ARGS_DATABASES=testdb_1
 curl -OLs https://raw.githubusercontent.com/shinhwagk/mysql-compare-tables/main/scripts/dbcompare.py
-python /dbcompare.py
+python3.11 /dbcompare.py
