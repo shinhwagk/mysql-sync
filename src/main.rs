@@ -28,6 +28,12 @@ struct BinlogTableMap {
     mapped_number: u8,
 }
 
+struct BinlogEventGtid {
+    last_committed: u128,
+    sequence_number: u128,
+    rbr_only: bool,
+}
+
 enum BinlogRowsKind {
     write_rows,
     update_rows,
@@ -357,9 +363,7 @@ fn main() {
     version_identifier.insert("8.0.34-26".to_string(), "#691231".to_string());
     version_identifier.insert("8.0.36".to_string(), "#700101".to_string());
 
-    let args_raw = false;
-
-    let apply = "pseudo_sql"; // raw pseudo_sql replace_pseudo_sql
+    let args_apply = "pseudo_sql"; // raw pseudo_sql replace_pseudo_sql
 
     let mut binlog_state = BinlogState::Head;
     let mut binlog_event = BinlogEvent::None;
@@ -434,6 +438,14 @@ fn main() {
     let mut tmp_cache_binlog_event_rows_pseudo_sql: Vec<String> = Vec::new();
     let mut tmp_cache_binlog_event_rows_table_with_pseudo_sql: HashMap<String, Vec<Vec<String>>> = HashMap::new();
 
+    let mut tmp_cache_binlog_event_query_xid_pseudo_sql: Vec<String> = Vec::new();
+    let mut tmp_cache_binlog_event_query_pseudo_sql: Vec<String> = Vec::new();
+    let mut tmp_cache_binlog_event_query_raw: Vec<String> = Vec::new();
+
+    let mut tmp_cache_binlog_event_gtid_last_commited: u128 = 0;
+
+    let mut delay_commit = true;
+
     // let mut temp_cache_event_query
 
     for line_result in stdin_lock.lines() {
@@ -443,9 +455,6 @@ fn main() {
             Ok(line) => {
                 if !line.starts_with("#") {
                     // stdout
-                    if args_raw {
-                        println!("{}", line);
-                    }
                 }
 
                 // stderr statistics
@@ -520,6 +529,15 @@ fn main() {
                             "GTID" => {
                                 // #240429  2:41:42 server id 1  end_log_pos 234 CRC32 0xbb588611 	GTID	last_committed=0	sequence_number=1	rbr_only=no	original_committed_timestamp=1714358502099265	immediate_commit_timestamp=1714358502099265	transaction_length=181
                                 binlog_event = BinlogEvent::Gtid;
+                                // let last_commited = binlog_event_tokens[10]
+                                //     .split("=")
+                                //     .last()
+                                //     .expect("No '=' found in token")
+                                //     .parse::<u128>()
+                                //     .expect("Failed to parse number");
+                                // delay_commit = last_commited == tmp_cache_binlog_event_gtid_last_commited;
+
+                                // eprintln!("last_committed={} sequence_number={}", binlog_event_tokens[10], binlog_event_tokens[11]);
                             }
                             "Xid" => {
                                 // #240429  2:41:44 server id 1  end_log_pos 3040324 CRC32 0x4dd3b280 	Xid = 8
@@ -644,43 +662,57 @@ fn main() {
                 match binlog_state {
                     BinlogState::BinlogEvent => match binlog_event {
                         BinlogEvent::Query => {
-                            if line.starts_with("SET TIMESTAMP=") && line.ends_with("/*!*/;") {
-                                let timestamp_str = line.strip_prefix("SET TIMESTAMP=").and_then(|s| s.strip_suffix("'/*!*/;"));
-                                match timestamp_str {
-                                    Some(timestamp) => match timestamp.parse::<u32>() {
-                                        Ok(ts) => binlog_timestamp = ts,
-                                        Err(_) => eprintln!("'{}' is not a valid u32", timestamp),
-                                    },
-                                    None => {
-                                        // error
+                            if line.starts_with("SET ") {
+                                tmp_cache_binlog_event_query.push(line.clone());
+                                if line.starts_with("SET TIMESTAMP=") && line.ends_with("/*!*/;") {
+                                    let timestamp_str = line.strip_prefix("SET TIMESTAMP=").and_then(|s| s.strip_suffix("'/*!*/;"));
+                                    match timestamp_str {
+                                        Some(timestamp) => match timestamp.parse::<u32>() {
+                                            Ok(ts) => binlog_timestamp = ts,
+                                            Err(_) => eprintln!("'{}' is not a valid u32", timestamp),
+                                        },
+                                        None => {
+                                            // error
+                                        }
                                     }
+                                    tmp_cache_binlog_event_query.push(line);
                                 }
-                                tmp_cache_binlog_event_query.push(line);
-                            } else if line.starts_with("SET ") {
-                                tmp_cache_binlog_event_query.push(line);
-                            } else if line.starts_with("/*!") {
-                                tmp_cache_binlog_event_query.push(line);
                             } else if line == "BEGIN" {
                                 tmp_cache_binlog_event_query.push(line);
+                                tmp_cache_binlog_event_query_pseudo_sql.push("BEGIN;".to_string());
                             } else if line == "/*!*/;" {
+                                tmp_cache_binlog_event_query.push(line.clone());
+                                tmp_cache_binlog_event_query_raw.push(line);
+                                if let Some(last) = tmp_cache_binlog_event_query_xid_pseudo_sql.last_mut() {
+                                    last.push_str(";");
+                                }
+                            } else if line.starts_with("/*!") {
                                 tmp_cache_binlog_event_query.push(line);
                             } else if line.starts_with("# original_commit_timestamp=") {
                             } else if line.starts_with("# immediate_commit_timestamp=") {
+                            } else if line.starts_with("use `") {
+                                // binlog entry: use `database_1`/*!*/;
+                                tmp_cache_binlog_event_query_xid_pseudo_sql.push(line.replace("/*!*/", ""));
+                                tmp_cache_binlog_event_query_raw.push(line);
                             } else {
+                                tmp_cache_binlog_event_query_xid_pseudo_sql.push(line);
+
                                 // error
                             }
                         }
                         BinlogEvent::QueryXid => {
                             if line.starts_with("SET ") && line.ends_with("/*!*/;") {
-                            } else if line.starts_with("/*!") {
                             } else if line == "/*!*/;" {
+                                if let Some(last) = tmp_cache_binlog_event_query_xid_pseudo_sql.last_mut() {
+                                    last.push_str(";");
+                                }
                                 output = true;
+                            } else if line.starts_with("/*!") {
                             } else if line.starts_with("use `") {
                                 // binlog entry: use `database_1`/*!*/;
-
-                                cache_stdout.push(line.replace("/*!*/", ""));
+                                tmp_cache_binlog_event_query_xid_pseudo_sql.push(line.replace("/*!*/", ""));
                             } else {
-                                // tmp_cache_event_rows_pseudo_sql.push(line.trim().to_string());
+                                tmp_cache_binlog_event_query_xid_pseudo_sql.push(line);
                             }
                         }
                         BinlogEvent::TableMap => {
@@ -936,7 +968,7 @@ fn main() {
                 }
 
                 if output {
-                    if apply == "raw" {
+                    if args_apply == "raw" {
                         for output in &tmp_cache_binlog_head {
                             println!("{}", output);
                         }
@@ -962,8 +994,15 @@ fn main() {
                         for output in &tmp_cache_binlog_event_xid {
                             println!("{}", output);
                         }
-                    } else if apply == "replace_pseudo_sql" {
-                    } else if apply == "pseudo_sql" {
+                    } else if args_apply == "replace_pseudo_sql" {
+                    } else if args_apply == "pseudo_sql" {
+                        if tmp_cache_binlog_event_query_xid_pseudo_sql.len() >= 1 {
+                            for pseudo_sql in &tmp_cache_binlog_event_query_xid_pseudo_sql {
+                                println!("{}", pseudo_sql);
+                            }
+                            tmp_cache_binlog_event_query_xid_pseudo_sql.clear();
+                        }
+
                         if tmp_cache_binlog_event_rows_table_with_pseudo_sql.len() >= 1 {
                             println!("BEGIN;");
                             for (map_num, pseudo_sqls) in &tmp_cache_binlog_event_rows_table_with_pseudo_sql {
@@ -977,6 +1016,7 @@ fn main() {
                                 // }
                             }
                             println!("COMMIT;");
+                            tmp_cache_binlog_event_rows_table_with_pseudo_sql.clear();
                         }
                     }
 
@@ -985,7 +1025,6 @@ fn main() {
                     tmp_cache_binlog_event_query.clear();
                     tmp_cache_binlog_event_xid.clear();
                     tmp_cache_binlog_event_rows_table_with_binlog.clear();
-                    tmp_cache_binlog_event_rows_table_with_pseudo_sql.clear();
                     // tmp_cache_binlog_event_table_map
 
                     output = false;
