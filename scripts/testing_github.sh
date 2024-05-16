@@ -107,3 +107,5 @@ export ARGS_TARGET_DSN="${ARGS_TARGET_USER}/${ARGS_TARGET_PASSWORD}@${ARGS_TARGE
 export ARGS_DATABASES=testdb_1
 curl -OLs https://raw.githubusercontent.com/shinhwagk/mysql-compare-tables/main/scripts/dbcompare.py
 python3.11 dbcompare.py
+
+ls -l

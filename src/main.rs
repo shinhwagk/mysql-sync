@@ -106,9 +106,11 @@ enum BinlogEvent {
     RowsQuery,
 }
 
+#[derive(PartialEq)]
 enum BinlogEventTableMap {
     None,
     Columns,
+    Skip,
 }
 
 enum BinlogEventWriteRows {
@@ -119,7 +121,6 @@ enum BinlogEventWriteRows {
 type BinlogEventUpdateRows = BinlogEventWriteRows;
 type BinlogEventDeleteRows = BinlogEventWriteRows;
 
-#[derive(Debug)]
 enum BinlogEventRows {
     None,
     Binlog,
@@ -598,6 +599,11 @@ fn main() {
                                     let database_name = db_tab[0].to_string();
                                     let table_name = db_tab[1].to_string();
 
+                                    if database_name == "`test`" {
+                                        binlog_event_table_map = BinlogEventTableMap::Skip;
+                                        continue;
+                                    }
+
                                     tmp_cache_binlog_event_table_map.map_num = num.to_string();
                                     tmp_cache_binlog_event_table_map.database_name = database_name;
                                     tmp_cache_binlog_event_table_map.table_name = table_name;
@@ -724,6 +730,9 @@ fn main() {
                                         // error
                                     }
                                 }
+                                BinlogEventTableMap::Skip => {
+                                    continue;
+                                }
                             }
                         }
                         // BinlogEvent::WriteRows => {
@@ -759,6 +768,10 @@ fn main() {
                         //     }
                         // }
                         BinlogEvent::WriteRows | BinlogEvent::DeleteRows | BinlogEvent::UpdateRows => {
+                            if binlog_event_table_map == BinlogEventTableMap::Skip {
+                                continue;
+                            }
+
                             match binlog_event_rows {
                                 BinlogEventRows::Binlog => {
                                     if line == "'/*!*/;" {
@@ -951,18 +964,20 @@ fn main() {
                         }
                     } else if apply == "replace_pseudo_sql" {
                     } else if apply == "pseudo_sql" {
-                        println!("BEGIN;");
-                        for (map_num, pseudo_sqls) in &tmp_cache_binlog_event_rows_table_with_pseudo_sql {
-                            let table_map = tmp_cache_binlog_event_table_map1.get(map_num).unwrap();
+                        if tmp_cache_binlog_event_rows_table_with_pseudo_sql.len() >= 1 {
+                            println!("BEGIN;");
+                            for (map_num, pseudo_sqls) in &tmp_cache_binlog_event_rows_table_with_pseudo_sql {
+                                let table_map = tmp_cache_binlog_event_table_map1.get(map_num).unwrap();
 
-                            // if table_map.database_name != "`test`" {
-                            for pseudo_sql in pseudo_sqls {
-                                let pseudosql: Vec<String> = parse_event_rows_pseudosql(pseudo_sql, table_map);
-                                println!("{}", format!("{};", pseudosql.join(" ").trim_end_matches(',')))
+                                // if table_map.database_name != "`test`" {
+                                for pseudo_sql in pseudo_sqls {
+                                    let pseudosql: Vec<String> = parse_event_rows_pseudosql(pseudo_sql, table_map);
+                                    println!("{}", format!("{};", pseudosql.join(" ").trim_end_matches(',')))
+                                }
+                                // }
                             }
-                            // }
+                            println!("COMMIT;");
                         }
-                        println!("COMMIT;");
                     }
 
                     tmp_cache_binlog_head.clear();
