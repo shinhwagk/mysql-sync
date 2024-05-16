@@ -5,7 +5,7 @@ use std::io::{self, BufRead};
 
 fn main() {
     let (tx, rx) = mpsc::channel();
-    let timeout_duration = Duration::from_secs(15); // 超时时长设置为15秒
+    let timeout_duration = Duration::from_millis(100); // 超时时长设置为100毫秒
 
     // 单独的线程来读取标准输入
     thread::spawn(move || {
@@ -19,23 +19,34 @@ fn main() {
         }
     });
 
+    let mut current_line = None;
     // 主线程作为接收方
     loop {
         match rx.recv_timeout(timeout_duration) {
             Ok(line) => {
-                println!("接收到数据: {}", line);
-                // 这里处理接收到的数据
+                if let Some(current) = current_line.take() {
+                    process_line(&current, Some(&line));
+                }
+                current_line = Some(line);
             },
             Err(mpsc::RecvTimeoutError::Timeout) => {
-                println!("超过15秒未接收到数据，可能是阶段性结束。");
-                // 这里可以处理阶段性结束的逻辑，如暂停操作或特定的处理
-                // 如果确定整个数据流结束，可以退出循环
-                // break;
+                if let Some(current) = current_line.take() {
+                    process_line(&current, None);
+                }
+                break; // 超时则假定结束，退出循环
             },
             Err(e) => {
                 println!("接收错误: {:?}", e);
                 break; // 其他错误，退出循环
             }
         }
+    }
+}
+
+// Function to process the current line and optionally the next line
+fn process_line(current_line: &str, next_line: Option<&str>) {
+    match next_line {
+        Some(next) => println!("Current Line: {}, Next Line: {}", current_line, next),
+        None => println!("Current Line: {}, No more data received", current_line),
     }
 }
