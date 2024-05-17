@@ -57,8 +57,6 @@ if __name__ == "__main__":
     compare_success = 0
     parallel = 6
 
-
-
     with ProcessPoolExecutor(max_workers=parallel) as executor:
         future_to_task = {executor.submit(_f, src_db, src_tab): f"{src_db}.{src_tab}" for src_db, src_tab in tables}
 
