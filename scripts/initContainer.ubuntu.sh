@@ -4,6 +4,8 @@ set -ex
 
 export DEBIAN_FRONTEND=noninteractive
 
+apt update
+
 # install packages
 apt install -y curl wget lsb-release gnupg gcc # cmake make 
 
