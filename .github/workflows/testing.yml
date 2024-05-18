@@ -8,8 +8,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    # container:
-      # image: rockylinux:9
+    container:
+      image: ubuntu:24.04
     services:
       mysql8036_1:
         image: shinhwagk/mysql:8.0.36
