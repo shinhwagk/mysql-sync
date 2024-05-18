@@ -1,6 +1,6 @@
-FROM --platform=linux/amd64 rockylinux:9
-# FROM rockylinux:9
+FROM --platform=linux/amd64 ubuntu:24.04
 
-RUN dnf install -y zsh git
+RUN apt update
+RUN apt install -y zsh git wget lsb-release gnupg
 
-RUN sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+# RUN sh -c "$(wget https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh -O -)"

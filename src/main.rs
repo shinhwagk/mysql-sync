@@ -175,7 +175,7 @@ fn parse_col_types_enum(input: &str) -> Vec<String> {
 //     Ok(())
 // }
 
-fn parse_event_rows_pseudosql(psedosql: &Vec<String>, tmp_cache_event_table_map: &TableMap) -> Vec<String> {
+fn parse_event_rows_pseudosql(psedosql: &Vec<String>, tmp_cache_event_table_map: &TableMap) -> Result<Vec<String>, String> {
     let mut statement: Vec<String> = Vec::new();
 
     for sql_str in psedosql {
@@ -192,16 +192,25 @@ fn parse_event_rows_pseudosql(psedosql: &Vec<String>, tmp_cache_event_table_map:
             if col.types.starts_with("VARCHAR")
                 || col.types.starts_with("CHAR")
                 || col.types == "INT"
+                || col.types == "TINYINT"
                 || col.types == "SMALLINT"
                 || col.types == "BIGINT"
+                || col.types == "MEDIUMINT"
                 || col.types == "FLOAT"
                 || col.types == "DOUBLE"
                 || col.types.starts_with("DECIMAL")
+                || col.types.starts_with("BIT")
                 || col.types == "DATE"
                 || col.types == "TIME"
                 || col.types == "DATETIME"
                 || col.types == "YEAR"
                 || col.types == "BLOB"
+                || col.types == "MEDIUMBLOB"
+                || col.types == "TINYBLOB"
+                || col.types == "LONGBLOB"
+                || col.types == "TINYTEXT"
+                || col.types == "MEDIUMTEXT"
+                || col.types == "LONGTEXT"
                 || col.types == "TEXT"
             {
                 statement.push(format!("{}={},", col.name, val));
@@ -210,11 +219,10 @@ fn parse_event_rows_pseudosql(psedosql: &Vec<String>, tmp_cache_event_table_map:
 
                 match val.parse::<usize>() {
                     Ok(index) => {
-                        statement.push(format!("{}='{}',", col.name, format_enum[index]));
+                        // println!("format e {:?} {}", format_enum, index);
+                        statement.push(format!("{}='{}',", col.name, format_enum[index - 1]));
                     }
-                    Err(_) => {
-                        println!("Failed to parse index");
-                    }
+                    Err(e) => return Err(e.to_string()),
                 }
             } else if col.types.starts_with("SET(") {
                 let format_set = parse_col_types_set(&col.types);
@@ -227,13 +235,17 @@ fn parse_event_rows_pseudosql(psedosql: &Vec<String>, tmp_cache_event_table_map:
             } else if col.types == "TIMESTAMP" {
                 statement.push(format!("{}=FROM_UNIXTIME({}),", col.name, val));
             } else {
+                println!("error xxx {} {}", col.types, val);
+                return Err("发生错误了！".into());
+
                 // error
             }
         } else {
             statement.push((&sql_str[4..]).to_string());
         }
     }
-    statement
+
+    Ok((statement))
 }
 
 fn parse_event_table_map_column(col_str: &str) -> (String, String) {
@@ -304,7 +316,7 @@ impl ParseBinlogLines {
         }
     }
 
-    fn process_line(&mut self, line: &str, next_line: Option<&str>) {
+    fn process_line(&mut self, line: &str, next_line: Option<&str>) -> Result<(), String> {
         if !line.starts_with("#") {
             // stdout
         }
@@ -329,35 +341,7 @@ impl ParseBinlogLines {
         if line.starts_with("# at ") {
             match self.binlog_event {
                 BinlogEvent::TableMap => {}
-                BinlogEvent::WriteRows | BinlogEvent::UpdateRows | BinlogEvent::DeleteRows => {
-                    // row event last line;
-                    // match self.binlog_event_rows {
-                    //     BinlogEventRows::PseudoSql => {
-                    //         let map_num = self.tmp_cache_binlog_event_table_map.map_num.clone();
-
-                    //         self.tmp_cache_binlog_event_rows_table_with_pseudo_sql
-                    //             .entry(map_num)
-                    //             .or_insert(Vec::new())
-                    //             .push(tmp_cache_binlog_event_rows_pseudo_sql.clone());
-
-                    //         // self.tmp_cache_binlog_event_rows_table_with_pseudo_sql.insert(map_num);
-                    //         tmp_cache_binlog_event_rows_pseudo_sql.clear();
-                    //     }
-                    //     _ => {}
-                    // }
-                    // // tmp_cache_binlog_event_data_rows
-                    //     .raw_mult_pseudo_sql
-                    //     .push(tmp_cache_binlog_event_data_rows.raw_pseudo_sql.clone());
-                    // // if tmp_cache_binlog_event_data_rows.tab_id == tmp_cache_event_table_map.map_num && tmp_cache_event_table_map.database_name
-                    // for pseudo_sql in &tmp_cache_binlog_event_data_rows.raw_mult_pseudo_sql {
-                    //     let pseudosql: Vec<String> = parse_event_rows_pseudosql(pseudo_sql, &self.tmp_cache_binlog_event_table_map);
-                    //     // cache_stdout.push(;
-                    //     tmp_cache_binlog_event_data_rows
-                    //         .pseudo_sql
-                    //         .push(format!("{};", pseudosql.join(" ").trim_end_matches(',')));
-                    // }
-                    // tmp_cache_binlog_event_data_rows.raw_mult_pseudo_sql.clear();
-                }
+                BinlogEvent::WriteRows | BinlogEvent::UpdateRows | BinlogEvent::DeleteRows => {}
                 _ => {}
             }
             self.binlog_event = BinlogEvent::None;
@@ -497,7 +481,7 @@ impl ParseBinlogLines {
                 // error
             }
             // skip event head line
-            return;
+            return Ok(());
         } else if line.starts_with("#691231") || line.starts_with("#700101") {
             let tokens: Vec<&str> = line.split_whitespace().collect();
             match tokens.len() {
@@ -598,6 +582,7 @@ impl ParseBinlogLines {
                                 let col_str = &line[10..line.len() - 1];
 
                                 let (col_name, col_types) = parse_event_table_map_column(col_str);
+
                                 let col = TableColumnMap {
                                     name: col_name,
                                     types: col_types,
@@ -619,7 +604,7 @@ impl ParseBinlogLines {
                             }
                         }
                         BinlogEventTableMap::Skip => {
-                            return;
+                            return Ok(());
                         }
                     }
                 }
@@ -657,7 +642,7 @@ impl ParseBinlogLines {
                 // }
                 BinlogEvent::WriteRows | BinlogEvent::DeleteRows | BinlogEvent::UpdateRows => {
                     if self.binlog_event_table_map == BinlogEventTableMap::Skip {
-                        return;
+                        return Ok(());
                     }
 
                     match self.binlog_event_rows {
@@ -689,8 +674,17 @@ impl ParseBinlogLines {
 
                                 self.tmp_cache_binlog_event_rows_pseudo_sql.push(line.to_string());
                             } else if line.starts_with("### ") {
-                                // tmp_cache_binlxog_event_data_rows.raw_pseudo_sql.push(line);
                                 self.tmp_cache_binlog_event_rows_pseudo_sql.push(line.to_string());
+                                if let Some(next) = next_line {
+                                    if next.starts_with("# ") {
+                                        let map_num = self.tmp_cache_binlog_event_table_map.map_num.clone();
+                                        self.tmp_cache_binlog_event_rows_table_with_pseudo_sql
+                                            .entry(map_num)
+                                            .or_insert(Vec::new())
+                                            .push(self.tmp_cache_binlog_event_rows_pseudo_sql.clone());
+                                        self.tmp_cache_binlog_event_rows_pseudo_sql.clear();
+                                    }
+                                }
                             } else {
                                 // error
                             }
@@ -698,8 +692,6 @@ impl ParseBinlogLines {
                         BinlogEventRows::None => {
                             if line.starts_with("### DELETE FROM ") || line.starts_with("### UPDATE ") || line.starts_with("### INSERT INTO ") {
                                 self.binlog_event_rows = BinlogEventRows::PseudoSql;
-
-                                // tmp_cache_binlog_event_data_rows.raw_pseudo_sql.push(line);
 
                                 self.tmp_cache_binlog_event_rows_pseudo_sql.push(line.to_string());
                             } else if line == "BINLOG '" {
@@ -865,8 +857,12 @@ impl ParseBinlogLines {
 
                         // if table_map.database_name != "`test`" {
                         for pseudo_sql in pseudo_sqls {
-                            let pseudosql: Vec<String> = parse_event_rows_pseudosql(pseudo_sql, table_map);
-                            println!("{}", format!("{};", pseudosql.join(" ").trim_end_matches(',')))
+                            match parse_event_rows_pseudosql(pseudo_sql, table_map) {
+                                Ok((pseudosql)) => {
+                                    println!("{}", format!("{};", pseudosql.join(" ").trim_end_matches(',')))
+                                }
+                                Err(e) => return Err(format!("column type parse faile: {}", e)),
+                            }
                         }
                         // }
                     }
@@ -884,6 +880,7 @@ impl ParseBinlogLines {
 
             self.output = false;
         }
+        Ok(())
     }
 }
 
@@ -902,7 +899,6 @@ fn process_lines() {
                     break;
                 }
             };
-            println!("{}", line);
             if tx.send(line).is_err() {
                 println!("Sending error, receiver has likely quit.");
                 break;
@@ -917,20 +913,32 @@ fn process_lines() {
         match rx.recv_timeout(timeout_duration) {
             Ok(line) => {
                 if let Some(current) = current_line.take() {
-                    processor.process_line(&current, Some(&line));
+                    match processor.process_line(&current, Some(&line)) {
+                        Ok(()) => {}
+                        Err(e) => {
+                            eprintln!("操作失败：{}", e);
+                            std::process::exit(1);
+                        }
+                    }
                 }
                 current_line = Some(line);
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 if let Some(current) = current_line.take() {
-                    processor.process_line(&current, None);
+                    match processor.process_line(&current, None) {
+                        Ok(()) => {}
+                        Err(e) => {
+                            eprintln!("操作失败：{}", e);
+                            std::process::exit(1);
+                        }
+                    }
                 }
 
                 thread::sleep(Duration::from_millis(10));
                 continue;
             }
             Err(e) => {
-                println!("Receive error: {:?}", e);
+                eprintln!("Receive error: {:?}", e);
                 break;
             }
         }

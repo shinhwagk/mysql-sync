@@ -8,8 +8,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    container:
-      image: rockylinux:9
+    # container:
+      # image: rockylinux:9
     services:
       mysql8036_1:
         image: shinhwagk/mysql:8.0.36
@@ -54,8 +54,6 @@ jobs:
       - name: Running testing
         run: |
           set -e
-          # bash scripts/testing_ms.sh
-
           bash scripts/testing_github.sh
         env:
           ARGS_SOURCE_HOST: mysql8036_1
