@@ -12,7 +12,7 @@ apt install -y curl wget lsb-release gnupg gcc # cmake make
 # install mysql clients
 if [[ -z $(command -v mysqlbinlog) ]]; then
     wget https://dev.mysql.com/get/mysql-apt-config_0.8.30-1_all.deb && dpkg -i mysql-apt-config_0.8.30-1_all.deb && rm -f mysql-apt-config_0.8.30-1_all.deb
-    apt install -y mysql-server-core-8.0 mysql-community-client-core
+    apt update && apt install -y mysql-server-core-8.0 mysql-community-client-core
 fi
 
 # install rustup
