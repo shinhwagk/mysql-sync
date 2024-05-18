@@ -6,7 +6,7 @@ on:
       - main
 
 jobs:
-  test:
+  testing:
     runs-on: ubuntu-latest
     container:
       image: ubuntu:24.04

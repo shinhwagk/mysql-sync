@@ -24,19 +24,19 @@ fi
 # tar zxvf /tmp/gh-ost.tar.gz -C /usr/local/bin/
 
 # install kafka sdk
-rpm --import https://packages.confluent.io/rpm/7.6/archive.key
-update-crypto-policies --set DEFAULT:SHA1
-echo '[Confluent]
-name=Confluent repository
-baseurl=https://packages.confluent.io/rpm/7.6
-gpgcheck=1
-gpgkey=https://packages.confluent.io/rpm/7.6/archive.key
-enabled=1
+# rpm --import https://packages.confluent.io/rpm/7.6/archive.key
+# update-crypto-policies --set DEFAULT:SHA1
+# echo '[Confluent]
+# name=Confluent repository
+# baseurl=https://packages.confluent.io/rpm/7.6
+# gpgcheck=1
+# gpgkey=https://packages.confluent.io/rpm/7.6/archive.key
+# enabled=1
 
-[Confluent-Clients]
-name=Confluent Clients repository
-baseurl=https://packages.confluent.io/clients/rpm/centos/$releasever/$basearch
-gpgcheck=1
-gpgkey=https://packages.confluent.io/clients/rpm/archive.key
-enabled=1' >/etc/yum.repos.d/confluent.repo
-dnf install -y librdkafka-devel
+# [Confluent-Clients]
+# name=Confluent Clients repository
+# baseurl=https://packages.confluent.io/clients/rpm/centos/$releasever/$basearch
+# gpgcheck=1
+# gpgkey=https://packages.confluent.io/clients/rpm/archive.key
+# enabled=1' >/etc/yum.repos.d/confluent.repo
+# dnf install -y librdkafka-devel
