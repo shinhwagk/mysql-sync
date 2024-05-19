@@ -19,6 +19,9 @@ fi
 [[ -z $(command -v cargo) ]] && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 # curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
+# install python
+apt install -y python3.12-full
+
 # # install gh-ost
 # curl -Lso /tmp/gh-ost.tar.gz https://github.com/github/gh-ost/releases/download/v1.1.6/gh-ost-binary-linux-amd64-20231207144046.tar.gz
 # tar zxvf /tmp/gh-ost.tar.gz -C /usr/local/bin/

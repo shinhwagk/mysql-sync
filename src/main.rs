@@ -175,11 +175,19 @@ fn parse_col_types_enum(input: &str) -> Vec<String> {
 //     Ok(())
 // }
 
-fn parse_event_rows_pseudosql(psedosql: &Vec<String>, tmp_cache_event_table_map: &TableMap) -> Result<Vec<String>, String> {
+fn parse_event_rows_pseudosql(psedosql: &Vec<String>, tmp_cache_event_table_map: &TableMap) -> Result<String, String> {
     let mut statement: Vec<String> = Vec::new();
+    let mut is_update = false;
+
+    let mut is_where = false;
+
+    let mut where_cols: Vec<String> = Vec::new();
+    let mut set_cols: Vec<String> = Vec::new();
 
     for sql_str in psedosql {
         if sql_str.starts_with("###   @") {
+            // let symbol = is_where? "and" :",";
+
             let end = sql_str.find('=').unwrap();
             let cmt_start = sql_str.find("/*").unwrap();
 
@@ -188,6 +196,8 @@ fn parse_event_rows_pseudosql(psedosql: &Vec<String>, tmp_cache_event_table_map:
             let val = sql_str[end + 1..cmt_start].trim();
             let col = &(tmp_cache_event_table_map.cols)[(ci - 1) as usize];
             // let cn = &cols[(ci - 1) as usize];
+
+            let mut col_str = String::new();
 
             if col.types.starts_with("VARCHAR")
                 || col.types.starts_with("CHAR")
@@ -213,14 +223,14 @@ fn parse_event_rows_pseudosql(psedosql: &Vec<String>, tmp_cache_event_table_map:
                 || col.types == "LONGTEXT"
                 || col.types == "TEXT"
             {
-                statement.push(format!("{}={},", col.name, val));
+                col_str = format!("{}={}", col.name, val);
             } else if col.types.starts_with("ENUM(") {
                 let format_enum = parse_col_types_enum(&col.types);
 
                 match val.parse::<usize>() {
                     Ok(index) => {
                         // println!("format e {:?} {}", format_enum, index);
-                        statement.push(format!("{}='{}',", col.name, format_enum[index - 1]));
+                        col_str = format!("{}='{}'", col.name, format_enum[index - 1]);
                     }
                     Err(e) => return Err(e.to_string()),
                 }
@@ -231,21 +241,50 @@ fn parse_event_rows_pseudosql(psedosql: &Vec<String>, tmp_cache_event_table_map:
 
                 let val = binary_to_set(set_val, &format_set);
 
-                statement.push(format!("{}='{}',", col.name, val));
+                col_str = format!("{}='{}'", col.name, val)
             } else if col.types == "TIMESTAMP" {
-                statement.push(format!("{}=FROM_UNIXTIME({}),", col.name, val));
+                col_str = format!("{}=FROM_UNIXTIME({})", col.name, val)
             } else {
-                println!("error xxx {} {}", col.types, val);
+                eprintln!("error xxx {} {}", col.types, val);
                 return Err("发生错误了！".into());
 
                 // error
             }
+            if is_where {
+                where_cols.push(col_str)
+            } else {
+                set_cols.push(col_str)
+            }
         } else {
+            if sql_str.starts_with("### UPDATE") {
+                is_update = true;
+            } else if sql_str == "### WHERE" {
+                is_where = true
+            } else {
+                is_where = false
+            }
+
             statement.push((&sql_str[4..]).to_string());
         }
     }
+    // println!("# fffff{:?} {:?} {:?}", is_update, statement, where_cols);
 
-    Ok((statement))
+    if is_update {
+        // update statement
+        statement.swap(1, 2);
+        statement.insert(2, set_cols.join(", "));
+        statement.push(where_cols.join(" AND "));
+    } else {
+        // delete statement
+        if where_cols.len() >= 1 {
+            statement.push(where_cols.join(" AND "));
+        } else {
+            // insert statement
+            statement.push(set_cols.join(", "));
+        }
+    }
+
+    Ok(format!("{}", format!("{};", statement.join(" "))))
 }
 
 fn parse_event_table_map_column(col_str: &str) -> (String, String) {
@@ -285,6 +324,7 @@ struct ParseBinlogLines {
     tmp_cache_binlog_event_query_xid_pseudo_sql: Vec<String>,
     tmp_cache_binlog_event_rows_pseudo_sql: Vec<String>,
     tmp_cache_binlog_event_table_map1: HashMap<String, TableMap>,
+    tmp_cache_binlog_event_gtid_last_commited: u128,
 
     args_apply: String,
 
@@ -311,6 +351,7 @@ impl ParseBinlogLines {
             tmp_cache_binlog_event_rows_pseudo_sql: Vec::new(),
             args_apply: "pseudo_sql".to_string(), // raw pseudo_sql replace_pseudo_sql
             tmp_cache_binlog_event_table_map1: HashMap::new(),
+            tmp_cache_binlog_event_gtid_last_commited: 0,
 
             output: false,
         }
@@ -365,13 +406,17 @@ impl ParseBinlogLines {
                     "GTID" => {
                         // #240429  2:41:42 server id 1  end_log_pos 234 CRC32 0xbb588611 	GTID	last_committed=0	sequence_number=1	rbr_only=no	original_committed_timestamp=1714358502099265	immediate_commit_timestamp=1714358502099265	transaction_length=181
                         self.binlog_event = BinlogEvent::Gtid;
-                        // let last_commited = binlog_event_tokens[10]
-                        //     .split("=")
-                        //     .last()
-                        //     .expect("No '=' found in token")
-                        //     .parse::<u128>()
-                        //     .expect("Failed to parse number");
-                        // delay_commit = last_commited == tmp_cache_binlog_event_gtid_last_commited;
+                        let last_commited = binlog_event_tokens[10]
+                            .split("=")
+                            .last()
+                            .expect("No '=' found in token")
+                            .parse::<u128>()
+                            .expect("Failed to parse number");
+                        if last_commited != self.tmp_cache_binlog_event_gtid_last_commited && last_commited != 0 {
+                            self.output = true
+                        };
+                        self.tmp_cache_binlog_event_gtid_last_commited = last_commited;
+                        // delay_commit = last_commited == self.tmp_cache_binlog_event_gtid_last_commited;
 
                         // eprintln!("last_committed={} sequence_number={}", binlog_event_tokens[10], binlog_event_tokens[11]);
                     }
@@ -717,7 +762,7 @@ impl ParseBinlogLines {
                 //                 binlog_event_update_rows = BinlogEventUpdateRows::None;
                 //                 temp_cache_rows_event_pseudo_sql.push(line);
                 //                 // append column
-                //             } else if line == "BINLOG '" {
+                //             } else if line == "BINLOG '" {F
                 //                 binlog_event_update_rows = BinlogEventUpdateRows::Binlog
                 //             } else {
                 //             }
@@ -762,7 +807,16 @@ impl ParseBinlogLines {
                     // binlog entry: COMMIT/*!*/;
                     if line == "COMMIT/*!*/;" {
                         // self.tmp_cache_binlog_event_xid.push(line);
-                        self.output = true;
+                        match next_line {
+                            Some(line) => {
+                                if !line.starts_with("# at ") {
+                                    self.output = true;
+                                }
+                            }
+                            None => {
+                                self.output = true;
+                            }
+                        }
                     } else {
                         // error
                     }
@@ -859,7 +913,7 @@ impl ParseBinlogLines {
                         for pseudo_sql in pseudo_sqls {
                             match parse_event_rows_pseudosql(pseudo_sql, table_map) {
                                 Ok((pseudosql)) => {
-                                    println!("{}", format!("{};", pseudosql.join(" ").trim_end_matches(',')))
+                                    println!("{}", pseudosql);
                                 }
                                 Err(e) => return Err(format!("column type parse faile: {}", e)),
                             }
