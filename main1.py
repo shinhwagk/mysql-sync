@@ -124,6 +124,7 @@ class OperationBegin:
 @dataclass
 class OperationGtid:
     gtid: str
+    last_committed: int
 
 
 class OperationType(enum.Enum):
@@ -340,7 +341,7 @@ class MysqlReplication:
 
         # print(event.last_committed, event.sequence_number, event.gtid)
         # self.operations.append(event.gtid)
-        return OperationGtid(event.gtid)
+        return OperationGtid(event.gtid, event.last_committed)
 
         # self.sqlunit = SqlUnit("", [event.gtid], [])
 
@@ -439,21 +440,53 @@ class MysqlSync:
         self.mc = MysqlClient(mysql_target_connection_settings)
 
     def run(self):
+        last_committed = -1
+        is_begin = False
+        allow_commit = False
+        last_operation = None
+        last_gtid = {}
         for operation in self.mr.operation_stream():
+
             if type(operation) == OperationDDL:
+                if is_begin and allow_commit:
+                    self.mc.push_commit()
+                    is_begin = False
+                    allow_commit = False
                 self.mc.push_nondml(operation.schema, operation.sql_text)
             elif type(operation) == OperationDML:
+
                 self.mc.push_dml(operation.sql_text, operation.params)
             elif type(operation) == OperationBegin:
-                self.mc.push_begin()
+                if is_begin == False:
+                    self.mc.push_begin()
+                    is_begin = True
             elif type(operation) == OperationCommit:
-                self.mc.push_commit()
+                allow_commit = True
+            elif type(operation) == OperationGtid:
+                if last_committed != operation.last_committed:
+                    if is_begin and allow_commit:
+                        self.mc.push_commit()
+                        is_begin = False
+                        allow_commit = False
+                    last_committed = operation.last_committed
+
+            elif type(operation) == OperationHeartbeat:
+                if type(operation) == type(last_operation):
+                    if is_begin and allow_commit:
+                        self.mc.push_commit()
+                        is_begin = False
+                        allow_commit = False
             else:
                 pass
+
+            last_operation = type(operation)
+
+        # self.mc.push_commit()
 
 
 @dataclass
 class Config:
+
     mysql_source_connection_string: str
     mysql_source_server_id: int
     mysql_source_report_slave: str
