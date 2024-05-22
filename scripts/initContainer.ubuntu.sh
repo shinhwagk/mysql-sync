@@ -20,7 +20,8 @@ fi
 # curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
 # install python
-apt install -y python3.12-full
+apt install -y python3.12 python3-pip python3.12-full
+pip3.12 install -r requirements.txt
 
 # # install gh-ost
 # curl -Lso /tmp/gh-ost.tar.gz https://github.com/github/gh-ost/releases/download/v1.1.6/gh-ost-binary-linux-amd64-20231207144046.tar.gz

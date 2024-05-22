@@ -1,6 +1,7 @@
 -i https://mirrors.aliyun.com/pypi/simple
 
 mysql-connector-python==8.0.29
-mysql-compare
 
-mysql-replication
+mysql-replication==1.0.8
+
+cryptography

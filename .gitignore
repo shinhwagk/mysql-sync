@@ -1,2 +1,5 @@
 /target
 /temp
+__pycache__
+.DS_Store
+*.vsix

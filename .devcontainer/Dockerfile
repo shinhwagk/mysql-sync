@@ -1,6 +1,4 @@
-FROM --platform=linux/amd64 ubuntu:24.04
+FROM --platform=linux/amd64 quay.io/centos/centos:stream9
 
-RUN apt update
-RUN apt install -y zsh git wget lsb-release gnupg
-
-# RUN sh -c "$(wget https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh -O -)"
+RUN dnf install -y git zsh
+RUN sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"

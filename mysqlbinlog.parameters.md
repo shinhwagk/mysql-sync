@@ -1,2 +1,4 @@
 - binlog_rows_query_log_events
 - binlog_row_metadata
+- binlog_transaction_compression
+- binlog_transaction_compression_level_zstd
