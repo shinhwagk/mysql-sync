@@ -1,5 +1,7 @@
 import argparse
+import enum
 import re
+import time
 from collections import deque
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -10,6 +12,7 @@ from mysql.connector import MySQLConnection
 from mysql.connector.cursor import MySQLCursor
 from pymysqlreplication import BinLogStreamReader
 from pymysqlreplication.column import Column
+from pymysqlreplication.constants import FIELD_TYPE
 from pymysqlreplication.event import (
     BinLogEvent,
     GtidEvent,
@@ -58,26 +61,92 @@ def generate_question_marks(n):
 
 
 def deleteRowsEvent2Sql(event: DeleteRowsEvent) -> str:
-    pass
+    ls = []
+    for row in event.rows:
+        new_values = reset_values(row["values"], event.columns)
+
+        keys_list = [key for key in new_values]
+        vals_list = [new_values[key] for key in keys_list]
+
+        set_step = ", ".join([f"{item}=%s" for item in keys_list])
+
+        where_step = f"`{event.primary_key}`=%s" if event.primary_key else set_step
+
+        where_parsms = [new_values[event.primary_key]] if event.primary_key else vals_list
+
+        sql = f"DELETE FROM `{event.schema}`.`{event.table}` WHERE {where_step}"
+
+        ls.append(OperationDML(sql, tuple(where_parsms)))
+    return ls
 
 
-def updateRowsEvent2Sql(event: UpdateRowsEvent) -> str:
-    pass
+def updateRowsEvent2Replace(event: UpdateRowsEvent):
+    ls = []
+    for row in event.rows:
+        new_values = reset_values(row["after_values"], event.columns)
+
+        new_keys_list = [key for key in new_values]
+        new_vals_list = [new_values[key] for key in new_keys_list]
+
+        result = generate_question_marks(len(new_keys_list))
+        sql = f"REPLACE INTO `{event.schema}`.`{event.table}`({", ".join(new_keys_list)}) VALUES({result})"
+        ls.append(OperationDML(sql, tuple(new_vals_list)))
+
+    return ls
 
 
-def updateRowsEvent2Replace(event: UpdateRowsEvent) -> str:
-    pass
+def updateRowsEvent2Update(event: UpdateRowsEvent):
+    ls = []
+    for row in event.rows:
+        new_after_values = reset_values(row["after_values"], event.columns)
+        new_before_values = reset_values(row["before_values"], event.columns)
+
+        keys_list_after = [key for key in new_after_values]
+        vals_list_after = [new_after_values[key] for key in keys_list_after]
+
+        key_list_before = [key for key in new_before_values]
+        vals_list_before = [new_before_values[key] for key in key_list_before]
+
+        set_step = ", ".join([f"{item}=%s" for item in keys_list_after])
+
+        where_step = f"`{event.primary_key}`=%s" if event.primary_key else set_step
+
+        set_params = vals_list_after
+
+        where_parsms = [new_after_values[event.primary_key]] if event.primary_key else vals_list_before
+
+        params = tuple(set_params + where_parsms)
+        sql = f"UPDATE `{event.schema}`.`{event.table}` SET {set_step} WHERE {where_step}"
+        ls.append(OperationDML(sql, params))
+    return ls
 
 
 def writeRowsEvent2Insert(event: WriteRowsEvent) -> str:
-    pass
+    ls = []
+    for row in event.rows:
+        new_values = reset_values(row["values"], event.columns)
+
+        new_keys_list = [key for key in new_values]
+        new_vals_list = [new_values[key] for key in new_keys_list]
+
+        result = generate_question_marks(len(new_keys_list))
+        sql = f"INSERT INTO `{event.schema}`.`{event.table}`({", ".join(new_keys_list)}) VALUES({result})"
+        ls.append(OperationDML(sql, tuple(new_vals_list)))
+    return ls
 
 
 def writeRowsEvent2Replace(event: WriteRowsEvent) -> str:
-    pass
+    ls = []
+    for row in event.rows:
+        new_values = reset_values(row["values"], event.columns)
 
+        new_keys_list = [key for key in new_values]
+        new_vals_list = [new_values[key] for key in new_keys_list]
 
-import enum
+        result = generate_question_marks(len(new_keys_list))
+        sql = f"REPLACE INTO `{event.schema}`.`{event.table}`({", ".join(new_keys_list)}) VALUES({result})"
+        ls.append(OperationDML(sql, tuple(new_vals_list)))
+    return ls
 
 
 class DDLType(enum.Enum):
@@ -153,7 +222,6 @@ def extract_schema(statement: str) -> tuple[DDLType | None, str | None]:
         match = regex.search(statement)
         if match:
             groups = match.groups()
-            # print(groups, statement)
             if ddl_type in {DDLType.CREATEDATABASE, DDLType.DROPDATABASE}:
                 return ddl_type, groups[0]
             elif len(groups) == 1:
@@ -172,10 +240,17 @@ class MysqlClient:
         self.statement_container = []
 
     def __c_con(self):
-        self.con = mysql.connector.connect(**{"host": "db2", "port": 3306, "user": "root", "passwd": "root_password"})
+        pass
+        # self.con = mysql.connector.connect(**{"host": "db2", "port": 3306, "user": "root", "passwd": "root_password"})
 
     def __c_cur(self):
         self.cur: MySQLCursor = self.con.cursor()
+
+    def get_gtidset(self):
+        with self.con.cursor() as cur:
+            cur.execute("show master status")
+            _, _, _, _, gtidset = cur.fetchone()
+            return gtidset
 
     def push_begin(self):
         self.con.start_transaction()
@@ -184,23 +259,18 @@ class MysqlClient:
     def push_dml(self, sql_text: str, params: tuple) -> None:
         self.statement_container.append((sql_text, params))
         self.dml_cnt += 1
-        xxx = self.cur.execute(sql_text, params)
+        self.cur.execute(sql_text, params)
 
     def push_nondml(self, db: str | None, sql_text: str) -> None:
-        # print(f"exec {db} {sql_text}")
         try:
             if db:
                 self.con.database = db
             with self.con.cursor() as cur:
-
-                #     # print("ccc########c ", cf)
                 cur.execute(sql_text)
-            #     print(cur.fetchall())
         except Exception as e:
             print(f"error push_nondml {db} {sql_text} ", e)
 
     def push_commit(self) -> None:
-        # self.dml_container.clear()
         if len(self.statement_container) >= 1:
             self.con.commit()
             self.dml_cnt = 0
@@ -222,21 +292,53 @@ class Checkpoint:
         pass
 
 
-def set_col(colums: list[Column], col_vals: any):
-    for i, col in enumerate(colums):
-        if col.type == 16:  # bit
-            binary_string = col_vals[i]
-            binary_integer = int(binary_string, 2)
-            binary_data = binary_integer.to_bytes((binary_integer.bit_length() + 7) // 8, byteorder="big")
-            col_vals[i] = binary_data
-        elif col.type == 248:  # set
-            col_vals[i] = ",".join(col_vals[i])
-        else:
-            continue
+def reset_col_val(colum_type: int, col_val: any):
+    if colum_type in [
+        FIELD_TYPE.VAR_STRING,
+        FIELD_TYPE.VARCHAR,
+        FIELD_TYPE.DECIMAL,
+        FIELD_TYPE.CHAR,
+        FIELD_TYPE.STRING,
+        FIELD_TYPE.SHORT,
+        FIELD_TYPE.LONG,
+        FIELD_TYPE.INT24,
+        FIELD_TYPE.LONGLONG,
+        FIELD_TYPE.FLOAT,
+        FIELD_TYPE.DOUBLE,
+        FIELD_TYPE.NEWDECIMAL,
+        FIELD_TYPE.DATE,
+        FIELD_TYPE.DATETIME2,
+        FIELD_TYPE.TIMESTAMP2,
+        FIELD_TYPE.TIME2,
+        FIELD_TYPE.YEAR,
+        FIELD_TYPE.BLOB,
+        FIELD_TYPE.ENUM,
+    ]:
+        return col_val
+    elif colum_type == FIELD_TYPE.BIT:
+        binary_string = col_val
+        binary_integer = int(binary_string, 2)
+        binary_data = binary_integer.to_bytes((binary_integer.bit_length() + 7) // 8, byteorder="big")
+        return binary_data
+    elif colum_type == FIELD_TYPE.SET:
+        return ",".join(col_val)
+    else:
+        raise Exception(f"unreset col val type {colum_type} {type(col_val)} {col_val}")
+
+
+def reset_values(values: dict, columns: list[Column]) -> dict[str, any]:
+    new_values: dict[str, any] = {}
+    for column in columns:
+        col_name = column.name
+        if col_name in values:
+            new_values[col_name] = reset_col_val(column.type, values[col_name])
+    return new_values
 
 
 class MysqlReplication:
-    def __init__(self, connection_settings: dict, server_id: int, report_slave: str, slave_heartbeat: int, blocking: bool) -> None:
+    def __init__(
+        self, connection_settings: dict, server_id: int, report_slave: str, slave_heartbeat: int, blocking: bool, gtidset: str | None
+    ) -> None:
         self.binlogeventstream: Iterator[BinLogEvent] = BinLogStreamReader(
             connection_settings=connection_settings,
             server_id=server_id,
@@ -244,132 +346,37 @@ class MysqlReplication:
             blocking=blocking,
             report_slave=report_slave,
             slave_heartbeat=slave_heartbeat,
+            auto_position=gtidset,
         )
 
-    # def get_binlog_stream() -> Iterator[BinLogEvent]:
-    #     mysql_settings = {"host": "127.0.0.1", "port": 3306, "user": "root", "passwd": ""}
-    #     stream = BinLogStreamReader(connection_settings=mysql_settings, server_id=3, blocking=True)
-    #     return stream
+        self.idempotent = True
 
     def __handle_table_map_event(self, event: TableMapEvent):
         pass
         # print("handle_table_map_event", event.schema, event.table)
 
-    def __handle_event_update_rows(self, event: UpdateRowsEvent):
-        for row in event.rows:
-            keys_list = [key for key in row["after_values"]]
-            vals_list = [row["after_values"][key] for key in keys_list]
-
-            keys2_list = [key for key in row["before_values"]]
-            vals2_list = [row["before_values"][key] for key in keys2_list]
-
-            set_step = ", ".join([f"{item}=%s" for item in keys_list])
-
-            where_step = f"`{event.primary_key}`=%s" if event.primary_key else set_step
-
-            set_col(event.columns, vals_list)
-
-            set_params = vals_list
-
-            where_parsms = [row["after_values"][event.primary_key]] if event.primary_key else vals2_list
-
-            params = tuple(set_params + where_parsms)
-            sql = f"UPDATE `{event.schema}`.`{event.table}` SET {set_step} WHERE {where_step}"
-            # print(sql, params)
-
-            # self.mysqlclient.push_dml(sql, params)
-
-            # self.sqlqueue.append(SqlUnit("dml", sql, params))
-
-            # self.sqlunit.kind = "dml"
-            # self.sqlunit.sqls.append(tuple(sql, params))
-            return OperationDML(sql, params)
+    def __handle_event_update_rows(self, event: UpdateRowsEvent) -> list[OperationDML]:
+        return updateRowsEvent2Replace(event) if self.idempotent else updateRowsEvent2Update(event)
 
     def __handle_event_write_rows(self, event: WriteRowsEvent):
-        col: Column = event.columns[1]
-
-        for row in event.rows:
-            keys_list = [key for key in row["values"]]
-            vals_list = [row["values"][key] for key in keys_list]
-
-            set_col(event.columns, vals_list)
-
-            # for i in range(len(vals_list)):
-            #     if type(vals_list[i]) == set:
-            #         vals_list[i] = ", ".join(vals_list[i])
-
-            # set type
-            # vals_list[-1] = ",".join(map(str, vals_list[-1]))
-
-            # vals_list[9] = int(vals_list[9], 2)
-
-            result = generate_question_marks(len(keys_list))
-
-            sql = f"INSERT INTO `{event.schema}`.`{event.table}`({", ".join(keys_list)}) VALUES({result})"
-            # print("sql statement", len(keys_list), len(vals_list), sql, tuple(vals_list))
-            # self.sqlqueue.append(SqlUnit("dml", sql, tuple(vals_list)))
-
-            x: tuple[str, tuple] = (sql, tuple(vals_list))
-            # print(x)
-
-            # self.mysqlclient.push_dml(sql, tuple(vals_list))
-
-            # self.sqlunit.sqls.append(x)
-            return OperationDML(sql, tuple(vals_list))
+        return writeRowsEvent2Replace(event) if self.idempotent else writeRowsEvent2Insert(event)
 
     def __handle_event_delete_rows(self, event: DeleteRowsEvent):
-        for row in event.rows:
-            keys_list = [key for key in row["values"]]
-            vals_list = [row["values"][key] for key in keys_list]
-
-            set_step = ", ".join([f"{item}=%s" for item in keys_list])
-
-            where_step = f"`{event.primary_key}`=%s" if event.primary_key else set_step
-
-            where_parsms = [row["values"][event.primary_key]] if event.primary_key else vals_list
-
-            params = tuple(where_parsms)
-            sql = f"DELETE FROM `{event.schema}`.`{event.table}` WHERE {where_step}"
-            # self.sqlqueue.append(SqlUnit("dml", sql, params))
-
-            # self.sqlunit.kind = "dml"
-            # self.sqlunit.sqls.append(tuple(sql, params))
-            # self.mysqlclient.push_dml(sql, params)
-            return OperationDML(sql, params)
+        return deleteRowsEvent2Sql(event)
 
     def __handle_event_gtid(self, event: GtidEvent):
-
-        # print(event.last_committed, event.sequence_number, event.gtid)
-        # self.operations.append(event.gtid)
         return OperationGtid(event.gtid, event.last_committed)
 
-        # self.sqlunit = SqlUnit("", [event.gtid], [])
-
-        # for sql in self.sqlqueue:
-        #     print(self.logfile, event.packet.log_pos, sql)
-        # self.sqlqueue.clear()
-
     def __handle_event_rotate(self, event: RotateEvent):
-        # print(event.next_binlog)
         self.logfile = event.next_binlog
 
     def __handle_event_xid(self, event: XidEvent):
-        # for sql, params in self.sqlunit.sqls:
-        #     print(self.sqlunit.gtid, self.logfile, event.packet.log_pos, sql, params)
-        # # self.sqlqueue.clear()
-
         return OperationCommit()
 
     def __handle_event_query(self, event: QueryEvent):
-        # print(event.query)
         if event.query == "BEGIN":
             return OperationBegin()
-            # print("dml", event.schema)
         else:
-            # print(event.schema, event.schema_length, event.query)
-            # self.sqlunit.kind = "ddl"
-            # self.sqlunit.sqls.append((event.query, ()))
-            # print("push non-dml to target mysql", event.schema, event.query)
             ddltype, db = extract_schema(event.query)
 
             if ddltype and ddltype in (DDLType.CREATEDATABASE, DDLType.DROPDATABASE, DDLType.ALTERDATABASE):
@@ -378,7 +385,7 @@ class MysqlReplication:
             else:
                 if event.schema_length >= 1:
                     schema: bytes = event.schema
-                    # self.mysqlclient.push_nondml(schema.decode("utf-8"), event.query)
+
                     return OperationDDL(schema.decode("utf-8"), event.query)
                 else:
                     if db:
@@ -386,12 +393,11 @@ class MysqlReplication:
                     else:
                         raise Exception("db not know")
 
-            # for sql, params in self.sqlunit.sqls:
-            #     print(self.sqlunit.gtid, self.logfile, event.packet.log_pos, sql, params)
-
     def __handle_event_heartheatlog(self, event: HeartbeatLogEvent):
         return OperationHeartbeat()
-        # print(event.__dict__)
+
+    def set_idempotent(self, idempotent: bool):
+        self.idempotent = idempotent
 
     def operation_stream(self):
         handlers = {
@@ -414,13 +420,40 @@ class MysqlReplication:
             if handler:
                 operation = handler(binlogevent)
                 if operation:
-                    yield operation
+                    if type(operation) == list:
+                        for l in operation:
+                            yield l
+                    else:
+                        yield operation
+
+
+gtid_re = re.compile(r"^([a-zA-Z0-9_]{8}-[a-zA-Z0-9_]{4}-[a-zA-Z0-9_]{4}-[a-zA-Z0-9_]{4}-[a-zA-Z0-9_]{12}):[0-9]+-([0-9]+)$")
+
+
+def parse_gtidset(gtidset_str: str) -> dict[str, int]:
+    _gtidset = {}
+    for gtid in gtidset_str.split(","):
+        match = gtid_re.search(gtid)
+        if match:
+            server_uuid, xid = match.groups()
+            _gtidset[server_uuid] = int(xid)
+        else:
+            raise Exception(f"gtid set format error {gtid}")
+    return _gtidset
+
+
+class MysqlRowCompare:
+    def __init__(self, mysql_source_connection_settings: dict, mysql_target_connection_settings: dict):
+        pass
+
+    def compare_key(self, dbtab: str, primarykey: dict[str, any]):
+        pass
+
+    def compare_nonkey(self, dbtab: str, values: list[any]):
+        pass
 
 
 class MysqlSync:
-    # root/root@password@db1:3306?charset=utf8mb4
-    # root/root@password@db2:3306?charset=utf8mb4
-
     def __init__(
         self,
         mysql_source_connection_settings: dict,
@@ -428,6 +461,7 @@ class MysqlSync:
         mysql_source_report_slave: str,
         mysql_source_slave_heartbeat: int,
         mysql_source_blocking: bool,
+        mysql_source_gtidset: str | None,
         mysql_target_connection_settings: dict,
     ) -> None:
         self.mr = MysqlReplication(
@@ -436,63 +470,106 @@ class MysqlSync:
             report_slave=mysql_source_report_slave,
             slave_heartbeat=mysql_source_slave_heartbeat,
             blocking=mysql_source_blocking,
+            gtidset=mysql_source_gtidset,
         )
         self.mc = MysqlClient(mysql_target_connection_settings)
+        self.gtid_sets: dict[str, int] = {}
+
+        self.abc = {"dml": 0, "cmt": 0}
+
+        self.last_committed = -1
+        self.is_begin = False
+        self.allow_commit = False
+        self.last_operation = None
+
+        # self.target_gtidset = parse_gtidset(self.mc.get_gtidset())
+        # self.target_idempotent = {server_uuid: True for server_uuid in self.target_gtidset.keys()}
+        # self.last_gtidset = {}
+
+    def __update_gtid(self, gtid: str):
+        # 73b24aef-0b4d-11ef-9a54-1418774ca835:1-13313466:13313468-15821064:15821066-18093826:18093828-21851433:21851435-24792086:24792088-27279728:27279730-29405984,
+        # eb559d55-f6e4-11ee-94e4-c81f66d988c2:21564725-52461618,
+        # f62d4ccd-b0f7-11ee-bad1-005056b3c0f8:1-2
+        server_uuid, xid = gtid.split(":")
+        self.gtid_sets[server_uuid] = int(xid)
+
+    def __compare_gtidxid(self, gtidset: dict[str, int]):
+        for source_server_uuid, source_xid in gtidset.items():
+            target_xid = self.target_gtidset.get(source_server_uuid)
+            if target_xid:
+                if source_xid > target_xid:
+                    self.target_idempotent[source_server_uuid] = False
+            else:
+                self.target_idempotent[source_server_uuid] = False
+        # print(self.target_gtidset, gtidset, self.target_idempotent)
+
+    def __commit(self):
+        if self.is_begin and self.allow_commit:
+            self.mc.push_commit()
+            self.abc["cmt"] += 1
+            self.is_begin = False
+            self.allow_commit = False
+
+    # def __checkpoint(self):
+    #     print("checkpoint", self.last_gtidset)
 
     def run(self):
-        last_committed = -1
-        is_begin = False
-        allow_commit = False
-        last_operation = None
-        last_gtid = {}
-        for operation in self.mr.operation_stream():
+        _ts = time.time()
 
+        for operation in self.mr.operation_stream():
             if type(operation) == OperationDDL:
-                if is_begin and allow_commit:
-                    self.mc.push_commit()
-                    is_begin = False
-                    allow_commit = False
+                self.__commit()
                 self.mc.push_nondml(operation.schema, operation.sql_text)
             elif type(operation) == OperationDML:
-
+                self.abc["dml"] += 1
                 self.mc.push_dml(operation.sql_text, operation.params)
             elif type(operation) == OperationBegin:
-                if is_begin == False:
+                if self.is_begin == False:
                     self.mc.push_begin()
-                    is_begin = True
+                    self.is_begin = True
             elif type(operation) == OperationCommit:
-                allow_commit = True
+                self.allow_commit = True
             elif type(operation) == OperationGtid:
-                if last_committed != operation.last_committed:
-                    if is_begin and allow_commit:
-                        self.mc.push_commit()
-                        is_begin = False
-                        allow_commit = False
-                    last_committed = operation.last_committed
+                if self.last_committed != operation.last_committed:
+                    self.__commit()
+                    self.last_committed = operation.last_committed
 
+                server_uuid, xid = operation.gtid.split(":")
+                self.gtid_sets[server_uuid] = int(xid)
             elif type(operation) == OperationHeartbeat:
-                if type(operation) == type(last_operation):
-                    if is_begin and allow_commit:
-                        self.mc.push_commit()
-                        is_begin = False
-                        allow_commit = False
+                if type(self.last_operation) == OperationHeartbeat:
+                    self.__commit()
             else:
                 pass
 
-            last_operation = type(operation)
+            self.last_operation = type(operation)
 
+            _ts_2 = time.time()
+            if _ts_2 >= _ts + 10:
+                # self.__compare_gtidxid(g)
+                # self.__checkpoint()
+                print(_ts_2, self.abc)
+                print(self.gtid_sets)
+
+                _ts = _ts_2
+
+        if self.is_begin and self.allow_commit:
+            self.__commit()
+
+        print(_ts_2, self.abc)
+        print(self.gtid_sets)
         # self.mc.push_commit()
 
 
 @dataclass
 class Config:
-
     mysql_source_connection_string: str
     mysql_source_server_id: int
     mysql_source_report_slave: str
     mysql_source_slave_heartbeat: int
     mysql_source_blocking: bool
     mysql_target_connection_string: str
+    mysql_source_gtidset: str | None
 
 
 parser = argparse.ArgumentParser(prog="ProgramName", description="What the program does", epilog="Text at the bottom of help")
@@ -501,11 +578,13 @@ parser.add_argument("--mysql_source_server_id", type=int, required=True)
 parser.add_argument("--mysql_source_report_slave", type=str, required=True)
 parser.add_argument("--mysql_source_slave_heartbeat", type=int, required=True)
 parser.add_argument("--mysql_source_blocking", action="store_true")
+parser.add_argument("--mysql_source_gtidset", type=str)
 
 parser.add_argument("--mysql_target_connection_string", type=str, required=True)
+
 args = parser.parse_args()
+
 config = Config(**vars(args))
-print(config)
 
 MysqlSync(
     parse_connection_string(config.mysql_source_connection_string),
@@ -513,5 +592,6 @@ MysqlSync(
     config.mysql_source_report_slave,
     config.mysql_source_slave_heartbeat,
     config.mysql_source_blocking,
+    config.mysql_source_gtidset,
     parse_connection_string(config.mysql_target_connection_string),
 ).run()

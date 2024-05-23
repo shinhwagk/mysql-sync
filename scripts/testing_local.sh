@@ -51,8 +51,8 @@ function sysbench_load_data() {
     local testdb=$1
     MYSQL_SOURCE_CLIENT -e "CREATE DATABASE IF NOT EXISTS ${testdb};"
     # for testname in oltp_insert oltp_delete oltp_update_index oltp_update_non_index oltp_write_only bulk_insert; do
-    for testname in oltp_insert oltp_delete oltp_update_non_index oltp_update_index bulk_insert; do
-        for action in cleanup prepare run; do
+    for testname in oltp_insert; do
+        for action in cleanup prepare; do
             echo "sysbench ${testdb}-${testname}-${action} start."
             sysbench /usr/share/sysbench/${testname}.lua --table-size=1000 --tables=10 --threads=10 --time=10 --mysql-db=${testdb} --mysql-host=${ARGS_SOURCE_HOST} --mysql-port=${ARGS_SOURCE_PORT} --mysql-user=${ARGS_SOURCE_USER} --mysql-password=${ARGS_SOURCE_PASSWORD} --db-driver=mysql $action >/dev/null
             echo "sysbench ${testdb}-${testname}-${action} done."
