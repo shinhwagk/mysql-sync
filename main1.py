@@ -2,10 +2,9 @@ import argparse
 import enum
 import re
 import time
-from collections import deque
 from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Optional, Pattern, cast
+from typing import Pattern
 
 import mysql.connector
 from mysql.connector import MySQLConnection
@@ -139,58 +138,28 @@ class OperationType(enum.Enum):
     GTID = enum.auto()
 
 
-def deleteOperation2SqlOperation(o: OperationDMLDelete):
-    keys_list = [key for key in o.values]
-    vals_list = [o.values[key] for key in keys_list]
-
-    set_step = ", ".join([f"{item}=%s" for item in keys_list])
-
-    where_step = f"`{o.primary_key}`=%s" if o.primary_key else set_step
-
-    where_parsms = [o.values[o.primary_key]] if o.primary_key else vals_list
-
-    sql = f"DELETE FROM `{o.schema}`.`{o.table}` WHERE {where_step}"
-    return sql, tuple(where_parsms)
-
-
-def updateOperation2SqlOperation(o: OperationDMLUpdate, replace: bool) -> list[OperationDML]:
-    if replace:
-        new_keys_list = [key for key in o.after_values]
-        new_vals_list = [o.after_values[key] for key in new_keys_list]
-
-        result = generate_question_marks(len(new_keys_list))
-        sql = f"REPLACE INTO `{o.schema}`.`{o.table}`({", ".join(new_keys_list)}) VALUES({result})"
-        return sql, tuple(new_vals_list)
-    else:
-        keys_list_after = [key for key in o.after_values]
-        vals_list_after = [o.after_values[key] for key in keys_list_after]
-
-        key_list_before = [key for key in o.before_values]
-        vals_list_before = [o.before_values[key] for key in key_list_before]
-
-        set_step = ", ".join([f"{item}=%s" for item in keys_list_after])
-
-        where_step = f"`{o.primary_key}`=%s" if o.primary_key else set_step
-
-        set_params = vals_list_after
-
-        where_parsms = [o.after_values[o.primary_key]] if o.primary_key else vals_list_before
-
-        sql = f"UPDATE `{o.schema}`.`{o.table}` SET {set_step} WHERE {where_step}"
-        return sql, tuple(set_params + where_parsms)
-
-
-def writeOperation2SqlOperation(o: OperationDMLInsert, replace: bool) -> list[OperationDML]:
-    new_keys_list = [key for key in o.values]
-    new_vals_list = [o.values[key] for key in new_keys_list]
-    result = generate_question_marks(len(new_keys_list))
-
-    sql = (
-        f"REPLACE INTO `{o.schema}`.`{o.table}`({", ".join(new_keys_list)}) VALUES({result})"
-        if replace
-        else f"INSERT INTO `{o.schema}`.`{o.table}`({", ".join(new_keys_list)}) VALUES({result})"
-    )
-    return sql, tuple(new_vals_list)
+def dmlOperation2Sql(operation: OperationDML, replace=bool) -> tuple[str, tuple]:
+    if isinstance(operation, OperationDMLInsert) or (isinstance(operation, OperationDMLUpdate) and replace):
+        action = "REPLACE" if replace else "INSERT"
+        values = operation.values if isinstance(operation, OperationDMLInsert) else operation.after_values
+        keys = ", ".join(values.keys())
+        values_placeholder = generate_question_marks(len(values))
+        sql = f"{action} INTO `{operation.schema}`.`{operation.table}`({keys}) VALUES({values_placeholder})"
+        params = tuple(values.values())
+    elif isinstance(operation, OperationDMLDelete):
+        condition = f"`{operation.primary_key}` = %s" if operation.primary_key else ", ".join([f"{k}=%s" for k in operation.values.keys()])
+        sql = f"DELETE FROM `{operation.schema}`.`{operation.table}` WHERE {condition}"
+        params = tuple([operation.values[operation.primary_key]]) if operation.primary_key else tuple(operation.values.values())
+    elif isinstance(operation, OperationDMLUpdate):
+        set_clause = ", ".join([f"{k} = %s" for k in operation.after_values.keys()])
+        condition = f"`{operation.primary_key}` = %s" if operation.primary_key else ", ".join([f"{k}=%s" for k in operation.before_values.keys()])
+        sql = f"UPDATE `{operation.schema}`.`{operation.table}` SET {set_clause} WHERE {condition}"
+        params = (
+            tuple(operation.after_values.values()) + (operation.before_values[operation.primary_key],)
+            if operation.primary_key
+            else tuple(operation.after_values.values() + operation.before_values.values())
+        )
+    return sql, params
 
 
 def extract_schema(statement: str) -> tuple[DDLType | None, str | None]:
@@ -235,11 +204,11 @@ class MysqlClient:
     def __c_cur(self):
         self.cur: MySQLCursor = self.con.cursor()
 
-    def get_gtidset(self):
-        with self.con.cursor() as cur:
-            cur.execute("show master status")
-            _, _, _, _, gtidset = cur.fetchone()
-            return gtidset
+    # def get_gtidset(self):
+    #     with self.con.cursor() as cur:
+    #         cur.execute("show master status")
+    #         _, _, _, _, gtidset = cur.fetchone()
+    #         return gtidset
 
     def push_begin(self):
         self.con.start_transaction()
@@ -325,9 +294,7 @@ def reset_values(values: dict, columns: list[Column]) -> dict[str, any]:
 
 
 class MysqlReplication:
-    def __init__(
-        self, connection_settings: dict, server_id: int, report_slave: str, slave_heartbeat: int, blocking: bool, gtidset: str | None
-    ) -> None:
+    def __init__(self, connection_settings: dict, server_id: int, report_slave: str, slave_heartbeat: int, blocking: bool, gtidset: str | None) -> None:
         self.binlogeventstream: Iterator[BinLogEvent] = BinLogStreamReader(
             connection_settings=connection_settings,
             server_id=server_id,
@@ -340,7 +307,6 @@ class MysqlReplication:
 
     def __handle_table_map_event(self, event: TableMapEvent):
         pass
-        # print("handle_table_map_event", event.schema, event.table)
 
     def __handle_event_update_rows(self, event: UpdateRowsEvent) -> list[OperationDML]:
         ls = []
@@ -349,7 +315,6 @@ class MysqlReplication:
             new_before_values = reset_values(row["before_values"], event.columns)
             ls.append(OperationDMLUpdate(event.schema, event.table, new_after_values, new_before_values, event.primary_key))
         return ls
-        # return [updateRowsEvent2Update(event), updateRowsEvent2Replace(event)]
 
     def __handle_event_write_rows(self, event: WriteRowsEvent) -> list[list[OperationDML]]:
         ls = []
@@ -471,17 +436,15 @@ class MysqlSync:
         )
         self.mc = MysqlClient(mysql_target_connection_settings)
         self.gtid_sets: dict[str, int] = {}
+        self.mysql_sync_force_idempotent = mysql_sync_force_idempotent
 
-        self.abc = {"dml": 0, "cmt": 0}
+        self.statistics = {"dml": 0, "nomdml": 0, "trx": 0}
 
         self.last_committed = -1
         self.is_begin = False
         self.allow_commit = False
         self.last_operation = None
-
-        # self.target_gtidset = parse_gtidset(self.mc.get_gtidset())
-        # self.target_idempotent = {server_uuid: True for server_uuid in self.target_gtidset.keys()}
-        # self.last_gtidset = {}
+        self.checkpoint_gtidset = {}
 
     def __update_gtid(self, gtid: str):
         # 73b24aef-0b4d-11ef-9a54-1418774ca835:1-13313466:13313468-15821064:15821066-18093826:18093828-21851433:21851435-24792086:24792088-27279728:27279730-29405984,
@@ -491,28 +454,25 @@ class MysqlSync:
         self.gtid_sets[server_uuid] = int(xid)
 
     def __commit(self):
+        self.checkpoint_gtidset = self.gtid_sets.copy()
+
         if self.is_begin and self.allow_commit:
             self.mc.push_commit()
-            self.abc["cmt"] += 1
             self.is_begin = False
             self.allow_commit = False
+            self.statistics["trx"] += 1
 
     def run(self):
-        _ts = time.time()
-        idempotent = True
+        _ts_0 = time.time()
 
         for operation in self.mr.operation_stream():
             if type(operation) == OperationDDL:
                 self.__commit()
+                self.statistics["nomdml"] += 1
                 self.mc.push_nondml(operation.schema, operation.sql_text)
             elif isinstance(operation, OperationDML):
-                self.abc["dml"] += 1
-                if type(operation) == OperationDMLUpdate:
-                    self.mc.push_dml(*updateOperation2SqlOperation(operation, True))
-                if type(operation) == OperationDMLDelete:
-                    self.mc.push_dml(*deleteOperation2SqlOperation(operation))
-                if type(operation) == OperationDMLInsert:
-                    self.mc.push_dml(*writeOperation2SqlOperation(operation, True))
+                self.statistics["dml"] += 1
+                self.mc.push_dml(*dmlOperation2Sql(operation, self.mysql_sync_force_idempotent))
             elif type(operation) == OperationBegin:
                 if self.is_begin == False:
                     self.mc.push_begin()
@@ -534,21 +494,17 @@ class MysqlSync:
 
             self.last_operation = type(operation)
 
-            _ts_2 = time.time()
-            if _ts_2 >= _ts + 10:
-                # self.__compare_gtidxid(g)
-                # self.__checkpoint()
-                print(_ts_2, self.abc)
-                print(self.gtid_sets)
+            _ts_1 = time.time()
+            if _ts_1 >= _ts_0 + 10:
+                print(_ts_1, self.statistics, self.checkpoint_gtidset, self.gtid_sets)
+                _ts_0 = _ts_1
 
-                _ts = _ts_2
+        print("asdfsdfds", self.is_begin, self.allow_commit)
 
         if self.is_begin and self.allow_commit:
             self.__commit()
 
-        print(_ts_2, self.abc)
-        print(self.gtid_sets)
-        # self.mc.push_commit()
+        print(_ts_1, self.statistics, self.checkpoint_gtidset, self.gtid_sets)
 
 
 @dataclass
