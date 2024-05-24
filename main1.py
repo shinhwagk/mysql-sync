@@ -1,5 +1,6 @@
 import argparse
 import enum
+import json
 import re
 import time
 from collections.abc import Iterator
@@ -111,7 +112,8 @@ class OperationDMLUpdate(OperationDML):
 
 @dataclass
 class OperationHeartbeat:
-    pass
+    log_file: str
+    log_pos: int
 
 
 @dataclass
@@ -379,7 +381,7 @@ class MysqlReplication:
                         raise Exception("db not know", event.__dict__)
 
     def __handle_event_heartheatlog(self, event: HeartbeatLogEvent):
-        return OperationHeartbeat()
+        return OperationHeartbeat(event.ident, event.packet.log_pos)
 
     def operation_stream(self):
         handlers = {
@@ -397,19 +399,16 @@ class MysqlReplication:
         for binlogevent in self.binlogeventstream:
             # last_log_file = self.binlogeventstream.log_file
             # last_log_pos = self.binlogeventstream.log_pos
-            # print(
-            #     last_log_file,
-            #     last_log_pos,
-            # )
+            # print(last_log_file, last_log_pos)
             handler = handlers.get(type(binlogevent))
             if handler:
                 operation = handler(binlogevent)
                 if operation:
                     if type(operation) == list:
                         for o in operation:
-                            yield o
+                            yield o, binlogevent.timestamp
                     else:
-                        yield operation
+                        yield operation, binlogevent.timestamp
 
 
 gtid_re = re.compile(r"^([a-zA-Z0-9_]{8}-[a-zA-Z0-9_]{4}-[a-zA-Z0-9_]{4}-[a-zA-Z0-9_]{4}-[a-zA-Z0-9_]{12}):[0-9]+-([0-9]+)$")
@@ -462,7 +461,7 @@ class MysqlSync:
         self.gtid_sets: dict[str, int] = {}
         self.mysql_sync_force_idempotent = mysql_sync_force_idempotent
 
-        self.statistics = {"dml": 0, "nomdml": 0, "trx": 0}
+        self.statistics = {"dml": 0, "nomdml": 0, "trx-merge": 0, "trx": 0}
 
         self.last_committed = -1
         self.is_begin = False
@@ -484,12 +483,14 @@ class MysqlSync:
             self.mc.push_commit()
             self.is_begin = False
             self.allow_commit = False
-            self.statistics["trx"] += 1
+            self.statistics["trx-merge"] += 1
 
     def run(self):
         _ts_0 = time.time()
+        _heartbeat = None
+        _timestamp = 0
 
-        for operation in self.mr.operation_stream():
+        for operation, timestamp in self.mr.operation_stream():
             if type(operation) == OperationDDL:
                 self.__commit()
                 self.statistics["nomdml"] += 1
@@ -506,6 +507,7 @@ class MysqlSync:
                     self.mc.push_begin()
                     self.is_begin = True
             elif type(operation) == OperationCommit:
+                self.statistics["trx"] += 1
                 self.allow_commit = True
             elif type(operation) == OperationGtid:
                 if self.last_committed != operation.last_committed:
@@ -515,24 +517,31 @@ class MysqlSync:
                 server_uuid, xid = operation.gtid.split(":")
                 self.gtid_sets[server_uuid] = int(xid)
             elif type(operation) == OperationHeartbeat:
+                _heartbeat = operation
                 if type(self.last_operation) == OperationHeartbeat:
+                    _timestamp = time.time()
                     self.__commit()
             else:
                 pass
 
-            self.last_operation = type(operation)
+            if type(operation) != OperationHeartbeat:
+                _timestamp = timestamp
 
             _ts_1 = time.time()
             if _ts_1 >= _ts_0 + 10:
-                print(_ts_1, self.statistics, self.checkpoint_gtidset, self.gtid_sets)
+                print(
+                    f"syncinfo statistics {json.dumps(self.statistics)} log_file {_heartbeat.log_file} log_pos {_heartbeat.log_pos} gtidset {json.dumps(self.checkpoint_gtidset)}"
+                )
+                print(f"delay {int(time.time() - _timestamp)}")
+
                 _ts_0 = _ts_1
 
-        print("asdfsdfds", self.is_begin, self.allow_commit)
+            self.last_operation = operation
 
         if self.is_begin and self.allow_commit:
             self.__commit()
 
-        print(_ts_1, self.statistics, self.checkpoint_gtidset, self.gtid_sets)
+        print(_ts_1, self.statistics, self.checkpoint_gtidset)
 
 
 @dataclass
