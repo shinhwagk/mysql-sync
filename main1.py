@@ -552,7 +552,7 @@ class MysqlSync:
 
             _ts_1 = time.time()
             if _ts_1 >= _ts_0 + 10:
-
+                print(self.statistics)
                 print(
                     f"syncinfo dml:{self.statistics["dml"]} nondml:{self.statistics["nomdml"]} trx-merge:{self.statistics["trx-merge"]} trx:{self.statistics["trx"]} gtidset:{','.join([f"{key}:{value}" for key, value in self.checkpoint_gtidset.items()])}"
                 )
@@ -565,6 +565,7 @@ class MysqlSync:
         if self.is_begin and self.allow_commit:
             self.__commit()
 
+        print(self.statistics)
         print(
             f"syncinfo dml:{self.statistics["dml"]} nondml:{self.statistics["nomdml"]} trx-merge:{self.statistics["trx-merge"]} trx:{self.statistics["trx"]} gtidset:{','.join([f"{key}:{value}" for key, value in self.checkpoint_gtidset.items()])}"
         )
