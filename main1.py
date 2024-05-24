@@ -363,7 +363,7 @@ class MysqlReplication:
         if event.query == "BEGIN":
             return OperationBegin()
         elif event.query == "COMMIT":
-            print("empty trx.")
+            print(f"empty trx. log_file{event.ident} log_pos:{event.packet.log_pos}")
             return None
         else:
             ddltype, db = extract_schema(event.query)
