@@ -529,8 +529,9 @@ class MysqlSync:
 
             _ts_1 = time.time()
             if _ts_1 >= _ts_0 + 10:
+
                 print(
-                    f"syncinfo statistics {json.dumps(self.statistics)} log_file {_heartbeat.log_file} log_pos {_heartbeat.log_pos} gtidset {json.dumps(self.checkpoint_gtidset)}"
+                    f"syncinfo dml:{self.statistics["dml"]} nondml:{self.statistics["nomdml"]} trx-merge:{self.statistics["trx-merge"]} trx:{self.statistics["trx"]} log_file:{_heartbeat.log_file} log_pos:{_heartbeat.log_pos} gtidset:{','.join([f"{key}:{value}" for key, value in self.checkpoint_gtidset.items()])}"
                 )
                 print(f"delay {int(time.time() - _timestamp)}")
 
