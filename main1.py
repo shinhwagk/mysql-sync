@@ -119,8 +119,7 @@ class OperationDMLUpdate(OperationDML):
 
 @dataclass
 class OperationHeartbeat:
-    log_file: str
-    log_pos: int
+    pass
 
 
 @dataclass
@@ -332,10 +331,10 @@ class MysqlReplication:
             auto_position=gtidset,
         )
 
-    def __handle_table_map_event(self, event: TableMapEvent, log_file: str, log_pos: int):
+    def __handle_table_map_event(self, event: TableMapEvent):
         pass
 
-    def __handle_event_update_rows(self, event: UpdateRowsEvent, log_file: str, log_pos: int) -> list[OperationDML]:
+    def __handle_event_update_rows(self, event: UpdateRowsEvent) -> list[OperationDML]:
         ls = []
         for row in event.rows:
             new_after_values = reset_values(row["after_values"], event.columns)
@@ -343,34 +342,34 @@ class MysqlReplication:
             ls.append(OperationDMLUpdate(event.schema, event.table, new_after_values, new_before_values, event.primary_key))
         return ls
 
-    def __handle_event_write_rows(self, event: WriteRowsEvent, log_file: str, log_pos: int) -> list[list[OperationDML]]:
+    def __handle_event_write_rows(self, event: WriteRowsEvent) -> list[list[OperationDML]]:
         ls = []
         for row in event.rows:
             new_values = reset_values(row["values"], event.columns)
             ls.append(OperationDMLInsert(event.schema, event.table, new_values, event.primary_key))
         return ls
 
-    def __handle_event_delete_rows(self, event: DeleteRowsEvent, log_file: str, log_pos: int) -> list[list[OperationDML]]:
+    def __handle_event_delete_rows(self, event: DeleteRowsEvent) -> list[list[OperationDML]]:
         ls = []
         for row in event.rows:
             new_values = reset_values(row["values"], event.columns)
             ls.append(OperationDMLDelete(event.schema, event.table, new_values, event.primary_key))
         return ls
 
-    def __handle_event_gtid(self, event: GtidEvent, log_file: str, log_pos: int):
+    def __handle_event_gtid(self, event: GtidEvent):
         return OperationGtid(event.gtid, event.last_committed)
 
-    def __handle_event_rotate(self, event: RotateEvent, log_file: str, log_pos: int):
+    def __handle_event_rotate(self, event: RotateEvent):
         self.logfile = event.next_binlog
 
-    def __handle_event_xid(self, event: XidEvent, log_file: str, log_pos: int):
+    def __handle_event_xid(self, event: XidEvent):
         return OperationCommit()
 
-    def __handle_event_query(self, event: QueryEvent, log_file: str, log_pos: int):
+    def __handle_event_query(self, event: QueryEvent):
         if event.query == "BEGIN":
             return OperationBegin()
         elif event.query == "COMMIT":
-            logging.warning(f'empty trx. log_file {log_file} log_pos:{log_pos} query:"COMMIT"')
+            logging.warning(f'empty trx, query:"COMMIT"')
             return None
         else:
             ddltype, db = extract_schema(event.query)
@@ -390,7 +389,7 @@ class MysqlReplication:
                     else:
                         raise Exception("db not know", event.__dict__)
 
-    def __handle_event_heartheatlog(self, event: HeartbeatLogEvent, log_file: str, log_pos: int):
+    def __handle_event_heartheatlog(self, event: HeartbeatLogEvent):
         return OperationHeartbeat()
 
     def operation_stream(self):
@@ -406,18 +405,22 @@ class MysqlReplication:
             HeartbeatLogEvent: self.__handle_event_heartheatlog,
         }
 
+        log_pos = 4
+        end_log_pos = 0
         for binlogevent in self.binlogeventstream:
-            log_file = self.binlogeventstream.log_file
-            log_pos = self.binlogeventstream.log_pos
+            if type(binlogevent) != HeartbeatLogEvent:
+                log_file = self.binlogeventstream.log_file
+                end_log_pos = self.binlogeventstream.log_pos
             handler = handlers.get(type(binlogevent))
             if handler:
-                operation = handler(binlogevent, log_file, log_pos)
+                operation = handler(binlogevent)
                 if operation:
                     if type(operation) == list:
                         for o in operation:
-                            yield o, binlogevent.timestamp
+                            yield log_file, log_pos, binlogevent.timestamp, o
                     else:
-                        yield operation, binlogevent.timestamp
+                        yield log_file, log_pos, binlogevent.timestamp, operation
+            log_pos = end_log_pos
 
 
 gtid_re = re.compile(r"^([a-zA-Z0-9_]{8}-[a-zA-Z0-9_]{4}-[a-zA-Z0-9_]{4}-[a-zA-Z0-9_]{4}-[a-zA-Z0-9_]{12}):[0-9]+-([0-9]+)$")
@@ -507,18 +510,16 @@ class MysqlSync:
         _ts_0 = time.time()
         _timestamp = 0
 
-        for operation, timestamp in self.mr.operation_stream():
+        for log_file, log_pos, timestamp, operation in self.mr.operation_stream():
             if type(operation) == OperationDDL:
                 self.__commit()
                 self.statistics["nomdml"] += 1
 
-                nondmlname = f"nondml-{operation.oper_type.name.lower()}"
-                if self.statistics.get(nondmlname):
-                    self.statistics[nondmlname] += 1
-                else:
-                    self.statistics[nondmlname] = 1
+                nondml_name = f"nondml-{operation.oper_type.name.lower()}"
+                self.statistics[nondml_name] = self.statistics.get(nondml_name, 0) + 1
 
                 self.mc.push_nondml(operation.schema, operation.sql_text)
+                logging.debug(f"nondml {nondml_name} query: {operation.sql_text}")
             elif isinstance(operation, OperationDML):
                 self.statistics["dml"] += 1
                 if type(operation) == OperationDMLDelete:
@@ -530,7 +531,7 @@ class MysqlSync:
 
                 try:
                     sql_text, params = dmlOperation2Sql(operation, self.mysql_sync_force_idempotent)
-                    logging.debug(f"dml statement: {sql_text}")
+                    logging.debug(f"log_file {log_file} log_pos {log_pos} dml query : {sql_text}")
                     self.mc.push_dml(sql_text, params)
                 except Exception as e:
                     print("dml error", operation)
