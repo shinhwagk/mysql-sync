@@ -89,7 +89,7 @@ class OperationDMLInsert(OperationDML):
     schema: str
     table: str
     values: dict
-    primary_key: str | None
+    primary_key: str | tuple | None
 
 
 @dataclass
@@ -97,7 +97,7 @@ class OperationDMLDelete(OperationDML):
     schema: str
     table: str
     values: dict
-    primary_key: str | None
+    primary_key: str | tuple | None
 
 
 @dataclass
@@ -106,7 +106,7 @@ class OperationDMLUpdate(OperationDML):
     table: str
     after_values: dict
     before_values: dict
-    primary_key: str | None
+    primary_key: str | tuple | None
 
 
 @dataclass
@@ -147,18 +147,36 @@ def dmlOperation2Sql(operation: OperationDML, replace=bool) -> tuple[str, tuple]
         sql = f"{action} INTO `{operation.schema}`.`{operation.table}`({keys}) VALUES({values_placeholder})"
         params = tuple(values.values())
     elif isinstance(operation, OperationDMLDelete):
-        condition = f"`{operation.primary_key}` = %s" if operation.primary_key else ", ".join([f"{k}=%s" for k in operation.values.keys()])
+        if operation.primary_key:
+            if isinstance(operation.primary_key, tuple):
+                condition = " AND ".join([f"`{k}` = %s" for k in operation.primary_key])
+            else:
+                condition = f"`{operation.primary_key}` = %s"
+            primary_values = (
+                (operation.values[k] for k in operation.primary_key) if isinstance(operation.primary_key, tuple) else (operation.values[operation.primary_key],)
+            )
+        else:
+            condition = " AND ".join([f"`{k}` = %s" for k in operation.values.keys()])
+            primary_values = tuple(operation.values.values())
         sql = f"DELETE FROM `{operation.schema}`.`{operation.table}` WHERE {condition}"
-        params = tuple([operation.values[operation.primary_key]]) if operation.primary_key else tuple(operation.values.values())
+        params = tuple(primary_values)
     elif isinstance(operation, OperationDMLUpdate):
         set_clause = ", ".join([f"{k} = %s" for k in operation.after_values.keys()])
-        condition = f"`{operation.primary_key}` = %s" if operation.primary_key else ", ".join([f"{k}=%s" for k in operation.before_values.keys()])
+        if operation.primary_key:
+            if isinstance(operation.primary_key, tuple):
+                condition = " AND ".join([f"`{k}` = %s" for k in operation.primary_key])
+            else:
+                condition = f"`{operation.primary_key}` = %s"
+            primary_values = (
+                (operation.before_values[k] for k in operation.primary_key)
+                if isinstance(operation.primary_key, tuple)
+                else (operation.before_values[operation.primary_key],)
+            )
+        else:
+            condition = " AND ".join([f"`{k}` = %s" for k in operation.before_values.keys()])
+            primary_values = tuple(operation.before_values.values())
         sql = f"UPDATE `{operation.schema}`.`{operation.table}` SET {set_clause} WHERE {condition}"
-        params = (
-            tuple(operation.after_values.values()) + (operation.before_values[operation.primary_key],)
-            if operation.primary_key
-            else tuple(operation.after_values.values() + operation.before_values.values())
-        )
+        params = tuple(operation.after_values.values()) + tuple(primary_values)
     return sql, params
 
 
@@ -342,6 +360,9 @@ class MysqlReplication:
     def __handle_event_query(self, event: QueryEvent):
         if event.query == "BEGIN":
             return OperationBegin()
+        elif event.query == "COMMIT":
+            print("empty trx.")
+            return None
         else:
             ddltype, db = extract_schema(event.query)
 
@@ -355,7 +376,7 @@ class MysqlReplication:
                     if db:
                         return OperationDDL(db, event.query)
                     else:
-                        raise Exception("db not know")
+                        raise Exception("db not know", event.__dict__)
 
     def __handle_event_heartheatlog(self, event: HeartbeatLogEvent):
         return OperationHeartbeat()
@@ -376,7 +397,10 @@ class MysqlReplication:
         for binlogevent in self.binlogeventstream:
             # last_log_file = self.binlogeventstream.log_file
             # last_log_pos = self.binlogeventstream.log_pos
-            # print(last_log_file, last_log_pos)
+            # print(
+            #     last_log_file,
+            #     last_log_pos,
+            # )
             handler = handlers.get(type(binlogevent))
             if handler:
                 operation = handler(binlogevent)
@@ -472,7 +496,11 @@ class MysqlSync:
                 self.mc.push_nondml(operation.schema, operation.sql_text)
             elif isinstance(operation, OperationDML):
                 self.statistics["dml"] += 1
-                self.mc.push_dml(*dmlOperation2Sql(operation, self.mysql_sync_force_idempotent))
+                try:
+                    self.mc.push_dml(*dmlOperation2Sql(operation, self.mysql_sync_force_idempotent))
+                except Exception as e:
+                    print("dml error", operation)
+                    raise e
             elif type(operation) == OperationBegin:
                 if self.is_begin == False:
                     self.mc.push_begin()
@@ -535,6 +563,7 @@ parser.add_argument("--mysql_sync_force_idempotent", action="store_true")
 args = parser.parse_args()
 
 config = Config(**vars(args))
+print(config)
 
 MysqlSync(
     parse_connection_string(config.mysql_source_connection_string),
