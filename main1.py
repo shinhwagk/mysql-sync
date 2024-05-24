@@ -1,6 +1,7 @@
 import argparse
 import enum
 import json
+import logging
 import re
 import time
 from collections.abc import Iterator
@@ -28,6 +29,11 @@ from pymysqlreplication.row_event import (
     UpdateRowsEvent,
     WriteRowsEvent,
 )
+
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
+
+# signal.signal(signal.SIGINT, handle_exit_signal)
+# signal.signal(signal.SIGTERM, handle_exit_signal)
 
 
 def parse_connection_string(conn_str: str) -> dict:
@@ -76,6 +82,7 @@ class DDLType(enum.Enum):
 
 @dataclass
 class OperationDDL:
+    oper_type: DDLType
     schema: str | None
     sql_text: str
 
@@ -187,7 +194,7 @@ def extract_schema(statement: str) -> tuple[DDLType | None, str | None]:
         (re.compile(r"\s*create\s+database\s+(?:if\s+not\s+exists\s+)`?([a-zA-Z0-9_]+)`?\s*", re.IGNORECASE), DDLType.CREATEDATABASE),
         (re.compile(r"\s*alter\s+database\s+`?([a-zA-Z0-9_]+)`?\s*", re.IGNORECASE), DDLType.ALTERDATABASE),
         (re.compile(r"\s*drop\s+database\s+(?:if\s+exists\s+)`?([a-zA-Z0-9_]+)`?\s*", re.IGNORECASE), DDLType.DROPDATABASE),
-        (re.compile(r"create\s+table\s+(?:`?([a-zA-Z0-9_]+)`?\.)?`?[a-zA-Z0-9_]+`?\s+.*", re.IGNORECASE), DDLType.CREATETABLE),
+        (re.compile(r"\s*create\s+table\s+(?:`?([a-zA-Z0-9_]+)`?\.)?`?[a-zA-Z0-9_]+`?\s?.*", re.IGNORECASE), DDLType.CREATETABLE),
         (re.compile(r"\s*alter\s+table\s+(?:`?([a-zA-Z0-9_]+)`?\.)?`?[a-zA-Z0-9_]+`?\s+.*", re.IGNORECASE), DDLType.ALTERTABLE),
         (re.compile(r"\s*drop\s+table\s+(?:`?([a-zA-Z0-9_]+)`?\.)?`?[a-zA-Z0-9_]+`?\s*", re.IGNORECASE), DDLType.DROPTABLE),
         (re.compile(r"\s*rename\s+table\s+(?:`?([a-zA-Z0-9_]+)`?\.)?`?[a-zA-Z0-9_]+`?\s+.*", re.IGNORECASE), DDLType.RENAMETABLE),
@@ -363,25 +370,28 @@ class MysqlReplication:
         if event.query == "BEGIN":
             return OperationBegin()
         elif event.query == "COMMIT":
-            print(f"empty trx. log_file{log_file} log_pos:{log_pos}")
+            logging.warning(f'empty trx. log_file {log_file} log_pos:{log_pos} query:"COMMIT"')
             return None
         else:
             ddltype, db = extract_schema(event.query)
 
-            if ddltype and ddltype in (DDLType.CREATEDATABASE, DDLType.DROPDATABASE, DDLType.ALTERDATABASE):
-                return OperationDDL(None, event.query)
+            if ddltype is None:
+                raise Exception("not know queryevent query", event.query)
+
+            if ddltype in (DDLType.CREATEDATABASE, DDLType.DROPDATABASE, DDLType.ALTERDATABASE):
+                return OperationDDL(ddltype, None, event.query)
             else:
                 if event.schema_length >= 1:
                     schema: bytes = event.schema
-                    return OperationDDL(schema.decode("utf-8"), event.query)
+                    return OperationDDL(ddltype, schema.decode("utf-8"), event.query)
                 else:
                     if db:
-                        return OperationDDL(db, event.query)
+                        return OperationDDL(ddltype, db, event.query)
                     else:
                         raise Exception("db not know", event.__dict__)
 
     def __handle_event_heartheatlog(self, event: HeartbeatLogEvent, log_file: str, log_pos: int):
-        return OperationHeartbeat(log_file, log_pos)
+        return OperationHeartbeat()
 
     def operation_stream(self):
         handlers = {
@@ -460,7 +470,7 @@ class MysqlSync:
         self.gtid_sets: dict[str, int] = {}
         self.mysql_sync_force_idempotent = mysql_sync_force_idempotent
 
-        self.statistics = {"dml": 0, "nomdml": 0, "trx-merge": 0, "trx": 0}
+        self.statistics = {"dml": 0, "nomdml": 0, "trx-merge": 0, "trx": 0, "dml-delete": 0, "dml-insert": 0, "dml-update": 0}
 
         self.last_committed = -1
         self.is_begin = False
@@ -486,18 +496,33 @@ class MysqlSync:
 
     def run(self):
         _ts_0 = time.time()
-        _heartbeat = None
         _timestamp = 0
 
         for operation, timestamp in self.mr.operation_stream():
             if type(operation) == OperationDDL:
                 self.__commit()
                 self.statistics["nomdml"] += 1
+
+                print(str(operation.oper_type.name))
+                if self.statistics.get(str(operation.oper_type.name)):
+                    self.statistics[str(operation.oper_type.name)] += 1
+                else:
+                    self.statistics[str(operation.oper_type.name)] = 1
+
                 self.mc.push_nondml(operation.schema, operation.sql_text)
             elif isinstance(operation, OperationDML):
                 self.statistics["dml"] += 1
+                if type(operation) == OperationDMLDelete:
+                    self.statistics["dml-delete"] += 1
+                elif type(operation) == OperationDMLInsert:
+                    self.statistics["dml-insert"] += 1
+                elif type(operation) == OperationDMLUpdate:
+                    self.statistics["dml-update"] += 1
+
                 try:
-                    self.mc.push_dml(*dmlOperation2Sql(operation, self.mysql_sync_force_idempotent))
+                    sql_text, params = dmlOperation2Sql(operation, self.mysql_sync_force_idempotent)
+                    logging.debug(f"dml statement: {sql_text}")
+                    self.mc.push_dml(sql_text, params)
                 except Exception as e:
                     print("dml error", operation)
                     raise e
@@ -516,7 +541,6 @@ class MysqlSync:
                 server_uuid, xid = operation.gtid.split(":")
                 self.gtid_sets[server_uuid] = int(xid)
             elif type(operation) == OperationHeartbeat:
-                _heartbeat = operation
                 if type(self.last_operation) == OperationHeartbeat:
                     _timestamp = time.time()
                     self.__commit()
@@ -530,7 +554,7 @@ class MysqlSync:
             if _ts_1 >= _ts_0 + 10:
 
                 print(
-                    f"syncinfo dml:{self.statistics["dml"]} nondml:{self.statistics["nomdml"]} trx-merge:{self.statistics["trx-merge"]} trx:{self.statistics["trx"]} log_file:{_heartbeat.log_file} log_pos:{_heartbeat.log_pos} gtidset:{','.join([f"{key}:{value}" for key, value in self.checkpoint_gtidset.items()])}"
+                    f"syncinfo dml:{self.statistics["dml"]} nondml:{self.statistics["nomdml"]} trx-merge:{self.statistics["trx-merge"]} trx:{self.statistics["trx"]} gtidset:{','.join([f"{key}:{value}" for key, value in self.checkpoint_gtidset.items()])}"
                 )
                 print(f"delay {int(time.time() - _timestamp)}")
 
@@ -541,7 +565,9 @@ class MysqlSync:
         if self.is_begin and self.allow_commit:
             self.__commit()
 
-        print(_ts_1, self.statistics, self.checkpoint_gtidset)
+        print(
+            f"syncinfo dml:{self.statistics["dml"]} nondml:{self.statistics["nomdml"]} trx-merge:{self.statistics["trx-merge"]} trx:{self.statistics["trx"]} gtidset:{','.join([f"{key}:{value}" for key, value in self.checkpoint_gtidset.items()])}"
+        )
 
 
 @dataclass

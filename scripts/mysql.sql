@@ -184,3 +184,24 @@ INSERT INTO set_table (set_col) VALUES ('option1');
 UPDATE set_table SET set_col = 'option1,option2' WHERE id = 1;
 DELETE FROM set_table WHERE id = 1;
 INSERT INTO set_table (set_col) VALUES ('option1');
+
+CREATE TABLE employees (
+    employee_id INT,
+    first_name VARCHAR(50),
+    last_name VARCHAR(50),
+    department VARCHAR(50),
+    salary DECIMAL(10, 2)
+);
+
+INSERT INTO employees (employee_id, first_name, last_name, department, salary) 
+VALUES (1, 'John', 'Doe', 'HR', 50000.00);
+
+INSERT INTO employees (employee_id, first_name, last_name, department, salary) 
+VALUES (2, 'Jane', 'Smith', 'Finance', 60000.00);
+
+INSERT INTO employees (employee_id, first_name, last_name, department, salary) 
+VALUES (3, 'Emily', 'Davis', 'IT', 70000.00);
+
+DELETE FROM employees WHERE employee_id = 2;
+
+UPDATE employees SET salary = 75000.00 WHERE employee_id = 3;
