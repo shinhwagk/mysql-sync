@@ -325,10 +325,10 @@ class MysqlReplication:
             auto_position=gtidset,
         )
 
-    def __handle_table_map_event(self, event: TableMapEvent):
+    def __handle_table_map_event(self, event: TableMapEvent, log_file: str, log_pos: int):
         pass
 
-    def __handle_event_update_rows(self, event: UpdateRowsEvent) -> list[OperationDML]:
+    def __handle_event_update_rows(self, event: UpdateRowsEvent, log_file: str, log_pos: int) -> list[OperationDML]:
         ls = []
         for row in event.rows:
             new_after_values = reset_values(row["after_values"], event.columns)
@@ -336,34 +336,34 @@ class MysqlReplication:
             ls.append(OperationDMLUpdate(event.schema, event.table, new_after_values, new_before_values, event.primary_key))
         return ls
 
-    def __handle_event_write_rows(self, event: WriteRowsEvent) -> list[list[OperationDML]]:
+    def __handle_event_write_rows(self, event: WriteRowsEvent, log_file: str, log_pos: int) -> list[list[OperationDML]]:
         ls = []
         for row in event.rows:
             new_values = reset_values(row["values"], event.columns)
             ls.append(OperationDMLInsert(event.schema, event.table, new_values, event.primary_key))
         return ls
 
-    def __handle_event_delete_rows(self, event: DeleteRowsEvent) -> list[list[OperationDML]]:
+    def __handle_event_delete_rows(self, event: DeleteRowsEvent, log_file: str, log_pos: int) -> list[list[OperationDML]]:
         ls = []
         for row in event.rows:
             new_values = reset_values(row["values"], event.columns)
             ls.append(OperationDMLDelete(event.schema, event.table, new_values, event.primary_key))
         return ls
 
-    def __handle_event_gtid(self, event: GtidEvent):
+    def __handle_event_gtid(self, event: GtidEvent, log_file: str, log_pos: int):
         return OperationGtid(event.gtid, event.last_committed)
 
-    def __handle_event_rotate(self, event: RotateEvent):
+    def __handle_event_rotate(self, event: RotateEvent, log_file: str, log_pos: int):
         self.logfile = event.next_binlog
 
-    def __handle_event_xid(self, event: XidEvent):
+    def __handle_event_xid(self, event: XidEvent, log_file: str, log_pos: int):
         return OperationCommit()
 
-    def __handle_event_query(self, event: QueryEvent):
+    def __handle_event_query(self, event: QueryEvent, log_file: str, log_pos: int):
         if event.query == "BEGIN":
             return OperationBegin()
         elif event.query == "COMMIT":
-            print(f"empty trx. log_file{event.ident} log_pos:{event.packet.log_pos}")
+            print(f"empty trx. log_file{log_file} log_pos:{log_pos}")
             return None
         else:
             ddltype, db = extract_schema(event.query)
@@ -380,8 +380,8 @@ class MysqlReplication:
                     else:
                         raise Exception("db not know", event.__dict__)
 
-    def __handle_event_heartheatlog(self, event: HeartbeatLogEvent):
-        return OperationHeartbeat(event.ident, event.packet.log_pos)
+    def __handle_event_heartheatlog(self, event: HeartbeatLogEvent, log_file: str, log_pos: int):
+        return OperationHeartbeat(log_file, log_pos)
 
     def operation_stream(self):
         handlers = {
@@ -397,12 +397,11 @@ class MysqlReplication:
         }
 
         for binlogevent in self.binlogeventstream:
-            # last_log_file = self.binlogeventstream.log_file
-            # last_log_pos = self.binlogeventstream.log_pos
-            # print(last_log_file, last_log_pos)
+            log_file = self.binlogeventstream.log_file
+            log_pos = self.binlogeventstream.log_pos
             handler = handlers.get(type(binlogevent))
             if handler:
-                operation = handler(binlogevent)
+                operation = handler(binlogevent, log_file, log_pos)
                 if operation:
                     if type(operation) == list:
                         for o in operation:
