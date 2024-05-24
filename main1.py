@@ -77,7 +77,7 @@ class DDLType(enum.Enum):
     TRUNCATETABLE = enum.auto()
     CREATEINDEX = enum.auto()
     ALTERINDEX = enum.auto()
-    DROPINDEX = enum.auto()
+    # DROPINDEX = enum.auto()
 
 
 @dataclass
@@ -89,7 +89,8 @@ class OperationDDL:
 
 @dataclass
 class OperationDML:
-    pass
+    schema: str
+    table: str
 
 
 @dataclass
@@ -198,8 +199,8 @@ def extract_schema(statement: str) -> tuple[DDLType | None, str | None]:
         (re.compile(r"\s*drop\s+table\s+(?:`?([a-zA-Z0-9_]+)`?\.)?`?[a-zA-Z0-9_]+`?\s*", re.IGNORECASE), DDLType.DROPTABLE),
         (re.compile(r"\s*rename\s+table\s+(?:`?([a-zA-Z0-9_]+)`?\.)?`?[a-zA-Z0-9_]+`?\s+.*", re.IGNORECASE), DDLType.RENAMETABLE),
         (re.compile(r"\s*truncate\s+table\s+(?:`?([a-zA-Z0-9_]+)`?\.)?`?[a-zA-Z0-9_]+`?\s*", re.IGNORECASE), DDLType.TRUNCATETABLE),
-        (re.compile(r"\s*create\s+index\s+(?:`?([a-zA-Z0-9_]+)`?\.)?`?[a-zA-Z0-9_]+`?\s+.*", re.IGNORECASE), DDLType.CREATEINDEX),
-        (re.compile(r"\s*drop\s+index\s+(?:`?([a-zA-Z0-9_]+)`?\.)?`?[a-zA-Z0-9_]+`?\s*", re.IGNORECASE), DDLType.DROPINDEX),
+        # (re.compile(r"\s*create\s+index\s+(?:`?([a-zA-Z0-9_]+)`?\.)?`?[a-zA-Z0-9_]+`?\s+.*", re.IGNORECASE), DDLType.CREATEINDEX),
+        (re.compile(r"\s*create\s+index\s+\w+\s+on\s+`?(?:(\w+)`?\.)?`?(\w+)`?\s?.*", re.IGNORECASE), DDLType.CREATEINDEX),
         (re.compile(r"\s*alter\s+index\s+(?:`?([a-zA-Z0-9_]+)`?\.)?`?[a-zA-Z0-9_]+`?\s+.*", re.IGNORECASE), DDLType.ALTERINDEX),
     ]
     for regex, ddl_type in patterns:
@@ -221,7 +222,6 @@ class MysqlClient:
         self.cur: MySQLCursor = self.con.cursor()
         self.con.autocommit = False
         self.dml_cnt = 0
-        self.statement_container = []
 
     def __c_con(self):
         pass
@@ -238,10 +238,9 @@ class MysqlClient:
 
     def push_begin(self):
         self.con.start_transaction()
-        self.cur: MySQLCursor = self.con.cursor()
+        # self.cur: MySQLCursor = self.con.cursor()
 
     def push_dml(self, sql_text: str, params: tuple) -> None:
-        self.statement_container.append((sql_text, params))
         self.dml_cnt += 1
         self.cur.execute(sql_text, params)
 
@@ -255,13 +254,14 @@ class MysqlClient:
             print(f"error push_nondml {db} {sql_text} ", e)
 
     def push_commit(self) -> None:
-        if len(self.statement_container) >= 1:
+        if self.dml_cnt >= 1:
             self.con.commit()
             self.dml_cnt = 0
-            self.statement_container.clear()
-            if self.cur:
-                self.cur.close()
-            self.__c_cur()
+        else:
+            self.con.rollback()
+            # if self.cur:
+            #     self.cur.close()
+            # self.__c_cur()
 
     def get_gtid(self, server_uuid: str):
         with self.con.cursor() as cur:
@@ -379,6 +379,8 @@ class MysqlReplication:
 
             if ddltype in (DDLType.CREATEDATABASE, DDLType.DROPDATABASE, DDLType.ALTERDATABASE):
                 return OperationDDL(ddltype, None, event.query)
+            elif ddltype in (DDLType.CREATETABLE, DDLType.ALTERTABLE):
+                pass
             else:
                 if event.schema_length >= 1:
                     schema: bytes = event.schema
@@ -458,6 +460,17 @@ class Checkpoint:
         return mysql.connector.connect(host=host, port=port, user=user, password=password)
 
 
+def format_filter_tables(tables: list[str]) -> dict:
+    filter_dict = {}
+    for dbtab in tables:
+        db, tab = dbtab.split(".")
+        if db in filter_dict:
+            filter_dict[db].append(tab)
+        else:
+            filter_dict[db] = [tab]
+    return filter_dict
+
+
 class MysqlSync:
     def __init__(
         self,
@@ -467,6 +480,7 @@ class MysqlSync:
         mysql_source_slave_heartbeat: int,
         mysql_source_blocking: bool,
         mysql_source_gtidset: str | None,
+        mysql_source_filter_tables: list[str],
         mysql_target_connection_settings: dict,
         mysql_sync_force_idempotent: bool,
     ) -> None:
@@ -489,6 +503,8 @@ class MysqlSync:
         self.allow_commit = False
         self.last_operation = None
         self.checkpoint_gtidset = {}
+
+        self.exclude_tables: dict[str, list[str]] = format_filter_tables(mysql_source_filter_tables)
 
     def __update_gtid(self, gtid: str):
         # 73b24aef-0b4d-11ef-9a54-1418774ca835:1-13313466:13313468-15821064:15821066-18093826:18093828-21851433:21851435-24792086:24792088-27279728:27279730-29405984,
@@ -521,6 +537,11 @@ class MysqlSync:
                 self.mc.push_nondml(operation.schema, operation.sql_text)
                 logging.debug(f"nondml {nondml_name} query: {operation.sql_text}")
             elif isinstance(operation, OperationDML):
+                if operation.schema in self.exclude_tables and operation.table in self.exclude_tables[operation.schema]:
+                    logging.info(f"excloud {operation.schema} {operation.table}")
+                    continue
+
+                print(operation)
                 self.statistics["dml"] += 1
                 if type(operation) == OperationDMLDelete:
                     self.statistics["dml-delete"] += 1
@@ -591,6 +612,7 @@ class Config:
     mysql_target_connection_string: str
     mysql_source_gtidset: str | None
     mysql_sync_force_idempotent: bool
+    mysql_source_filter_tables: list[str] | None
 
 
 parser = argparse.ArgumentParser(prog="ProgramName", description="What the program does", epilog="Text at the bottom of help")
@@ -600,6 +622,7 @@ parser.add_argument("--mysql_source_report_slave", type=str, required=True)
 parser.add_argument("--mysql_source_slave_heartbeat", type=int, required=True)
 parser.add_argument("--mysql_source_blocking", action="store_true")
 parser.add_argument("--mysql_source_gtidset", type=str)
+parser.add_argument("--mysql_source_filter_tables", type=str, nargs="+", default=[])
 
 parser.add_argument("--mysql_target_connection_string", type=str, required=True)
 
@@ -618,6 +641,7 @@ MysqlSync(
     config.mysql_source_slave_heartbeat,
     config.mysql_source_blocking,
     config.mysql_source_gtidset,
+    config.mysql_source_filter_tables,
     parse_connection_string(config.mysql_target_connection_string),
     config.mysql_sync_force_idempotent,
 ).run()
