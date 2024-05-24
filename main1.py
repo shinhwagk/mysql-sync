@@ -446,6 +446,15 @@ class MysqlRowCompare:
         pass
 
 
+class Checkpoint:
+    def __init__(self, mysql_source_connection_settings: dict, mysql_target_connection_settings: dict) -> None:
+        self.s_con = self.__c_cnt(**mysql_source_connection_settings)
+        self.t_con = self.__c_cnt(**mysql_target_connection_settings)
+
+    def __crt_cnt(self, host, port, user, password):
+        return mysql.connector.connect(host=host, port=port, user=user, password=password)
+
+
 class MysqlSync:
     def __init__(
         self,
@@ -503,11 +512,11 @@ class MysqlSync:
                 self.__commit()
                 self.statistics["nomdml"] += 1
 
-                print(str(operation.oper_type.name))
-                if self.statistics.get(str(operation.oper_type.name)):
-                    self.statistics[str(operation.oper_type.name)] += 1
+                nondmlname = f"nondml-{operation.oper_type.name.lower()}"
+                if self.statistics.get(nondmlname):
+                    self.statistics[nondmlname] += 1
                 else:
-                    self.statistics[str(operation.oper_type.name)] = 1
+                    self.statistics[nondmlname] = 1
 
                 self.mc.push_nondml(operation.schema, operation.sql_text)
             elif isinstance(operation, OperationDML):
