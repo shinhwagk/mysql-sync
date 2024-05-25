@@ -80,10 +80,11 @@ class DDLType(enum.Enum):
 
 
 @dataclass
-class OperationDDL:
+class OperationNonDML:
     oper_type: DDLType
     schema: str | None
-    sql_text: str
+    table:str|None
+    query: str
 
 
 @dataclass
@@ -187,10 +188,10 @@ def dmlOperation2Sql(operation: OperationDML, replace=bool) -> tuple[str, tuple]
         params = tuple(operation.after_values.values()) + tuple(primary_values)
     return sql, params
 
-ddl_patterns: list[tuple[Pattern[str], DDLType]] = [
-    (re.compile(r"\s*create\s+database\s+(?:if\s+not\s+exists\s+)`?(\w+)`?\s*", re.IGNORECASE), DDLType.CREATEDATABASE),
+ddl_patterns: list[tuple[Pattern[str], DDLType]] =    [
+    (re.compile(r"\s*create\s+database\s+(?:if\s+not\s+exists\s+)?`?(\w+)`?\s*", re.IGNORECASE), DDLType.CREATEDATABASE),
     (re.compile(r"\s*alter\s+database\s+`?(\w+)`?\s*", re.IGNORECASE), DDLType.ALTERDATABASE),
-    (re.compile(r"\s*drop\s+database\s+(?:if\s+exists\s+)`?(\w+)`?\s*", re.IGNORECASE), DDLType.DROPDATABASE),
+    (re.compile(r"\s*drop\s+database\s+(?:if\s+exists\s+)?`?(\w+)`?\s*", re.IGNORECASE), DDLType.DROPDATABASE),
     (re.compile(r"\s*create\s+table\s+(?:`?(\w+)`?\.)?`?(\w+)`?\s?.*", re.IGNORECASE), DDLType.CREATETABLE),
     (re.compile(r"\s*alter\s+table\s+(?:`?(\w+)`?\.)?`?(\w+)`?\s+.*", re.IGNORECASE), DDLType.ALTERTABLE),
     (re.compile(r"\s*drop\s+table\s+(?:`?(\w+)`?\.)?`?(\w+)`?\s*", re.IGNORECASE), DDLType.DROPTABLE),
@@ -199,21 +200,20 @@ ddl_patterns: list[tuple[Pattern[str], DDLType]] = [
     (re.compile(r"\s*create\s+index\s+\w+\s+on\s+(?:`?(\w+)`?\.)?`?(\w+)`?\s?.*", re.IGNORECASE), DDLType.CREATEINDEX),
 ]
 
-def extract_schema(statement: str) -> tuple[DDLType | None, str | None]:
+def extract_schema(statement: str) ->    tuple[DDLType | None, str | None, str|None]:
     for regex, ddl_type in ddl_patterns:
         match = regex.search(statement)
         if match:
             groups = match.groups()
-            if ddl_type in {DDLType.CREATEDATABASE, DDLType.DROPDATABASE}:
-                return ddl_type, groups[0]
-            elif len(groups) == 1:
-                return ddl_type, groups[0]
+            if ddl_type in {DDLType.CREATEDATABASE,DDLType.ALTERDATABASE, DDLType.DROPDATABASE}:
+                return ddl_type, groups[0],None
+            elif ddl_type in {DDLType.CREATETABLE, DDLType.ALTERTABLE,DDLType.DROPTABLE, DDLType.TRUNCATETABLE, DDLType.RENAMETABLE,DDLType.CREATEINDEX}:
+                return ddl_type, groups[0], groups[1]
 
-    return None, None
+    return None, None,None
 
 
 class MysqlClient:
-
     def __init__(self, connection_settings) -> None:
         self.con: MySQLConnection = mysql.connector.connect(**connection_settings)
         self.cur: MySQLCursor = self.con.cursor()
@@ -259,6 +259,9 @@ class MysqlClient:
             # if self.cur:
             #     self.cur.close()
             # self.__c_cur()
+
+    def push_rollback(self)->None:
+        self.con.rollback()
 
     def get_gtid(self, server_uuid: str):
         with self.con.cursor() as cur:
@@ -369,22 +372,22 @@ class MysqlReplication:
             logging.warning(f'empty trx, query:"COMMIT"')
             return None
         else:
-            ddltype, db = extract_schema(event.query)
+            ddltype, db, tab = extract_schema(event.query)
 
             if ddltype is None:
                 raise Exception("not know queryevent query", event.query)
 
             if ddltype in (DDLType.CREATEDATABASE, DDLType.DROPDATABASE, DDLType.ALTERDATABASE):
-                return OperationDDL(ddltype, None, event.query)
+                return OperationNonDML(ddltype, None,None, event.query)
             elif ddltype in (DDLType.CREATETABLE, DDLType.ALTERTABLE):
-                pass
+                return OperationNonDML(ddltype, db,tab, event.query)
             else:
                 if event.schema_length >= 1:
                     schema: bytes = event.schema
-                    return OperationDDL(ddltype, schema.decode("utf-8"), event.query)
+                    return OperationNonDML(ddltype, schema.decode("utf-8"),tab, event.query)
                 else:
                     if db:
-                        return OperationDDL(ddltype, db, event.query)
+                        return OperationNonDML(ddltype, db,tab, event.query)
                     else:
                         raise Exception("db not know", event.__dict__)
 
@@ -423,7 +426,7 @@ class MysqlReplication:
 
 
 gtid_re = re.compile(r"^([a-zA-Z0-9]{8}-[a-zA-Z0-9]{4}-[a-zA-Z0-_]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{12}):[0-9]+-([0-9]+)$")
-
+  
 
 def parse_gtidset(gtidset_str: str) -> dict[str, int]:
     _gtidset = {}
@@ -458,7 +461,7 @@ class Checkpoint:
 
 
 def format_filter_tables(tables: list[str]) -> dict:
-    filter_dict = {}
+    filter_dict:dict[str,list[str]] = {}
     for dbtab in tables:
         db, tab = dbtab.split(".")
         if db in filter_dict:
@@ -510,35 +513,42 @@ class MysqlSync:
         server_uuid, xid = gtid.split(":")
         self.gtid_sets[server_uuid] = int(xid)
 
-    def __commit(self):
+    def __commit(self,log_file,log_pos):
         self.checkpoint_gtidset = self.gtid_sets.copy()
 
-        if self.is_begin and self.allow_commit:
+        if self.allow_commit:
             self.mc.push_commit()
             self.is_begin = False
             self.allow_commit = False
             self.statistics["trx-merge"] += 1
+            self.commit_gtid=""
+            self.commit_log_file = log_file
+            self.commit_log_pos = log_pos
+    
+    def __rollback(self):
+        self.mc.push_rollback()
 
     def run(self):
         _ts_0 = time.time()
         _timestamp = 0
+        _log_file =""
+        _log_pos = ""
 
         for log_file, log_pos, timestamp, operation in self.mr.operation_stream():
-            if type(operation) == OperationDDL:
-                self.__commit()
+            if type(operation) == OperationNonDML:
+                self.__commit(_log_file,_log_pos)
                 self.statistics["nomdml"] += 1
 
                 nondml_name = f"nondml-{operation.oper_type.name.lower()}"
                 self.statistics[nondml_name] = self.statistics.get(nondml_name, 0) + 1
 
-                self.mc.push_nondml(operation.schema, operation.sql_text)
-                logging.debug(f"nondml {nondml_name} query: {operation.sql_text}")
+                self.mc.push_nondml(operation.schema, operation.query)
+                logging.debug(f"nondml {nondml_name} query: {operation.query}")
             elif isinstance(operation, OperationDML):
                 if operation.schema in self.exclude_tables and operation.table in self.exclude_tables[operation.schema]:
                     logging.info(f"excloud {operation.schema} {operation.table}")
                     continue
 
-                print(operation)
                 self.statistics["dml"] += 1
                 if type(operation) == OperationDMLDelete:
                     self.statistics["dml-delete"] += 1
@@ -552,7 +562,7 @@ class MysqlSync:
                     logging.debug(f"log_file {log_file} log_pos {log_pos} dml query : {sql_text}")
                     self.mc.push_dml(sql_text, params)
                 except Exception as e:
-                    print("dml error", operation)
+                    print("dml error", operation,e)
                     raise e
             elif type(operation) == OperationBegin:
                 if self.is_begin == False:
@@ -561,17 +571,19 @@ class MysqlSync:
             elif type(operation) == OperationCommit:
                 self.statistics["trx"] += 1
                 self.allow_commit = True
-            elif type(operation) == OperationGtid:
+            elif type(operation) ==   OperationGtid:
                 if self.last_committed != operation.last_committed:
-                    self.__commit()
+                    self.__commit(_log_file,_log_pos)
                     self.last_committed = operation.last_committed
 
                 server_uuid, xid = operation.gtid.split(":")
                 self.gtid_sets[server_uuid] = int(xid)
-            elif type(operation) == OperationHeartbeat:
+                _log_file = log_file
+                _log_pos=log_pos
+            elif type(operation) ==    OperationHeartbeat:
                 if type(self.last_operation) == OperationHeartbeat:
                     _timestamp = time.time()
-                    self.__commit()
+                    self.__commit(_log_file,_log_pos)
             else:
                 pass
 
@@ -590,7 +602,7 @@ class MysqlSync:
 
             self.last_operation = operation
 
-        if self.is_begin and self.allow_commit:
+        if self.allow_commit:
             self.__commit()
 
         print(self.statistics)
@@ -624,7 +636,6 @@ parser.add_argument("--mysql_source_filter_tables", type=str, nargs="+", default
 parser.add_argument("--mysql_target_connection_string", type=str, required=True)
 
 parser.add_argument("--mysql_sync_force_idempotent", action="store_true")
-
 
 args = parser.parse_args()
 

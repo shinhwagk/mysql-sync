@@ -1,5 +1,5 @@
 {
-	"name": "mysqlbinlog-sync",
+	"name": "mysql-sync",
 	"dockerComposeFile": "docker-compose.yml",
 	"service": "app",
 	"workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
