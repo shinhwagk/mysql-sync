@@ -76,7 +76,6 @@ class DDLType(enum.Enum):
     RENAMETABLE = enum.auto()
     TRUNCATETABLE = enum.auto()
     CREATEINDEX = enum.auto()
-    ALTERINDEX = enum.auto()
     # DROPINDEX = enum.auto()
 
 
@@ -188,22 +187,20 @@ def dmlOperation2Sql(operation: OperationDML, replace=bool) -> tuple[str, tuple]
         params = tuple(operation.after_values.values()) + tuple(primary_values)
     return sql, params
 
+ddl_patterns: list[tuple[Pattern[str], DDLType]] = [
+    (re.compile(r"\s*create\s+database\s+(?:if\s+not\s+exists\s+)`?(\w+)`?\s*", re.IGNORECASE), DDLType.CREATEDATABASE),
+    (re.compile(r"\s*alter\s+database\s+`?(\w+)`?\s*", re.IGNORECASE), DDLType.ALTERDATABASE),
+    (re.compile(r"\s*drop\s+database\s+(?:if\s+exists\s+)`?(\w+)`?\s*", re.IGNORECASE), DDLType.DROPDATABASE),
+    (re.compile(r"\s*create\s+table\s+(?:`?(\w+)`?\.)?`?(\w+)`?\s?.*", re.IGNORECASE), DDLType.CREATETABLE),
+    (re.compile(r"\s*alter\s+table\s+(?:`?(\w+)`?\.)?`?(\w+)`?\s+.*", re.IGNORECASE), DDLType.ALTERTABLE),
+    (re.compile(r"\s*drop\s+table\s+(?:`?(\w+)`?\.)?`?(\w+)`?\s*", re.IGNORECASE), DDLType.DROPTABLE),
+    (re.compile(r"\s*rename\s+table\s+(?:`?(\w+)`?\.)?`?(\w+)`?\s+.*", re.IGNORECASE), DDLType.RENAMETABLE),
+    (re.compile(r"\s*truncate\s+table\s+(?:`?(\w+)`?\.)?`?(\w+)`?\s*", re.IGNORECASE), DDLType.TRUNCATETABLE),
+    (re.compile(r"\s*create\s+index\s+\w+\s+on\s+(?:`?(\w+)`?\.)?`?(\w+)`?\s?.*", re.IGNORECASE), DDLType.CREATEINDEX),
+]
 
 def extract_schema(statement: str) -> tuple[DDLType | None, str | None]:
-    patterns: list[tuple[Pattern[str], DDLType]] = [
-        (re.compile(r"\s*create\s+database\s+(?:if\s+not\s+exists\s+)`?([a-zA-Z0-9_]+)`?\s*", re.IGNORECASE), DDLType.CREATEDATABASE),
-        (re.compile(r"\s*alter\s+database\s+`?([a-zA-Z0-9_]+)`?\s*", re.IGNORECASE), DDLType.ALTERDATABASE),
-        (re.compile(r"\s*drop\s+database\s+(?:if\s+exists\s+)`?([a-zA-Z0-9_]+)`?\s*", re.IGNORECASE), DDLType.DROPDATABASE),
-        (re.compile(r"\s*create\s+table\s+(?:`?([a-zA-Z0-9_]+)`?\.)?`?[a-zA-Z0-9_]+`?\s?.*", re.IGNORECASE), DDLType.CREATETABLE),
-        (re.compile(r"\s*alter\s+table\s+(?:`?([a-zA-Z0-9_]+)`?\.)?`?[a-zA-Z0-9_]+`?\s+.*", re.IGNORECASE), DDLType.ALTERTABLE),
-        (re.compile(r"\s*drop\s+table\s+(?:`?([a-zA-Z0-9_]+)`?\.)?`?[a-zA-Z0-9_]+`?\s*", re.IGNORECASE), DDLType.DROPTABLE),
-        (re.compile(r"\s*rename\s+table\s+(?:`?([a-zA-Z0-9_]+)`?\.)?`?[a-zA-Z0-9_]+`?\s+.*", re.IGNORECASE), DDLType.RENAMETABLE),
-        (re.compile(r"\s*truncate\s+table\s+(?:`?([a-zA-Z0-9_]+)`?\.)?`?[a-zA-Z0-9_]+`?\s*", re.IGNORECASE), DDLType.TRUNCATETABLE),
-        # (re.compile(r"\s*create\s+index\s+(?:`?([a-zA-Z0-9_]+)`?\.)?`?[a-zA-Z0-9_]+`?\s+.*", re.IGNORECASE), DDLType.CREATEINDEX),
-        (re.compile(r"\s*create\s+index\s+\w+\s+on\s+`?(?:(\w+)`?\.)?`?(\w+)`?\s?.*", re.IGNORECASE), DDLType.CREATEINDEX),
-        (re.compile(r"\s*alter\s+index\s+(?:`?([a-zA-Z0-9_]+)`?\.)?`?[a-zA-Z0-9_]+`?\s+.*", re.IGNORECASE), DDLType.ALTERINDEX),
-    ]
-    for regex, ddl_type in patterns:
+    for regex, ddl_type in ddl_patterns:
         match = regex.search(statement)
         if match:
             groups = match.groups()
@@ -425,7 +422,7 @@ class MysqlReplication:
             log_pos = end_log_pos
 
 
-gtid_re = re.compile(r"^([a-zA-Z0-9_]{8}-[a-zA-Z0-9_]{4}-[a-zA-Z0-9_]{4}-[a-zA-Z0-9_]{4}-[a-zA-Z0-9_]{12}):[0-9]+-([0-9]+)$")
+gtid_re = re.compile(r"^([a-zA-Z0-9]{8}-[a-zA-Z0-9]{4}-[a-zA-Z0-_]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{12}):[0-9]+-([0-9]+)$")
 
 
 def parse_gtidset(gtidset_str: str) -> dict[str, int]:
