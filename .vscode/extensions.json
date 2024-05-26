@@ -2,9 +2,6 @@
     "recommendations": [
         "ms-python.python",
         "rust-lang.rust-analyzer",
-        "ms-python.isort",
-        "ms-azuretools.vscode-docker",
-        "redhat.vscode-yaml",
-        "ms-python.black-formatter"
+        "charliermarsh.ruff"
     ],
 }
