@@ -244,10 +244,7 @@ def extract_schema(statement: str) -> tuple[NonDMLType | None, str | None, str |
 
 
 class MysqlClient:
-    def __init__(
-        self,
-        settings,
-    ) -> None:
+    def __init__(self, settings) -> None:
         self.logger = Logger("mysqlclient")
 
         self.con: MySQLConnection = mysql.connector.connect(**settings["connection_settings"])
@@ -256,15 +253,11 @@ class MysqlClient:
         self.dml_cnt = 0
         self.active_trx = False
 
-    def __c_con(
-        self,
-    ):
+    def __c_con(self):
         pass
         # self.con = mysql.connector.connect(**{"host": "db2", "port": 3306, "user": "root", "passwd": "root_password"})
 
-    def __c_cur(
-        self,
-    ):
+    def __c_cur(self):
         self.cur: MySQLCursor = self.con.cursor()
 
     # def get_gtidset(self):
@@ -273,31 +266,18 @@ class MysqlClient:
     #         _, _, _, _, gtidset = cur.fetchone()
     #         return gtidset
 
-    def push_begin(
-        self,
-    ):
+    def push_begin(self):
         if self.active_trx:
             return
         self.con.start_transaction()
         self.active_trx = True
         # self.cur: MySQLCursor = self.con.cursor()
 
-    def push_dml(
-        self,
-        sql_text: str,
-        params: tuple,
-    ) -> None:
-        self.cur.execute(
-            sql_text,
-            params,
-        )
+    def push_dml(self, sql_text: str, params: tuple) -> None:
+        self.cur.execute(sql_text, params)
         self.dml_cnt += 1
 
-    def push_nondml(
-        self,
-        db: str | None,
-        sql_text: str,
-    ) -> None:
+    def push_nondml(self, db: str | None, sql_text: str) -> None:
         if db:
             self.con.database = db
         with self.con.cursor() as cur:
@@ -305,9 +285,7 @@ class MysqlClient:
 
         self.active_trx = False
 
-    def push_commit(
-        self,
-    ) -> None:
+    def push_commit(self) -> None:
         if self.dml_cnt >= 1 and self.active_trx:
             self.con.commit()
         else:
@@ -318,23 +296,15 @@ class MysqlClient:
         #     self.cur.close()
         # self.__c_cur()
 
-    def push_rollback(
-        self,
-    ) -> None:
+    def push_rollback(self) -> None:
         self.con.rollback()
 
-    def get_gtid(
-        self,
-        server_uuid: str,
-    ):
+    def get_gtid(self, server_uuid: str):
         with self.con.cursor() as cur:
             cur.execute("show master status")
 
 
-def reset_col_val(
-    colum_type: int,
-    col_val: any,
-):
+def reset_col_val(colum_type: int, col_val: any):
     if colum_type in [
         FIELD_TYPE.VAR_STRING,
         FIELD_TYPE.VARCHAR,
@@ -359,14 +329,8 @@ def reset_col_val(
         return col_val
     elif colum_type == FIELD_TYPE.BIT:
         binary_string = col_val
-        binary_integer = int(
-            binary_string,
-            2,
-        )
-        binary_data = binary_integer.to_bytes(
-            (binary_integer.bit_length() + 7) // 8,
-            byteorder="big",
-        )
+        binary_integer = int(binary_string, 2)
+        binary_data = binary_integer.to_bytes((binary_integer.bit_length() + 7) // 8, byteorder="big")
         return binary_data
     elif colum_type == FIELD_TYPE.SET:
         return ",".join(col_val)
@@ -374,160 +338,74 @@ def reset_col_val(
         raise Exception(f"unreset col val type {colum_type} {type(col_val)} {col_val}")
 
 
-def reset_values(
-    values: dict,
-    columns: list[Column],
-) -> dict[str, any]:
+def reset_values(values: dict, columns: list[Column]) -> dict[str, any]:
     new_values: dict[str, any] = {}
     for column in columns:
         col_name = column.name
         if col_name in values:
-            new_values[col_name] = reset_col_val(
-                column.type,
-                values[col_name],
-            )
+            new_values[col_name] = reset_col_val(column.type, values[col_name])
     return new_values
 
 
 class MysqlReplication:
-    def __init__(
-        self,
-        source_settings: dict,
-    ) -> None:
+    def __init__(self, source_settings: dict) -> None:
         self.logger = Logger("mysqlreplication")
 
         self.binlogeventstream: Iterator[BinLogEvent] = BinLogStreamReader(**source_settings)
 
-    def __handle_table_map_event(
-        self,
-        event: TableMapEvent,
-    ):
+    def __handle_table_map_event(self, event: TableMapEvent):
         pass
 
-    def __handle_event_update_rows(
-        self,
-        event: UpdateRowsEvent,
-    ) -> list[OperationDML]:
+    def __handle_event_update_rows(self, event: UpdateRowsEvent) -> list[OperationDML]:
         ls = []
         for row in event.rows:
-            new_after_values = reset_values(
-                row["after_values"],
-                event.columns,
-            )
-            new_before_values = reset_values(
-                row["before_values"],
-                event.columns,
-            )
-            ls.append(
-                OperationDMLUpdate(
-                    event.schema,
-                    event.table,
-                    new_after_values,
-                    new_before_values,
-                    event.primary_key,
-                )
-            )
+            new_after_values = reset_values(row["after_values"], event.columns)
+            new_before_values = reset_values(row["before_values"], event.columns)
+            ls.append(OperationDMLUpdate(event.schema, event.table, new_after_values, new_before_values, event.primary_key))
         return ls
 
-    def __handle_event_write_rows(
-        self,
-        event: WriteRowsEvent,
-    ) -> list[list[OperationDML]]:
+    def __handle_event_write_rows(self, event: WriteRowsEvent) -> list[list[OperationDML]]:
         ls = []
         for row in event.rows:
-            new_values = reset_values(
-                row["values"],
-                event.columns,
-            )
-            ls.append(
-                OperationDMLInsert(
-                    event.schema,
-                    event.table,
-                    new_values,
-                    event.primary_key,
-                )
-            )
+            new_values = reset_values(row["values"], event.columns)
+            ls.append(OperationDMLInsert(event.schema, event.table, new_values, event.primary_key))
         return ls
 
-    def __handle_event_delete_rows(
-        self,
-        event: DeleteRowsEvent,
-    ) -> list[list[OperationDML]]:
+    def __handle_event_delete_rows(self, event: DeleteRowsEvent) -> list[list[OperationDML]]:
         ls = []
         for row in event.rows:
-            new_values = reset_values(
-                row["values"],
-                event.columns,
-            )
-            ls.append(
-                OperationDMLDelete(
-                    event.schema,
-                    event.table,
-                    new_values,
-                    event.primary_key,
-                )
-            )
+            new_values = reset_values(row["values"], event.columns)
+            ls.append(OperationDMLDelete(event.schema, event.table, new_values, event.primary_key))
         return ls
 
-    def __handle_event_gtid(
-        self,
-        event: GtidEvent,
-    ):
-        (
-            server_uuid,
-            xid,
-        ) = event.gtid.split(":")
-        return OperationGtid(
-            server_uuid,
-            xid,
-            event.last_committed,
-        )
+    def __handle_event_gtid(self, event: GtidEvent):
+        (server_uuid, xid) = event.gtid.split(":")
+        return OperationGtid(server_uuid, xid, event.last_committed)
 
-    def __handle_event_rotate(
-        self,
-        event: RotateEvent,
-    ):
+    def __handle_event_rotate(self, event: RotateEvent):
         self.logfile = event.next_binlog
 
-    def __handle_event_xid(
-        self,
-        event: XidEvent,
-    ):
+    def __handle_event_xid(self, event: XidEvent):
         return OperationCommit()
 
-    def __handle_event_query(
-        self,
-        event: QueryEvent,
-    ):
+    def __handle_event_query(self, event: QueryEvent):
         if event.query == "BEGIN":
             return OperationBegin()
         elif event.query == "COMMIT":
             self.logger.warning('empty trx, query:"COMMIT"')
             return None
         else:
-            (
-                ddltype,
-                db,
-                tab,
-            ) = extract_schema(event.query)
+            (ddltype, db, tab) = extract_schema(event.query)
 
             if ddltype is None:
-                raise Exception(
-                    "not know queryevent query",
-                    event.query,
-                )
+                raise Exception("not know queryevent query", event.query)
 
             if ddltype in (
                 NonDMLType.CREATEDATABASE,
                 NonDMLType.DROPDATABASE,
                 NonDMLType.ALTERDATABASE,
             ):
-                return OperationNonDML(
-                    ddltype,
-                    None,
-                    None,
-                    event.query,
-                )
+                return OperationNonDML(ddltype, None, None, event.query)
 
             else:
                 if ddltype in (
@@ -541,22 +419,11 @@ class MysqlReplication:
                     schema = event.schema.decode("utf-8") if event.schema_length >= 1 else db
 
                     if schema:
-                        return OperationNonDML(
-                            ddltype,
-                            schema,
-                            tab,
-                            event.query,
-                        )
+                        return OperationNonDML(ddltype, schema, tab, event.query)
                     else:
-                        raise Exception(
-                            "db not know",
-                            event.__dict__,
-                        )
+                        raise Exception("db not know", event.__dict__)
 
-    def __handle_event_heartheatlog(
-        self,
-        event: HeartbeatLogEvent,
-    ):
+    def __handle_event_heartheatlog(self, event: HeartbeatLogEvent):
         return OperationHeartbeat()
 
     def operation_stream(
@@ -605,37 +472,10 @@ class MysqlReplication:
             log_pos = end_log_pos
 
 
-def parse_gtidset(
-    gtidset_str: str,
-) -> dict[str, int]:
-    gtid_re = re.compile(r"^([a-zA-Z0-9]{8}-[a-zA-Z0-9]{4}-[a-zA-Z0-_]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{12}):[0-9]+-([0-9]+)$")
-
-    _gtidset = {}
-    for gtid in gtidset_str.split(","):
-        match = gtid_re.search(gtid)
-        if match:
-            (
-                server_uuid,
-                xid,
-            ) = match.groups()
-            _gtidset[server_uuid] = int(xid)
-        else:
-            raise Exception(f"gtid set format error {gtid}")
-    return _gtidset
-
-
-def format_filter_tables(
-    tables: list[str],
-) -> dict:
-    filter_dict: dict[
-        str,
-        list[str],
-    ] = {}
+def format_filter_tables(tables: list[str]) -> dict:
+    filter_dict: dict[str, list[str]] = {}
     for dbtab in tables:
-        (
-            db,
-            tab,
-        ) = dbtab.split(".")
+        (db, tab) = dbtab.split(".")
         if db in filter_dict:
             filter_dict[db].append(tab)
         else:
@@ -644,28 +484,13 @@ def format_filter_tables(
 
 
 class MysqlRowCompare:
-    def __init__(
-        self,
-        mysql_source_connection_settings: dict,
-        mysql_target_connection_settings: dict,
-    ):
+    def __init__(self, mysql_source_connection_settings: dict, mysql_target_connection_settings: dict):
         pass
 
-    def compare_key(
-        self,
-        dbtab: str,
-        primarykey: dict[
-            str,
-            any,
-        ],
-    ):
+    def compare_key(self, dbtab: str, primarykey: dict[str, any]):
         pass
 
-    def compare_nonkey(
-        self,
-        dbtab: str,
-        values: list[any],
-    ):
+    def compare_nonkey(self, dbtab: str, values: list[any]):
         pass
 
 
@@ -680,38 +505,22 @@ class MetricAttr(Enum):
 
 
 class MetricController:
-    def __init__(
-        self,
-    ) -> None:
+    def __init__(self) -> None:
         self.__file = "metrics.json"
         self.__metrics = {attr.value: 0 for attr in list(MetricAttr) + list(NonDMLType)}
 
-    def increment(
-        self,
-        attr: MetricAttr | NonDMLType,
-    ) -> None:
+    def increment(self, attr: MetricAttr | NonDMLType) -> None:
         if attr.value in self.__metrics and attr.value != MetricAttr.DELAY.value:
             self.__metrics[attr.value] += 1
 
-    def set_delay(
-        self,
-        value: int,
-    ):
+    def set_delay(self, value: int):
         self.__metrics["delay"] += value
 
     def persist(
         self,
     ):
-        with open(
-            self.__file,
-            "w",
-            encoding="utf8",
-        ) as f:
-            json.dump(
-                asdict(self.__metrics),
-                f,
-                ensure_ascii=False,
-            )
+        with open(self.__file, "w", encoding="utf8") as f:
+            json.dump(asdict(self.__metrics), f, ensure_ascii=False)
 
 
 class Checkpoint:
@@ -728,45 +537,22 @@ class Checkpoint:
             int,
         ],
     ):
-        print(
-            "checkpoint",
-            gtidset,
-        )
-        with open(
-            "ckpt.json",
-            "w",
-            encoding="utf8",
-        ) as f:
-            return json.dump(
-                gtidset,
-                f,
-            )
+        print("checkpoint", gtidset)
+        with open("ckpt.json", "w", encoding="utf8") as f:
+            return json.dump(gtidset, f)
 
-    def __format_gtidset(
-        self,
-        gtidsets: str,
-    ) -> dict[str, int]:
+    def __format_gtidset(self, gtidsets: str) -> dict[str, int]:
         _gtidset = {}
         for gtidset in gtidsets.split(","):
             gtidsetf = gtidset.split(":")
             _gtidset[gtidsetf[0]] = int(gtidsetf[-1].split("-")[-1] if "-" in gtidsetf[-1] else gtidsetf[-1])
         return _gtidset
 
-    def __get_checkpoint_gtidset(
-        self,
-        gtidset: str,
-    ) -> str:
+    def __get_checkpoint_gtidset(self, gtidset: str) -> str:
         _start_gtidset = self.__format_gtidset(gtidset)
         if os.path.exists("ckpt.json"):
-            with open(
-                "ckpt.json",
-                "r",
-                encoding="utf8",
-            ) as f:
-                _gtidset: dict[
-                    str,
-                    int,
-                ] = json.load(f)
+            with open("ckpt.json", "r", encoding="utf8") as f:
+                _gtidset: dict[str, int] = json.load(f)
                 for (
                     _server_uuid,
                     _xid,
@@ -783,12 +569,7 @@ class Checkpoint:
 
 
 class MysqlSync:
-    def __init__(
-        self,
-        mysql_source_settings: dict,
-        mysql_target_settings: dict,
-        mysql_sync_settings: dict,
-    ) -> None:
+    def __init__(self, mysql_source_settings: dict, mysql_target_settings: dict, mysql_sync_settings: dict) -> None:
         self.logger = Logger("mysqlsync")
         self.metric = MetricController()
 
@@ -814,10 +595,7 @@ class MysqlSync:
         self.latest_gtidset = {}
         self.latest_position = ()
 
-        self.exclude_tables: dict[
-            str,
-            list[str],
-        ] = {}
+        self.exclude_tables: dict[str, list[str]] = {}
 
     def __merge_commit(
         self,
@@ -838,20 +616,12 @@ class MysqlSync:
         _timestamp = 0
         _error = False
 
-        for (
-            log_file,
-            log_pos,
-            timestamp,
-            operation,
-        ) in self.mr.operation_stream():
+        for log_file, log_pos, timestamp, operation in self.mr.operation_stream():
             if type(operation) == OperationNonDML:
                 self.__merge_commit()
 
                 try:
-                    self.mc.push_nondml(
-                        operation.schema,
-                        operation.query,
-                    )
+                    self.mc.push_nondml(operation.schema, operation.query)
                     self.metric.increment(operation.oper_type)
                 except Exception as e:
                     self.logger.error(f"error push_nondml {operation.schema} {operation.query} {e}")
@@ -873,14 +643,8 @@ class MysqlSync:
                     self.metric.increment(MetricAttr.DML_UPDATE)
 
                 try:
-                    (
-                        sql_text,
-                        params,
-                    ) = dmlOperation2Sql(operation)
-                    self.mc.push_dml(
-                        sql_text,
-                        params,
-                    )
+                    (sql_text, params) = dmlOperation2Sql(operation)
+                    self.mc.push_dml(sql_text, params)
                 except Exception as e:
                     self.logger.error(f" dml error, {operation}, {e}")
             elif type(operation) == OperationBegin:
