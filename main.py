@@ -16,21 +16,11 @@ from mysql.connector.cursor import MySQLCursor
 from pymysqlreplication import BinLogStreamReader
 from pymysqlreplication.column import Column
 from pymysqlreplication.constants import FIELD_TYPE
-from pymysqlreplication.event import (
-    BinLogEvent,
-    GtidEvent,
-    HeartbeatLogEvent,
-    QueryEvent,
-    RotateEvent,
-    RowsQueryLogEvent,
-    XidEvent,
-)
-from pymysqlreplication.row_event import (
-    DeleteRowsEvent,
-    TableMapEvent,
-    UpdateRowsEvent,
-    WriteRowsEvent,
-)
+from pymysqlreplication.event import (BinLogEvent, GtidEvent,
+                                      HeartbeatLogEvent, QueryEvent,
+                                      RotateEvent, RowsQueryLogEvent, XidEvent)
+from pymysqlreplication.row_event import (DeleteRowsEvent, TableMapEvent,
+                                          UpdateRowsEvent, WriteRowsEvent)
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -821,7 +811,7 @@ class MysqlSync:
 #     config.mysql_sync_merge_trx,
 # ).run()
 def main():
-    from settings import source_settings, sync_settings, target_settings
+    from .settings import source_settings, sync_settings, target_settings
 
     print(f"source settings: {source_settings}")
     print(f"target settings: {target_settings}")
