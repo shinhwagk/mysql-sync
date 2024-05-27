@@ -5,3 +5,5 @@ mysql-connector-python==8.0.29
 mysql-replication==1.0.8
 
 cryptography
+
+prometheus-client

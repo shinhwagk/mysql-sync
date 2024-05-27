@@ -66,7 +66,7 @@ done
 
 
 echo "sync source to target"
-time python3.12 main.py
+time python3.12 main.py --config settings.py
 
 rm -f /tmp/source.sql /tmp/target.sql
 for db in $(MYSQL_SOURCE_CLIENT -e "SHOW DATABASES;" | grep -Ev "(Database|information_schema|performance_schema|mysql|sys)"); do
