@@ -251,27 +251,13 @@ class MysqlClient:
         self.cur: MySQLCursor = self.con.cursor()
         self.con.autocommit = False
         self.dml_cnt = 0
-        self.active_trx = False
-
-    def __c_con(self):
-        pass
-        # self.con = mysql.connector.connect(**{"host": "db2", "port": 3306, "user": "root", "passwd": "root_password"})
-
-    def __c_cur(self):
-        self.cur: MySQLCursor = self.con.cursor()
-
-    # def get_gtidset(self):
-    #     with self.con.cursor() as cur:
-    #         cur.execute("show master status")
-    #         _, _, _, _, gtidset = cur.fetchone()
-    #         return gtidset
 
     def push_begin(self):
-        if self.active_trx:
+        print("1111", self.con.in_transaction)
+        if self.con.in_transaction:
             return
         self.con.start_transaction()
-        self.active_trx = True
-        # self.cur: MySQLCursor = self.con.cursor()
+        print("1111", self.con.in_transaction)
 
     def push_dml(self, sql_text: str, params: tuple) -> None:
         self.cur.execute(sql_text, params)
@@ -283,25 +269,15 @@ class MysqlClient:
         with self.con.cursor() as cur:
             cur.execute(sql_text)
 
-        self.active_trx = False
-
     def push_commit(self) -> None:
-        if self.dml_cnt >= 1 and self.active_trx:
+        if self.dml_cnt >= 1 and self.con.in_transaction:
             self.con.commit()
         else:
             self.con.rollback()
         self.dml_cnt = 0
-        self.active_trx = False
-        # if self.cur:
-        #     self.cur.close()
-        # self.__c_cur()
 
     def push_rollback(self) -> None:
         self.con.rollback()
-
-    def get_gtid(self, server_uuid: str):
-        with self.con.cursor() as cur:
-            cur.execute("show master status")
 
 
 def reset_col_val(colum_type: int, col_val: any):
