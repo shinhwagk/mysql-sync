@@ -1,5 +1,6 @@
 import argparse
 import enum
+import importlib.util
 import json
 import logging
 import os
@@ -16,11 +17,21 @@ from mysql.connector.cursor import MySQLCursor
 from pymysqlreplication import BinLogStreamReader
 from pymysqlreplication.column import Column
 from pymysqlreplication.constants import FIELD_TYPE
-from pymysqlreplication.event import (BinLogEvent, GtidEvent,
-                                      HeartbeatLogEvent, QueryEvent,
-                                      RotateEvent, RowsQueryLogEvent, XidEvent)
-from pymysqlreplication.row_event import (DeleteRowsEvent, TableMapEvent,
-                                          UpdateRowsEvent, WriteRowsEvent)
+from pymysqlreplication.event import (
+    BinLogEvent,
+    GtidEvent,
+    HeartbeatLogEvent,
+    QueryEvent,
+    RotateEvent,
+    RowsQueryLogEvent,
+    XidEvent,
+)
+from pymysqlreplication.row_event import (
+    DeleteRowsEvent,
+    TableMapEvent,
+    UpdateRowsEvent,
+    WriteRowsEvent,
+)
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -810,14 +821,26 @@ class MysqlSync:
 #     config.mysql_sync_force_idempotent,
 #     config.mysql_sync_merge_trx,
 # ).run()
+
+
 def main():
-    from .settings import source_settings, sync_settings, target_settings
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--config", required=True, help="Path to the configuration file"
+    )
+    args = parser.parse_args()
+    if args.config:
+        spec = importlib.util.spec_from_file_location("settings", args.config)
+        settings = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(settings)
 
-    print(f"source settings: {source_settings}")
-    print(f"target settings: {target_settings}")
-    print(f"sync settings: {sync_settings}")
+        print(f"source settings: {settings.source_settings}")
+        print(f"target settings: {settings.target_settings}")
+        print(f"sync settings: {settings.sync_settings}")
 
-    MysqlSync(source_settings, target_settings, sync_settings).run()
+        MysqlSync(
+            settings.source_settings, settings.target_settings, settings.sync_settings
+        ).run()
 
 
 if __name__ == "__main__":
