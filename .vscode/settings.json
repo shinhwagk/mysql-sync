@@ -6,7 +6,6 @@
   "terminal.integrated.defaultProfile.linux": "zsh",
   "[python]": {
     "editor.defaultFormatter": "charliermarsh.ruff",
-    "editor.formatOnSave": true,
     "editor.codeActionsOnSave": {
       "source.organizeImports": "always"
     },

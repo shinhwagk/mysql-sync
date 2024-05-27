@@ -202,7 +202,6 @@ def dmlOperation2Sql(operation: OperationDML) -> tuple[str, tuple]:
             primary_values = tuple(operation.values.values())
         sql = f"DELETE FROM `{operation.schema}`.`{operation.table}` WHERE {condition}"
         params = tuple(primary_values)
-        print(sql, params)
     elif isinstance(operation, OperationDMLUpdate):
         set_clause = ", ".join([f"{k} = %s" for k in operation.after_values.keys()])
         if operation.primary_key:
@@ -363,14 +362,6 @@ class MysqlClient:
     def get_gtid(self, server_uuid: str):
         with self.con.cursor() as cur:
             cur.execute("show master status")
-
-
-class Checkpoint:
-    def push_gtid(gtid):
-        pass
-
-    def push_timestamp(ts):
-        pass
 
 
 def reset_col_val(colum_type: int, col_val: any):
