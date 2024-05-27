@@ -584,22 +584,37 @@ class MysqlRowCompare:
 
 
 class Checkpoint:
-    def __init__(self) -> None:
-        self.checkpoint_gtidset: str = self.__get_checkpoint_gtidset()
+    def __init__(self, gtidset: str) -> None:
+        self.checkpoint_gtidset: str = self.__get_checkpoint_gtidset(gtidset)
 
     def persist_checkpoint_gitdset(self, gtidset: dict[str, int]):
         print("checkpoint", gtidset)
         with open("ckpt.json", "w", encoding="utf8") as f:
             return json.dump(gtidset, f)
 
-    def __get_checkpoint_gtidset(self) -> str:
-        start_gtidset = {}
+    def __format_gtidset(self, gtidsets: str) -> dict[str, int]:
+        _gtidset = {}
+        for gtidset in gtidsets.split(","):
+            gtidsetf = gtidset.split(":")
+            _gtidset[gtidsetf[0]] = int(
+                gtidsetf[-1].split("-")[-1] if "-" in gtidsetf[-1] else gtidsetf[-1]
+            )
+        return _gtidset
+
+    def __get_checkpoint_gtidset(self, gtidset: str) -> str:
+        _config_gtidset = self.__format_gtidset(gtidset)
         if os.path.exists("ckpt.json"):
             with open("ckpt.json", "r", encoding="utf8") as f:
                 _gtidset: dict[str, int] = json.load(f)
                 for _server_uuid, _xid in _gtidset.items():
-                    start_gtidset[_server_uuid] = f"1-{_xid}"
-        return start_gtidset
+                    if _server_uuid in _config_gtidset:
+                        _config_gtidset[_server_uuid] = max(
+                            _config_gtidset[_server_uuid], _xid
+                        )
+                    else:
+                        _config_gtidset[_server_uuid] = _xid
+
+        return ", ".join(f"{key}:1-{value}" for key, value in _config_gtidset.items())
 
 
 class MysqlSync:
@@ -611,9 +626,9 @@ class MysqlSync:
     ) -> None:
         self.args_mysql_sync_merge_trx = mysql_sync_settings["merge_trx"]
 
-        self.ckpt = Checkpoint()
+        self.ckpt = Checkpoint(mysql_source_settings["auto_position"])
 
-        print(f"start {self.ckpt.checkpoint_gtidset}")
+        print(f"start gtidset {self.ckpt.checkpoint_gtidset}")
         if self.ckpt:
             mysql_source_settings["auto_position"] = self.ckpt.checkpoint_gtidset
 
