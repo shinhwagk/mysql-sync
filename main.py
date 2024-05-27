@@ -17,25 +17,10 @@ from mysql.connector.cursor import MySQLCursor
 from pymysqlreplication import BinLogStreamReader
 from pymysqlreplication.column import Column
 from pymysqlreplication.constants import FIELD_TYPE
-from pymysqlreplication.event import (
-    BinLogEvent,
-    GtidEvent,
-    HeartbeatLogEvent,
-    QueryEvent,
-    RotateEvent,
-    RowsQueryLogEvent,
-    XidEvent,
-)
-from pymysqlreplication.row_event import (
-    DeleteRowsEvent,
-    TableMapEvent,
-    UpdateRowsEvent,
-    WriteRowsEvent,
-)
+from pymysqlreplication.event import BinLogEvent, GtidEvent, HeartbeatLogEvent, QueryEvent, RotateEvent, RowsQueryLogEvent, XidEvent
+from pymysqlreplication.row_event import DeleteRowsEvent, TableMapEvent, UpdateRowsEvent, WriteRowsEvent
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 # logger = logging.getLogger("mysqlsync")
 # logger.setLevel(logging.DEBUG)
 # handler = logging.StreamHandler()
@@ -68,14 +53,6 @@ class DDLType(enum.Enum):
     TRUNCATETABLE = enum.auto()
     CREATEINDEX = enum.auto()
     # DROPINDEX = enum.auto()
-
-
-class OperationType(enum.Enum):
-    DDL = enum.auto()
-    BEGIN = enum.auto()
-    COMMIT = enum.auto()
-    DML = enum.auto()
-    GTID = enum.auto()
 
 
 @dataclass
@@ -133,94 +110,35 @@ class OperationGtid:
     last_committed: int
 
 
-def parse_connection_string(conn_str: str) -> dict:
-    result = {}
-
-    user_pass_part, host_part = conn_str.split("@")
-
-    user, passwd = user_pass_part.split("/")
-    result["user"] = user
-    result["password"] = passwd
-
-    if "?" in host_part:
-        host_port, params = host_part.split("?")
-
-        params_dict = {}
-        for param in params.split("&"):
-            key, value = param.split("=")
-            if key == "compress":
-                if value.lower() == "true":
-                    params_dict[key] = True
-                elif value.lower() == "false":
-                    params_dict[key] = False
-                else:
-                    raise Exception(
-                        f"connection arguments key 'compress', value '{value}' not support."
-                    )
-            elif key == "charset":
-                params_dict[key] = value
-            else:
-                raise Exception(f"connection arguments key '{key}' not support.")
-
-        result.update(params_dict)
+def generate_condition_and_values(primary_key: str | tuple, values: dict[str, any]):
+    if primary_key:
+        if isinstance(primary_key, str):
+            primary_key = (primary_key,)
+        condition = " AND ".join(f"`{k}` = %s" for k in primary_key)
+        primary_values = tuple(values[k] for k in primary_key)
     else:
-        host_port = host_part
+        condition = " AND ".join(f"`{k}` = %s" for k in values.keys())
+        primary_values = tuple(values.values())
 
-    host, port = host_port.split(":")
-    result["host"] = host
-    result["port"] = int(port)
-
-    result.setdefault("charset", "utf8mb4")
-
-    return result
+    return condition, primary_values
 
 
 def dmlOperation2Sql(operation: OperationDML) -> tuple[str, tuple]:
     if isinstance(operation, OperationDMLInsert):
-        values = (
-            operation.values
-            if isinstance(operation, OperationDMLInsert)
-            else operation.after_values
-        )
-        keys = ", ".join(values.keys())
-        values_placeholder = ",".join(f'{"%s"}' for _ in range(len(values)))
+        keys = ", ".join(operation.values.keys())
+        values_placeholder = ",".join(f'{"%s"}' for _ in operation.values)
         sql = f"REPLACE INTO `{operation.schema}`.`{operation.table}`({keys}) VALUES({values_placeholder})"
-        params = tuple(values.values())
+        params = tuple(operation.values.values())
     elif isinstance(operation, OperationDMLDelete):
-        if operation.primary_key:
-            if isinstance(operation.primary_key, tuple):
-                condition = " AND ".join([f"`{k}` = %s" for k in operation.primary_key])
-            else:
-                condition = f"`{operation.primary_key}` = %s"
-            primary_values = (
-                (operation.values[k] for k in operation.primary_key)
-                if isinstance(operation.primary_key, tuple)
-                else (operation.values[operation.primary_key],)
-            )
-        else:
-            condition = " AND ".join([f"`{k}` = %s" for k in operation.values.keys()])
-            primary_values = tuple(operation.values.values())
+        condition, primary_values = generate_condition_and_values(operation.primary_key, operation.values)
         sql = f"DELETE FROM `{operation.schema}`.`{operation.table}` WHERE {condition}"
-        params = tuple(primary_values)
+        params = primary_values
     elif isinstance(operation, OperationDMLUpdate):
         set_clause = ", ".join([f"{k} = %s" for k in operation.after_values.keys()])
-        if operation.primary_key:
-            if isinstance(operation.primary_key, tuple):
-                condition = " AND ".join([f"`{k}` = %s" for k in operation.primary_key])
-            else:
-                condition = f"`{operation.primary_key}` = %s"
-            primary_values = (
-                (operation.before_values[k] for k in operation.primary_key)
-                if isinstance(operation.primary_key, tuple)
-                else (operation.before_values[operation.primary_key],)
-            )
-        else:
-            condition = " AND ".join(
-                [f"`{k}` = %s" for k in operation.before_values.keys()]
-            )
-            primary_values = tuple(operation.before_values.values())
+        condition, primary_values = generate_condition_and_values(operation.primary_key, operation.before_values)
         sql = f"UPDATE `{operation.schema}`.`{operation.table}` SET {set_clause} WHERE {condition}"
         params = tuple(operation.after_values.values()) + tuple(primary_values)
+
     return sql, params
 
 
@@ -237,15 +155,11 @@ nondml_patterns: list[tuple[Pattern[str], DDLType]] = [
         DDLType.ALTERDATABASE,
     ),
     (
-        re.compile(
-            r"\s*drop\s+database\s+(?:if\s+exists\s+)?`?(\w+)`?\s*", re.IGNORECASE
-        ),
+        re.compile(r"\s*drop\s+database\s+(?:if\s+exists\s+)?`?(\w+)`?\s*", re.IGNORECASE),
         DDLType.DROPDATABASE,
     ),
     (
-        re.compile(
-            r"\s*create\s+table\s+(?:`?(\w+)`?\.)?`?(\w+)`?\s?.*", re.IGNORECASE
-        ),
+        re.compile(r"\s*create\s+table\s+(?:`?(\w+)`?\.)?`?(\w+)`?\s?.*", re.IGNORECASE),
         DDLType.CREATETABLE,
     ),
     (
@@ -257,15 +171,11 @@ nondml_patterns: list[tuple[Pattern[str], DDLType]] = [
         DDLType.DROPTABLE,
     ),
     (
-        re.compile(
-            r"\s*rename\s+table\s+(?:`?(\w+)`?\.)?`?(\w+)`?\s+.*", re.IGNORECASE
-        ),
+        re.compile(r"\s*rename\s+table\s+(?:`?(\w+)`?\.)?`?(\w+)`?\s+.*", re.IGNORECASE),
         DDLType.RENAMETABLE,
     ),
     (
-        re.compile(
-            r"\s*truncate\s+table\s+(?:`?(\w+)`?\.)?`?(\w+)`?\s*", re.IGNORECASE
-        ),
+        re.compile(r"\s*truncate\s+table\s+(?:`?(\w+)`?\.)?`?(\w+)`?\s*", re.IGNORECASE),
         DDLType.TRUNCATETABLE,
     ),
     (
@@ -305,9 +215,7 @@ def extract_schema(statement: str) -> tuple[DDLType | None, str | None, str | No
 
 class MysqlClient:
     def __init__(self, settings) -> None:
-        self.con: MySQLConnection = mysql.connector.connect(
-            **settings["connection_settings"]
-        )
+        self.con: MySQLConnection = mysql.connector.connect(**settings["connection_settings"])
         self.cur: MySQLCursor = self.con.cursor()
         self.con.autocommit = False
         self.dml_cnt = 0
@@ -390,9 +298,7 @@ def reset_col_val(colum_type: int, col_val: any):
     elif colum_type == FIELD_TYPE.BIT:
         binary_string = col_val
         binary_integer = int(binary_string, 2)
-        binary_data = binary_integer.to_bytes(
-            (binary_integer.bit_length() + 7) // 8, byteorder="big"
-        )
+        binary_data = binary_integer.to_bytes((binary_integer.bit_length() + 7) // 8, byteorder="big")
         return binary_data
     elif colum_type == FIELD_TYPE.SET:
         return ",".join(col_val)
@@ -411,9 +317,7 @@ def reset_values(values: dict, columns: list[Column]) -> dict[str, any]:
 
 class MysqlReplication:
     def __init__(self, source_settings: dict) -> None:
-        self.binlogeventstream: Iterator[BinLogEvent] = BinLogStreamReader(
-            **source_settings
-        )
+        self.binlogeventstream: Iterator[BinLogEvent] = BinLogStreamReader(**source_settings)
 
     def __handle_table_map_event(self, event: TableMapEvent):
         pass
@@ -434,30 +338,18 @@ class MysqlReplication:
             )
         return ls
 
-    def __handle_event_write_rows(
-        self, event: WriteRowsEvent
-    ) -> list[list[OperationDML]]:
+    def __handle_event_write_rows(self, event: WriteRowsEvent) -> list[list[OperationDML]]:
         ls = []
         for row in event.rows:
             new_values = reset_values(row["values"], event.columns)
-            ls.append(
-                OperationDMLInsert(
-                    event.schema, event.table, new_values, event.primary_key
-                )
-            )
+            ls.append(OperationDMLInsert(event.schema, event.table, new_values, event.primary_key))
         return ls
 
-    def __handle_event_delete_rows(
-        self, event: DeleteRowsEvent
-    ) -> list[list[OperationDML]]:
+    def __handle_event_delete_rows(self, event: DeleteRowsEvent) -> list[list[OperationDML]]:
         ls = []
         for row in event.rows:
             new_values = reset_values(row["values"], event.columns)
-            ls.append(
-                OperationDMLDelete(
-                    event.schema, event.table, new_values, event.primary_key
-                )
-            )
+            ls.append(OperationDMLDelete(event.schema, event.table, new_values, event.primary_key))
         return ls
 
     def __handle_event_gtid(self, event: GtidEvent):
@@ -498,9 +390,7 @@ class MysqlReplication:
                     DDLType.RENAMETABLE,
                     DDLType.DROPTABLE,
                 ):
-                    schema = (
-                        event.schema.decode("utf-8") if event.schema_length >= 1 else db
-                    )
+                    schema = event.schema.decode("utf-8") if event.schema_length >= 1 else db
 
                     if schema:
                         return OperationNonDML(ddltype, schema, tab, event.query)
@@ -542,9 +432,7 @@ class MysqlReplication:
 
 
 def parse_gtidset(gtidset_str: str) -> dict[str, int]:
-    gtid_re = re.compile(
-        r"^([a-zA-Z0-9]{8}-[a-zA-Z0-9]{4}-[a-zA-Z0-_]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{12}):[0-9]+-([0-9]+)$"
-    )
+    gtid_re = re.compile(r"^([a-zA-Z0-9]{8}-[a-zA-Z0-9]{4}-[a-zA-Z0-_]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{12}):[0-9]+-([0-9]+)$")
 
     _gtidset = {}
     for gtid in gtidset_str.split(","):
@@ -596,9 +484,7 @@ class Checkpoint:
         _gtidset = {}
         for gtidset in gtidsets.split(","):
             gtidsetf = gtidset.split(":")
-            _gtidset[gtidsetf[0]] = int(
-                gtidsetf[-1].split("-")[-1] if "-" in gtidsetf[-1] else gtidsetf[-1]
-            )
+            _gtidset[gtidsetf[0]] = int(gtidsetf[-1].split("-")[-1] if "-" in gtidsetf[-1] else gtidsetf[-1])
         return _gtidset
 
     def __get_checkpoint_gtidset(self, gtidset: str) -> str:
@@ -608,9 +494,7 @@ class Checkpoint:
                 _gtidset: dict[str, int] = json.load(f)
                 for _server_uuid, _xid in _gtidset.items():
                     if _server_uuid in _config_gtidset:
-                        _config_gtidset[_server_uuid] = max(
-                            _config_gtidset[_server_uuid], _xid
-                        )
+                        _config_gtidset[_server_uuid] = max(_config_gtidset[_server_uuid], _xid)
                     else:
                         _config_gtidset[_server_uuid] = _xid
 
@@ -683,25 +567,14 @@ class MysqlSync:
 
                     self.statistics["nomdml"] += 1
                     nondml_name = f"nondml-{operation.oper_type.name.lower()}"
-                    self.statistics[nondml_name] = (
-                        self.statistics.get(nondml_name, 0) + 1
-                    )
+                    self.statistics[nondml_name] = self.statistics.get(nondml_name, 0) + 1
                 except Exception as e:
-                    logging.error(
-                        f"error push_nondml {operation.schema} {operation.query} {e}"
-                    )
+                    logging.error(f"error push_nondml {operation.schema} {operation.query} {e}")
                     sys.exit(1)
-                logging.info(
-                    f"nondml '{nondml_name}' schema: '{operation.schema}' query: '{operation.query}'"
-                )
+                logging.info(f"nondml '{nondml_name}' schema: '{operation.schema}' query: '{operation.query}'")
             elif isinstance(operation, OperationDML):
-                if (
-                    operation.schema in self.exclude_tables
-                    and operation.table in self.exclude_tables[operation.schema]
-                ):
-                    logging.info(
-                        f"exclude tables `{operation.schema}`.`{operation.table}`"
-                    )
+                if operation.schema in self.exclude_tables and operation.table in self.exclude_tables[operation.schema]:
+                    logging.info(f"exclude tables `{operation.schema}`.`{operation.table}`")
                     continue
 
                 self.statistics["dml"] += 1
@@ -734,10 +607,7 @@ class MysqlSync:
 
                 self.latest_gtidset[operation.server_uuid] = int(operation.xid)
                 self.latest_position = (log_file, log_pos)
-            elif (
-                type(operation) == OperationHeartbeat
-                and type(self.last_operation) == OperationHeartbeat
-            ):
+            elif type(operation) == OperationHeartbeat and type(self.last_operation) == OperationHeartbeat:
                 _timestamp = time.time()
                 self.__merge_commit()
             else:
@@ -749,9 +619,7 @@ class MysqlSync:
             _ts_1 = time.time()
             if _ts_1 >= _ts_0 + 10:
                 print(self.statistics)
-                x = ",".join(
-                    [f"{key}:{value}" for key, value in self.checkpoint_gtidset.items()]
-                )
+                x = ",".join([f"{key}:{value}" for key, value in self.checkpoint_gtidset.items()])
                 fx = f"syncinfo dml:{self.statistics["dml"]} nondml:{self.statistics["nomdml"]} trx-merge:{self.statistics["trx-merge"]} trx:{self.statistics["trx"]} gtidset:"
                 # fx = f"syncinfo dml:{self.statistics['dml']} nondml:{self.statistics['nomdml']}"
                 print()
@@ -831,9 +699,7 @@ class MysqlSync:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--config", required=True, help="Path to the configuration file"
-    )
+    parser.add_argument("--config", required=True, help="Path to the configuration file")
     args = parser.parse_args()
     if args.config:
         spec = importlib.util.spec_from_file_location("settings", args.config)
@@ -844,9 +710,7 @@ def main():
         print(f"target settings: {settings.target_settings}")
         print(f"sync settings: {settings.sync_settings}")
 
-        MysqlSync(
-            settings.source_settings, settings.target_settings, settings.sync_settings
-        ).run()
+        MysqlSync(settings.source_settings, settings.target_settings, settings.sync_settings).run()
 
 
 if __name__ == "__main__":
