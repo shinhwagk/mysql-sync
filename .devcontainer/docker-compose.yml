@@ -51,23 +51,33 @@ services:
       - --max-connections=3000
       - --innodb-flush-log-at-trx-commit=0
       - --sync-binlog=0
+  dtle-consul:
+    image: consul:1.15.4
+    ports:
+      - 8500:8500
+  dtle:
+    image: actiontech/dtle
+    ports:
+      - 4646:4646
+#     docker run --name dtle-consul -p 8500:8500 --network=dtle-net -d consul:latest
+# docker run --name dtle -p 4646:4646 --network=dtle-net -d actiontech/dtle
 
-  db3:
-    image: mysql:8.0.36
-    platform: linux/amd64
-    environment:
-      MYSQL_ROOT_PASSWORD: root_password
-    command:
-      - --server_id=3
-      - --log-bin=mysql-bin
-      - --gtid-mode=on
-      - --enforce-gtid-consistency=on
-      - --binlog-rows-query-log-events=on
-      - --binlog-format=ROW
-      - --binlog-row-image=FULL
-      - --max-connections=3000
-      - --innodb-flush-log-at-trx-commit=0
-      - --sync-binlog=0
+  # db3:
+  #   image: mysql:8.0.36
+  #   platform: linux/amd64
+  #   environment:
+  #     MYSQL_ROOT_PASSWORD: root_password
+  #   command:
+  #     - --server_id=3
+  #     - --log-bin=mysql-bin
+  #     - --gtid-mode=on
+  #     - --enforce-gtid-consistency=on
+  #     - --binlog-rows-query-log-events=on
+  #     - --binlog-format=ROW
+  #     - --binlog-row-image=FULL
+  #     - --max-connections=3000
+  #     - --innodb-flush-log-at-trx-commit=0
+  #     - --sync-binlog=0
 
 #   redpanda-0:
 #     command:

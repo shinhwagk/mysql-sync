@@ -10,7 +10,7 @@ source_settings = {
     },
     "server_id": 9999,
     "ignored_events": [RowsQueryLogEvent],
-    "blocking": False,
+    "blocking": True,
     "report_slave": "myqslsync",
     "slave_heartbeat": 10,
     "auto_position": "a8d55263-1a60-11ef-b60e-0242ac130006:1-179",

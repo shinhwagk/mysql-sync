@@ -253,31 +253,28 @@ class MysqlClient:
         self.dml_cnt = 0
 
     def push_begin(self):
-        print("1111", self.con.in_transaction)
         if self.con.in_transaction:
             return
         self.con.start_transaction()
-        print("1111", self.con.in_transaction)
 
     def push_dml(self, sql_text: str, params: tuple) -> None:
         self.cur.execute(sql_text, params)
         self.dml_cnt += 1
 
     def push_nondml(self, db: str | None, sql_text: str) -> None:
+        self.push_commit()
         if db:
             self.con.database = db
         with self.con.cursor() as cur:
             cur.execute(sql_text)
 
     def push_commit(self) -> None:
-        if self.dml_cnt >= 1 and self.con.in_transaction:
-            self.con.commit()
-        else:
-            self.con.rollback()
+        if self.con.in_transaction:
+            if self.dml_cnt >= 1:
+                self.con.commit()
+            else:
+                self.con.rollback()
         self.dml_cnt = 0
-
-    def push_rollback(self) -> None:
-        self.con.rollback()
 
 
 def reset_col_val(colum_type: int, col_val: any):
@@ -376,22 +373,11 @@ class MysqlReplication:
             if ddltype is None:
                 raise Exception("not know queryevent query", event.query)
 
-            if ddltype in (
-                NonDMLType.CREATEDATABASE,
-                NonDMLType.DROPDATABASE,
-                NonDMLType.ALTERDATABASE,
-            ):
+            if ddltype in (NonDMLType.CREATEDATABASE, NonDMLType.DROPDATABASE, NonDMLType.ALTERDATABASE):
                 return OperationNonDML(ddltype, None, None, event.query)
 
             else:
-                if ddltype in (
-                    NonDMLType.CREATETABLE,
-                    NonDMLType.ALTERTABLE,
-                    NonDMLType.TRUNCATETABLE,
-                    NonDMLType.CREATEINDEX,
-                    NonDMLType.RENAMETABLE,
-                    NonDMLType.DROPTABLE,
-                ):
+                if ddltype in (NonDMLType.CREATETABLE, NonDMLType.ALTERTABLE, NonDMLType.TRUNCATETABLE, NonDMLType.CREATEINDEX, NonDMLType.RENAMETABLE, NonDMLType.DROPTABLE):
                     schema = event.schema.decode("utf-8") if event.schema_length >= 1 else db
 
                     if schema:
@@ -402,9 +388,7 @@ class MysqlReplication:
     def __handle_event_heartheatlog(self, event: HeartbeatLogEvent):
         return OperationHeartbeat()
 
-    def operation_stream(
-        self,
-    ):
+    def operation_stream(self):
         handlers = {
             TableMapEvent: self.__handle_table_map_event,
             UpdateRowsEvent: self.__handle_event_update_rows,
@@ -427,24 +411,11 @@ class MysqlReplication:
             if handler:
                 operation = handler(binlogevent)
                 if operation:
-                    if isinstance(
-                        operation,
-                        list,
-                    ):
+                    if isinstance(operation, list):
                         for o in operation:
-                            yield (
-                                log_file,
-                                log_pos,
-                                binlogevent.timestamp,
-                                o,
-                            )
+                            yield (log_file, log_pos, binlogevent.timestamp, o)
                     else:
-                        yield (
-                            log_file,
-                            log_pos,
-                            binlogevent.timestamp,
-                            operation,
-                        )
+                        yield (log_file, log_pos, binlogevent.timestamp, operation)
             log_pos = end_log_pos
 
 
@@ -484,38 +455,43 @@ class MetricController:
     def __init__(self) -> None:
         self.__file = "metrics.json"
         self.__metrics = {attr.value: 0 for attr in list(MetricAttr) + list(NonDMLType)}
+        self.__logger = Logger("metric")
+        self.__change = False
 
     def increment(self, attr: MetricAttr | NonDMLType) -> None:
         if attr.value in self.__metrics and attr.value != MetricAttr.DELAY.value:
             self.__metrics[attr.value] += 1
+            self.__change = True
 
     def set_delay(self, value: int):
         self.__metrics["delay"] += value
+        self.__change = True
 
-    def persist(
-        self,
-    ):
-        with open(self.__file, "w", encoding="utf8") as f:
-            json.dump(asdict(self.__metrics), f, ensure_ascii=False)
+    def print_metric(self):
+        self.__logger.info(f"{json.dumps(self.__metrics)}")
+
+    def persist(self):
+        if self.__change:
+            with open(self.__file, "w", encoding="utf8") as f:
+                json.dump(self.__metrics, f, ensure_ascii=False)
+            self.__logger.info(f"{json.dumps(self.__metrics)}")
+        self.__change = False
 
 
 class Checkpoint:
-    def __init__(
-        self,
-        gtidset: str,
-    ) -> None:
+    def __init__(self, gtidset: str) -> None:
+        self.logger = Logger("checkpoint")
         self.checkpoint_gtidset: str = self.__get_checkpoint_gtidset(gtidset)
 
-    def persist_checkpoint_gitdset(
-        self,
-        gtidset: dict[
-            str,
-            int,
-        ],
-    ):
-        print("checkpoint", gtidset)
-        with open("ckpt.json", "w", encoding="utf8") as f:
+    def persist_checkpoint_gitdset(self, gtidset: dict[str, int]):
+        self.logger.info(f"checkpoint gtidset: {json.dumps(gtidset)}")
+        with open("ckpt.gtidset.json", "w", encoding="utf8") as f:
             return json.dump(gtidset, f)
+
+    def persist_checkpoint_position(self, postion: tuple):
+        self.logger.info(f"checkpoint log_position: {postion[0]}:{postion[1]}")
+        with open("ckpt.logposition.txt", "w", encoding="utf8") as f:
+            return f.write(f"{postion[0]}:{postion[1]}")
 
     def __format_gtidset(self, gtidsets: str) -> dict[str, int]:
         _gtidset = {}
@@ -529,15 +505,9 @@ class Checkpoint:
         if os.path.exists("ckpt.json"):
             with open("ckpt.json", "r", encoding="utf8") as f:
                 _gtidset: dict[str, int] = json.load(f)
-                for (
-                    _server_uuid,
-                    _xid,
-                ) in _gtidset.items():
+                for _server_uuid, _xid in _gtidset.items():
                     if _server_uuid in _start_gtidset:
-                        _start_gtidset[_server_uuid] = max(
-                            _start_gtidset[_server_uuid],
-                            _xid,
-                        )
+                        _start_gtidset[_server_uuid] = max(_start_gtidset[_server_uuid], _xid)
                     else:
                         _start_gtidset[_server_uuid] = _xid
 
@@ -547,50 +517,47 @@ class Checkpoint:
 class MysqlSync:
     def __init__(self, mysql_source_settings: dict, mysql_target_settings: dict, mysql_sync_settings: dict) -> None:
         self.logger = Logger("mysqlsync")
+
         self.metric = MetricController()
 
         self.args_mysql_sync_merge_trx = mysql_sync_settings["merge_trx"]
+        self.args_mysql_sync_ckeckpoint_interval = mysql_source_settings["slave_heartbeat"]
 
         self.ckpt = Checkpoint(mysql_source_settings["auto_position"])
+        self.logger.info(f"start gtidset: {self.ckpt.checkpoint_gtidset}")
 
-        self.logger.info(f"start gtidset {self.ckpt.checkpoint_gtidset}")
-        if self.ckpt:
-            mysql_source_settings["auto_position"] = self.ckpt.checkpoint_gtidset
+        mysql_source_settings["auto_position"] = self.ckpt.checkpoint_gtidset
 
         self.mr = MysqlReplication(mysql_source_settings)
         self.mc = MysqlClient(mysql_target_settings)
 
         self.last_committed = -1
         self.allow_commit = False
-        self.last_operation = None
 
         self.allow_ckeckpoint = False
-        self.checkpoint_gtidset = self.ckpt.checkpoint_gtidset
-        self.checkpoint_position = ()
 
         self.latest_gtidset = {}
         self.latest_position = ()
 
         self.exclude_tables: dict[str, list[str]] = {}
 
-    def __merge_commit(
-        self,
-    ):
+    def __merge_commit(self):
         if self.allow_commit:
             self.mc.push_commit()
             self.allow_commit = False
             self.metric.increment(MetricAttr.MERGE_TRX)
-            self.checkpoint_gtidset = self.latest_gtidset
-            self.checkpoint_position = self.latest_position
-            if self.allow_ckeckpoint:
-                self.ckpt.persist_checkpoint_gitdset(self.checkpoint_gtidset)
-                self.allow_ckeckpoint = False
+            self.allow_ckeckpoint = True
+
+    def __checkpoint(self):
+        self.ckpt.persist_checkpoint_gitdset(self.latest_gtidset)
+        self.ckpt.persist_checkpoint_position(self.latest_position)
+        self.allow_ckeckpoint = False
 
     def run(self):
         _ts_0 = time.time()
-
-        _timestamp = 0
-        _error = False
+        _operation_timestamp = 0
+        _error_exit = False
+        _last_operation = None
 
         for log_file, log_pos, timestamp, operation in self.mr.operation_stream():
             if type(operation) == OperationNonDML:
@@ -601,18 +568,14 @@ class MysqlSync:
                     self.metric.increment(operation.oper_type)
                 except Exception as e:
                     self.logger.error(f"error push_nondml {operation.schema} {operation.query} {e}")
-                    sys.exit(1)
-            elif isinstance(
-                operation,
-                OperationDML,
-            ):
+                    _error_exit = True
+            elif isinstance(operation, OperationDML):
                 if operation.schema in self.exclude_tables and operation.table in self.exclude_tables[operation.schema]:
                     self.logger.info(f"exclude tables `{operation.schema}`.`{operation.table}`")
                     continue
 
                 if type(operation) == OperationDMLDelete:
                     self.metric.increment(MetricAttr.DML_DELETE)
-
                 elif type(operation) == OperationDMLInsert:
                     self.metric.increment(MetricAttr.DML_INSERT)
                 elif type(operation) == OperationDMLUpdate:
@@ -622,7 +585,8 @@ class MysqlSync:
                     (sql_text, params) = dmlOperation2Sql(operation)
                     self.mc.push_dml(sql_text, params)
                 except Exception as e:
-                    self.logger.error(f" dml error, {operation}, {e}")
+                    self.logger.error(f"dml error, {operation}, {e}")
+                    _error_exit = True
             elif type(operation) == OperationBegin:
                 self.mc.push_begin()
             elif type(operation) == OperationCommit:
@@ -639,33 +603,39 @@ class MysqlSync:
                         self.last_committed = operation.last_committed
 
                 self.latest_gtidset[operation.server_uuid] = int(operation.xid)
-                self.latest_position = (
-                    log_file,
-                    log_pos,
-                )
-            elif type(operation) == OperationHeartbeat and type(self.last_operation) == OperationHeartbeat:
-                _timestamp = time.time()
+                self.latest_position = (log_file, log_pos)
+            elif type(operation) == OperationHeartbeat and type(_last_operation) == OperationHeartbeat:
+                _operation_timestamp = time.time()
                 self.__merge_commit()
+
+                self.logger.info("no more operation...")
             else:
                 pass
 
             if type(operation) != OperationHeartbeat:
-                _timestamp = timestamp
+                _operation_timestamp = timestamp
 
-            self.metric.set_delay(int(time.time() - _timestamp))
+            self.metric.set_delay(int(time.time() - _operation_timestamp))
 
             _ts_1 = time.time()
-            if _ts_1 >= _ts_0 + 10:
+            if _ts_1 >= _ts_0 + self.args_mysql_sync_ckeckpoint_interval:
                 self.metric.persist()
 
                 _ts_0 = _ts_1
 
-                if self.allow_commit and not self.allow_ckeckpoint:
-                    self.allow_ckeckpoint = True
+                if self.allow_ckeckpoint:
+                    self.__checkpoint()
 
-            self.last_operation = operation
+            _last_operation = operation
+
+            if _error_exit:
+                break
 
         self.__merge_commit()
+        self.metric.persist()
+
+        if _error_exit:
+            sys.exit(1)
 
 
 def main():

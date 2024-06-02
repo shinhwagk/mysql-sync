@@ -66,7 +66,7 @@ done
 
 
 echo "sync source to target"
-time python3.12 main1.py --mysql_source_connection_string="${ARGS_SOURCE_USER}/${ARGS_SOURCE_PASSWORD}@${ARGS_SOURCE_HOST}:${ARGS_SOURCE_PORT}" --mysql_source_server_id=9999 --mysql_source_report_slave="test" --mysql_source_slave_heartbeat=2 --mysql_target_connection_string="${ARGS_TARGET_USER}/${ARGS_TARGET_PASSWORD}@${ARGS_TARGET_HOST}:${ARGS_TARGET_PORT}" --mysql_sync_force_idempotent --mysql_source_gtidset="027634d7-10d1-11ef-a658-0242ac170004:1-873499"
+time python3.12 main.py --config settings.py
 
 mysqldump --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} --set-gtid-purged=OFF --compact >/tmp/source.sql
 mysqldump --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} --set-gtid-purged=OFF --compact >/tmp/target.sql

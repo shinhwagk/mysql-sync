@@ -1,0 +1,25 @@
+source:
+  serverID: 100
+  host: "db1"
+  port: 3306
+  user: "root"
+  password: "root_password"
+  charset: "utf8mb4"
+  heartbeatPeriod: 10
+destinations:
+  mysql:
+    - flavor: mysql
+      host: "db1"
+      port: 3306
+      user: "root"
+      password: "root_password"
+      charset: "utf8mb4"
+      schemas:
+      tables:
+  kafka:
+    - flavor: kafka
+      host: "db1"
+      port: 3306
+      user: "root"
+      password: "root_password"
+      charset: "utf8mb4"
