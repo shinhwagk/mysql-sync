@@ -1,18 +1,15 @@
-import struct
-import decimal
 import datetime
-
-from pymysql.charset import charset_by_name
+import decimal
+import struct
 from enum import Enum
 
-from .event import BinLogEvent
-from .constants import FIELD_TYPE
-from .constants import BINLOG
-from .constants import CHARSET
-from .constants import NONE_SOURCE
-from .column import Column
-from .table import Table
+from pymysql.charset import charset_by_name
+
 from .bitmap import BitCount, BitGet
+from .column import Column
+from .constants import BINLOG, CHARSET, FIELD_TYPE, NONE_SOURCE
+from .event import BinLogEvent
+from .table import Table
 
 
 class RowsEvent(BinLogEvent):
@@ -24,6 +21,7 @@ class RowsEvent(BinLogEvent):
         self.__only_schemas = kwargs["only_schemas"]
         self.__ignored_schemas = kwargs["ignored_schemas"]
         self.__none_sources = {}
+        self.__row_values = {}
 
         # Header
         self.table_id = self._read_table_id()
@@ -47,9 +45,7 @@ class RowsEvent(BinLogEvent):
         if self.__only_schemas is not None and self.schema not in self.__only_schemas:
             self._processed = False
             return
-        elif (
-            self.__ignored_schemas is not None and self.schema in self.__ignored_schemas
-        ):
+        elif self.__ignored_schemas is not None and self.schema in self.__ignored_schemas:
             self._processed = False
             return
 
@@ -60,26 +56,17 @@ class RowsEvent(BinLogEvent):
             or self.event_type == BINLOG.UPDATE_ROWS_EVENT_V2
             or self.event_type == BINLOG.PARTIAL_UPDATE_ROWS_EVENT
         ):
-            self.flags, self.extra_data_length = struct.unpack(
-                "<HH", self.packet.read(4)
-            )
+            self.flags, self.extra_data_length = struct.unpack("<HH", self.packet.read(4))
             if self.extra_data_length > 2:
                 self.extra_data_type = struct.unpack("<B", self.packet.read(1))[0]
                 # ndb information
                 if self.extra_data_type == 0:
-                    self.nbd_info_length, self.nbd_info_format = struct.unpack(
-                        "<BB", self.packet.read(2)
-                    )
+                    self.nbd_info_length, self.nbd_info_format = struct.unpack("<BB", self.packet.read(2))
                     self.nbd_info = self.packet.read(self.nbd_info_length - 2)
                 # partition information
                 elif self.extra_data_type == 1:
-                    if (
-                        self.event_type == BINLOG.UPDATE_ROWS_EVENT_V2
-                        or self.event_type == BINLOG.PARTIAL_UPDATE_ROWS_EVENT
-                    ):
-                        self.partition_id, self.source_partition_id = struct.unpack(
-                            "<HH", self.packet.read(4)
-                        )
+                    if self.event_type == BINLOG.UPDATE_ROWS_EVENT_V2 or self.event_type == BINLOG.PARTIAL_UPDATE_ROWS_EVENT:
+                        self.partition_id, self.source_partition_id = struct.unpack("<HH", self.packet.read(4))
                     else:
                         self.partition_id = struct.unpack("<H", self.packet.read(2))[0]
 
@@ -106,10 +93,7 @@ class RowsEvent(BinLogEvent):
         """
         self.is_partial_json_update = False
         partial_bitmap = None
-        if (
-            self.event_type == BINLOG.PARTIAL_UPDATE_ROWS_EVENT
-            and row_image_type == RowImageType.UpdateAI
-        ):
+        if self.event_type == BINLOG.PARTIAL_UPDATE_ROWS_EVENT and row_image_type == RowImageType.UpdateAI:
             binlog_row_value_option = self.packet.read_length_coded_binary()
             self.is_partial_json_update = binlog_row_value_option & 0b10000001 != 0
             if self.is_partial_json_update:
@@ -129,11 +113,7 @@ class RowsEvent(BinLogEvent):
             name = self.table_map[self.table_id].columns[i].name
             unsigned = self.table_map[self.table_id].columns[i].unsigned
 
-            if (
-                self.is_partial_json_update
-                and row_image_type == RowImageType.UpdateAI
-                and column.type == FIELD_TYPE.JSON
-            ):
+            if self.is_partial_json_update and row_image_type == RowImageType.UpdateAI and column.type == FIELD_TYPE.JSON:
                 if BitGet(partial_bitmap, partial_bitmap_index) > 0:
                     is_partial = True
                 partial_bitmap_index += 1
@@ -210,11 +190,7 @@ class RowsEvent(BinLogEvent):
         elif column.type == FIELD_TYPE.DOUBLE:
             return struct.unpack("<d", self.packet.read(8))[0]
         elif column.type == FIELD_TYPE.VARCHAR or column.type == FIELD_TYPE.STRING:
-            ret = (
-                self.__read_string(2, column)
-                if column.max_length > 255
-                else self.__read_string(1, column)
-            )
+            ret = self.__read_string(2, column) if column.max_length > 255 else self.__read_string(1, column)
 
             return ret
         elif column.type == FIELD_TYPE.NEWDECIMAL:
@@ -222,6 +198,8 @@ class RowsEvent(BinLogEvent):
         elif column.type == FIELD_TYPE.BLOB:
             return self.__read_string(column.length_size, column)
         elif column.type == FIELD_TYPE.DATETIME:
+            raw = self.packet.read_uint64()
+            self.__row_values[name] = raw
             ret = self.__read_datetime()
             if ret is None:
                 self.__none_sources[name] = NONE_SOURCE.OUT_OF_DATETIME_RANGE
@@ -229,16 +207,22 @@ class RowsEvent(BinLogEvent):
         elif column.type == FIELD_TYPE.TIME:
             return self.__read_time()
         elif column.type == FIELD_TYPE.DATE:
-            ret = self.__read_date()
+            raw = self.packet.read_uint24()
+            self.__row_values[name] = raw
+            ret = self.__read_date(raw)
             if ret is None:
                 self.__none_sources[name] = NONE_SOURCE.OUT_OF_DATE_RANGE
             return ret
         elif column.type == FIELD_TYPE.TIMESTAMP:
-            return datetime.datetime.utcfromtimestamp(self.packet.read_uint32())
+            raw = self.packet.read_uint32()
+            self.__row_values[name] = raw
+            return datetime.datetime.utcfromtimestamp(raw)
 
         # For new date format:
         elif column.type == FIELD_TYPE.DATETIME2:
-            ret = self.__read_datetime2(column)
+            raw = self.packet.read_int_be_by_size(5)
+            self.__row_values[name] = raw
+            ret = self.__read_datetime2(column, raw)
             if ret is None:
                 self.__none_sources[name] = NONE_SOURCE.OUT_OF_DATETIME2_RANGE
             return ret
@@ -265,11 +249,7 @@ class RowsEvent(BinLogEvent):
         elif column.type == FIELD_TYPE.SET:
             bit_mask = self.packet.read_uint_by_size(column.size)
             if column.set_values:
-                ret = {
-                    val
-                    for idx, val in enumerate(column.set_values)
-                    if bit_mask & (1 << idx)
-                }
+                ret = {val for idx, val in enumerate(column.set_values) if bit_mask & (1 << idx)}
                 if not ret:
                     self.__none_sources[column.name] = NONE_SOURCE.EMPTY_SET
                     return None
@@ -397,8 +377,8 @@ class RowsEvent(BinLogEvent):
         )
         return t
 
-    def __read_date(self):
-        time = self.packet.read_uint24()
+    def __read_date(self, raw):
+        time = raw
         if time == 0:  # nasty mysql 0000-00-00 dates
             return None
 
@@ -411,8 +391,8 @@ class RowsEvent(BinLogEvent):
         date = datetime.date(year=year, month=month, day=day)
         return date
 
-    def __read_datetime(self):
-        value = self.packet.read_uint64()
+    def __read_datetime(self, raw):
+        value = raw
         if value == 0:  # nasty mysql 0000-00-00 dates
             return None
 
@@ -435,7 +415,7 @@ class RowsEvent(BinLogEvent):
         )
         return date
 
-    def __read_datetime2(self, column):
+    def __read_datetime2(self, column, data):
         """DATETIME
 
         1 bit  sign           (1= non-negative, 0= negative)
@@ -447,7 +427,6 @@ class RowsEvent(BinLogEvent):
         ---------------------------
         40 bits = 5 bytes
         """
-        data = self.packet.read_int_be_by_size(5)
         year_month = self.__read_binary_slice(data, 1, 17, 40)
         try:
             t = datetime.datetime(
@@ -541,14 +520,22 @@ class RowsEvent(BinLogEvent):
             result[column_name] = source
         return result
 
+    def _get_row_values(self, column_data):
+        result = {}
+        for column_name, value in column_data.items():
+            if (column_name is None) or (value is not None):
+                continue
+
+            source = self.__row_values.get(column_name, "null")
+            result[column_name] = source
+        return result
+
     def _dump(self):
         super()._dump()
         print(f"Table: {self.schema}.{self.table}")
         print(f"Affected columns: {self.number_of_columns}")
         print(f"Changed rows: {len(self.rows)}")
-        print(
-            f"Column Name Information Flag: {self.table_map[self.table_id].column_name_flag}"
-        )
+        print(f"Column Name Information Flag: {self.table_map[self.table_id].column_name_flag}")
 
     def _fetch_rows(self):
         self.__rows = []
@@ -575,15 +562,14 @@ class DeleteRowsEvent(RowsEvent):
     def __init__(self, from_packet, event_size, table_map, ctl_connection, **kwargs):
         super().__init__(from_packet, event_size, table_map, ctl_connection, **kwargs)
         if self._processed:
-            self.columns_present_bitmap = self.packet.read(
-                (self.number_of_columns + 7) / 8
-            )
+            self.columns_present_bitmap = self.packet.read((self.number_of_columns + 7) / 8)
 
     def _fetch_one_row(self):
         row = {}
 
         row["values"] = self._read_column_data(self.columns_present_bitmap)
         row["none_sources"] = self._get_none_sources(row["values"])
+        row["raw_values"] = self._get_row_values(row["values"])
 
         return row
 
@@ -593,9 +579,7 @@ class DeleteRowsEvent(RowsEvent):
         for row in self.rows:
             print("--")
             for key in row["values"]:
-                none_source = (
-                    row["none_sources"][key] if key in row["none_sources"] else ""
-                )
+                none_source = row["none_sources"][key] if key in row["none_sources"] else ""
                 if none_source:
                     print(f"* {key} : {row['values'][key]} ({none_source})")
                 else:
@@ -611,15 +595,14 @@ class WriteRowsEvent(RowsEvent):
     def __init__(self, from_packet, event_size, table_map, ctl_connection, **kwargs):
         super().__init__(from_packet, event_size, table_map, ctl_connection, **kwargs)
         if self._processed:
-            self.columns_present_bitmap = self.packet.read(
-                (self.number_of_columns + 7) / 8
-            )
+            self.columns_present_bitmap = self.packet.read((self.number_of_columns + 7) / 8)
 
     def _fetch_one_row(self):
         row = {}
 
         row["values"] = self._read_column_data(self.columns_present_bitmap)
         row["none_sources"] = self._get_none_sources(row["values"])
+        row["raw_values"] = self._get_row_values(row["values"])
 
         return row
 
@@ -629,9 +612,7 @@ class WriteRowsEvent(RowsEvent):
         for row in self.rows:
             print("--")
             for key in row["values"]:
-                none_source = (
-                    row["none_sources"][key] if key in row["none_sources"] else ""
-                )
+                none_source = row["none_sources"][key] if key in row["none_sources"] else ""
                 if none_source:
                     print(f"* {key} : {row['values'][key]} ({none_source})")
                 else:
@@ -654,20 +635,20 @@ class UpdateRowsEvent(RowsEvent):
 
         if self._processed:
             # Body
-            self.columns_present_bitmap = self.packet.read(
-                (self.number_of_columns + 7) / 8
-            )
-            self.columns_present_bitmap2 = self.packet.read(
-                (self.number_of_columns + 7) / 8
-            )
+            self.columns_present_bitmap = self.packet.read((self.number_of_columns + 7) / 8)
+            self.columns_present_bitmap2 = self.packet.read((self.number_of_columns + 7) / 8)
 
     def _fetch_one_row(self):
         row = {}
 
         row["before_values"] = self._read_column_data(self.columns_present_bitmap)
         row["before_none_sources"] = self._get_none_sources(row["before_values"])
+        row["before_raw_values"] = self._get_row_values(row["before_values"])
+
         row["after_values"] = self._read_column_data(self.columns_present_bitmap2)
         row["after_none_sources"] = self._get_none_sources(row["after_values"])
+        row["after_raw_values"] = self._get_row_values(row["after_values"])
+
         return row
 
     def _dump(self):
@@ -772,9 +753,7 @@ class TableMapEvent(BinLogEvent):
         if self.__only_schemas is not None and self.schema not in self.__only_schemas:
             self._processed = False
             return
-        elif (
-            self.__ignored_schemas is not None and self.schema in self.__ignored_schemas
-        ):
+        elif self.__ignored_schemas is not None and self.schema in self.__ignored_schemas:
             self._processed = False
             return
 
@@ -825,14 +804,10 @@ class TableMapEvent(BinLogEvent):
             option_metadata_type = self.packet.read(1)[0]
             length = self.packet.read_length_coded_binary()
 
-            field_type: MetadataFieldType = MetadataFieldType.by_index(
-                option_metadata_type
-            )
+            field_type: MetadataFieldType = MetadataFieldType.by_index(option_metadata_type)
 
             if field_type == MetadataFieldType.SIGNEDNESS:
-                signed_column_list = self._convert_include_non_numeric_column(
-                    self._read_bool_list(length, True)
-                )
+                signed_column_list = self._convert_include_non_numeric_column(self._read_bool_list(length, True))
                 optional_metadata.unsigned_column_list = signed_column_list
 
             elif field_type == MetadataFieldType.DEFAULT_CHARSET:
@@ -840,21 +815,15 @@ class TableMapEvent(BinLogEvent):
                     optional_metadata.default_charset_collation,
                     optional_metadata.charset_collation,
                 ) = self._read_default_charset(length)
-                optional_metadata.charset_collation_list = (
-                    self._parsed_column_charset_by_default_charset(
-                        optional_metadata.default_charset_collation,
-                        optional_metadata.charset_collation,
-                        self._is_character_column,
-                    )
+                optional_metadata.charset_collation_list = self._parsed_column_charset_by_default_charset(
+                    optional_metadata.default_charset_collation,
+                    optional_metadata.charset_collation,
+                    self._is_character_column,
                 )
 
             elif field_type == MetadataFieldType.COLUMN_CHARSET:
                 optional_metadata.column_charset = self._read_ints(length)
-                optional_metadata.charset_collation_list = (
-                    self._parsed_column_charset_by_column_charset(
-                        optional_metadata.column_charset, self._is_character_column
-                    )
-                )
+                optional_metadata.charset_collation_list = self._parsed_column_charset_by_column_charset(optional_metadata.column_charset, self._is_character_column)
 
             elif field_type == MetadataFieldType.COLUMN_NAME:
                 optional_metadata.column_name_list = self._read_column_names(length)
@@ -863,9 +832,7 @@ class TableMapEvent(BinLogEvent):
                 optional_metadata.set_str_value_list = self._read_type_values(length)
 
             elif field_type == MetadataFieldType.ENUM_STR_VALUE:
-                optional_metadata.set_enum_str_value_list = self._read_type_values(
-                    length
-                )
+                optional_metadata.set_enum_str_value_list = self._read_type_values(length)
 
             elif field_type == MetadataFieldType.GEOMETRY_TYPE:
                 optional_metadata.geometry_type_list = self._read_ints(length)
@@ -874,9 +841,7 @@ class TableMapEvent(BinLogEvent):
                 optional_metadata.simple_primary_key_list = self._read_ints(length)
 
             elif field_type == MetadataFieldType.PRIMARY_KEY_WITH_PREFIX:
-                optional_metadata.primary_keys_with_prefix = (
-                    self._read_primary_keys_with_prefix(length)
-                )
+                optional_metadata.primary_keys_with_prefix = self._read_primary_keys_with_prefix(length)
 
             elif field_type == MetadataFieldType.ENUM_AND_SET_DEFAULT_CHARSET:
                 (
@@ -884,24 +849,18 @@ class TableMapEvent(BinLogEvent):
                     optional_metadata.enum_and_set_charset_collation,
                 ) = self._read_default_charset(length)
 
-                optional_metadata.enum_and_set_collation_list = (
-                    self._parsed_column_charset_by_default_charset(
-                        optional_metadata.enum_and_set_default_charset,
-                        optional_metadata.enum_and_set_charset_collation,
-                        self._is_enum_or_set_column,
-                    )
+                optional_metadata.enum_and_set_collation_list = self._parsed_column_charset_by_default_charset(
+                    optional_metadata.enum_and_set_default_charset,
+                    optional_metadata.enum_and_set_charset_collation,
+                    self._is_enum_or_set_column,
                 )
 
             elif field_type == MetadataFieldType.ENUM_AND_SET_COLUMN_CHARSET:
-                optional_metadata.enum_and_set_default_column_charset_list = (
-                    self._read_ints(length)
-                )
+                optional_metadata.enum_and_set_default_column_charset_list = self._read_ints(length)
 
-                optional_metadata.enum_and_set_collation_list = (
-                    self._parsed_column_charset_by_column_charset(
-                        optional_metadata.enum_and_set_default_column_charset_list,
-                        self._is_enum_or_set_column,
-                    )
+                optional_metadata.enum_and_set_collation_list = self._parsed_column_charset_by_column_charset(
+                    optional_metadata.enum_and_set_default_column_charset_list,
+                    self._is_enum_or_set_column,
                 )
 
             elif field_type == MetadataFieldType.VISIBILITY:
@@ -930,29 +889,21 @@ class TableMapEvent(BinLogEvent):
             if self._is_character_column(column_type, dbms=self.dbms):
                 charset_id = self.optional_metadata.charset_collation_list[charset_pos]
                 charset_pos += 1
-                encode_name, collation_name, charset_name = find_charset(
-                    str(charset_id), dbms=self.dbms
-                )
+                encode_name, collation_name, charset_name = find_charset(str(charset_id), dbms=self.dbms)
                 self.columns[column_idx].collation_name = collation_name
                 self.columns[column_idx].character_set_name = encode_name
 
             if self._is_enum_or_set_column(column_type):
-                charset_id = self.optional_metadata.enum_and_set_collation_list[
-                    enum_or_set_pos
-                ]
+                charset_id = self.optional_metadata.enum_and_set_collation_list[enum_or_set_pos]
                 enum_or_set_pos += 1
 
-                encode_name, collation_name, charset_name = find_charset(
-                    str(charset_id), dbms=self.dbms
-                )
+                encode_name, collation_name, charset_name = find_charset(str(charset_id), dbms=self.dbms)
 
                 self.columns[column_idx].collation_name = collation_name
                 self.columns[column_idx].character_set_name = encode_name
 
                 if self._is_enum_column(column_type):
-                    enum_column_info = self.optional_metadata.set_enum_str_value_list[
-                        enum_pos
-                    ]
+                    enum_column_info = self.optional_metadata.set_enum_str_value_list[enum_pos]
                     self.columns[column_idx].enum_values = [""] + enum_column_info
                     enum_pos += 1
 
@@ -961,24 +912,16 @@ class TableMapEvent(BinLogEvent):
                     self.columns[column_idx].set_values = set_column_info
                     set_pos += 1
 
-            if (
-                self.optional_metadata.unsigned_column_list
-                and self.optional_metadata.unsigned_column_list[column_idx]
-            ):
+            if self.optional_metadata.unsigned_column_list and self.optional_metadata.unsigned_column_list[column_idx]:
                 self.columns[column_idx].unsigned = True
 
             if column_idx in self.optional_metadata.simple_primary_key_list:
                 self.columns[column_idx].is_primary = True
 
-            if (
-                self.optional_metadata.visibility_list
-                and self.optional_metadata.visibility_list[column_idx]
-            ):
+            if self.optional_metadata.visibility_list and self.optional_metadata.visibility_list[column_idx]:
                 self.columns[column_idx].visibility = True
 
-        self.table_obj = Table(
-            self.table_id, self.schema, self.table, self.columns, column_name_flag=True
-        )
+        self.table_obj = Table(self.table_id, self.schema, self.table, self.columns, column_name_flag=True)
 
     def _convert_include_non_numeric_column(self, signedness_bool_list):
         # The incoming order of columns in the packet represents the indices of the numeric columns.
@@ -1019,9 +962,7 @@ class TableMapEvent(BinLogEvent):
 
         return column_charset
 
-    def _parsed_column_charset_by_column_charset(
-        self, column_charset_list: list, column_type_detect_function
-    ):
+    def _parsed_column_charset_by_column_charset(self, column_charset_list: list, column_type_detect_function):
         column_charset = []
         position = 0
         if len(column_charset_list) == 0:
@@ -1167,14 +1108,10 @@ class PartialUpdateRowsEvent(UpdateRowsEvent):
     def _fetch_one_row(self):
         row = {}
         row_image_type = RowImageType.UpdateBI
-        row["before_values"] = self._read_column_data(
-            self.columns_present_bitmap, row_image_type
-        )
+        row["before_values"] = self._read_column_data(self.columns_present_bitmap, row_image_type)
         row["before_none_sources"] = self._get_none_sources(row["before_values"])
         row_image_type = RowImageType.UpdateAI
-        row["after_values"] = self._read_column_data(
-            self.columns_present_bitmap2, row_image_type
-        )
+        row["after_values"] = self._read_column_data(self.columns_present_bitmap2, row_image_type)
         row["after_none_sources"] = self._get_none_sources(row["after_values"])
 
         return row

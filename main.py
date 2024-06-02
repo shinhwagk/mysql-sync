@@ -14,6 +14,7 @@ from typing import Pattern
 import mysql.connector
 from mysql.connector import MySQLConnection
 from mysql.connector.cursor import MySQLCursor
+
 from pymysqlreplication import BinLogStreamReader
 from pymysqlreplication.column import Column
 from pymysqlreplication.constants import FIELD_TYPE
@@ -332,6 +333,7 @@ class MysqlReplication:
     def __handle_event_update_rows(self, event: UpdateRowsEvent) -> list[OperationDML]:
         ls = []
         for row in event.rows:
+            print(row)
             new_after_values = reset_values(row["after_values"], event.columns)
             new_before_values = reset_values(row["before_values"], event.columns)
             ls.append(OperationDMLUpdate(event.schema, event.table, new_after_values, new_before_values, event.primary_key))
@@ -340,6 +342,8 @@ class MysqlReplication:
     def __handle_event_write_rows(self, event: WriteRowsEvent) -> list[list[OperationDML]]:
         ls = []
         for row in event.rows:
+            print(row)
+
             new_values = reset_values(row["values"], event.columns)
             ls.append(OperationDMLInsert(event.schema, event.table, new_values, event.primary_key))
         return ls
@@ -347,6 +351,8 @@ class MysqlReplication:
     def __handle_event_delete_rows(self, event: DeleteRowsEvent) -> list[list[OperationDML]]:
         ls = []
         for row in event.rows:
+            print(row)
+
             new_values = reset_values(row["values"], event.columns)
             ls.append(OperationDMLDelete(event.schema, event.table, new_values, event.primary_key))
         return ls

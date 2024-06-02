@@ -13,7 +13,7 @@ source_settings = {
     "blocking": True,
     "report_slave": "myqslsync",
     "slave_heartbeat": 10,
-    "auto_position": "a8d55263-1a60-11ef-b60e-0242ac130006:1-179",
+    "auto_position": "a8d55263-1a60-11ef-b60e-0242ac130006:1",
 }
 target_settings = {
     "connection_settings": {
