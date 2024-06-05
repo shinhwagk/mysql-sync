@@ -8,7 +8,8 @@ import (
 )
 
 type TCPServer struct {
-	Address string // IP地址和端口
+	Address string
+	Logger  Logger
 }
 
 func NewTCPServer(address string) *TCPServer {

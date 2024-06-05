@@ -6,8 +6,15 @@ import (
 	"net"
 )
 
+type Request struct {
+	SerialNumber int
+	RequestType  string
+	Data         string
+}
+
 type TCPClient struct {
 	ServerAddress string
+	Logger        Logger
 }
 
 func NewTCPClient(serverAddress string) *TCPClient {
@@ -21,13 +28,12 @@ func (c *TCPClient) ConnectAndSend(serialNumber int) {
 	}
 	defer conn.Close()
 
-	// 发送序列号到服务器
 	err = binary.Write(conn, binary.BigEndian, serialNumber)
 	if err != nil {
 		log.Fatalf("Error writing serial number: %v", err)
 	}
 	log.Printf("Sent serial number: %d to server", serialNumber)
-	// 从此处扩展以接收和处理来自服务器的数据
+
 }
 
 // func main() {
