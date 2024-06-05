@@ -1,62 +1,36 @@
 package main
 
-// import (
-// 	"bytes"
-// 	"compress/gzip"
-// 	"encoding/binary"
-// 	"encoding/gob"
-// 	"io"
-// 	"log"
-// 	"net"
-// )
+import (
+	"encoding/binary"
+	"log"
+	"net"
+)
 
-// type MyObject struct {
-// 	SerialNumber int
-// 	Name         string
-// 	Value        int
-// }
+type TCPClient struct {
+	ServerAddress string
+}
 
-// func Client() {
-// 	conn, err := net.Dial("tcp", "localhost:9999")
-// 	if err != nil {
-// 		log.Fatalf("Error connecting to server: %v", err)
-// 	}
-// 	defer conn.Close()
+func NewTCPClient(serverAddress string) *TCPClient {
+	return &TCPClient{ServerAddress: serverAddress}
+}
 
-// 	// 发送起始序列号
-// 	startSerial := 20
-// 	err = binary.Write(conn, binary.BigEndian, startSerial)
-// 	if err != nil {
-// 		log.Fatalf("Error writing serial number: %v", err)
-// 	}
+func (c *TCPClient) ConnectAndSend(serialNumber int) {
+	conn, err := net.Dial("tcp", c.ServerAddress)
+	if err != nil {
+		log.Fatalf("Error connecting to server: %v", err)
+	}
+	defer conn.Close()
 
-// 	// 不断接收和处理来自服务器的数据
-// 	for {
-// 		var compressedData bytes.Buffer
-// 		_, err := io.Copy(&compressedData, conn)
-// 		if err != nil {
-// 			log.Fatalf("Error reading data: %v", err)
-// 			break
-// 		}
+	// 发送序列号到服务器
+	err = binary.Write(conn, binary.BigEndian, serialNumber)
+	if err != nil {
+		log.Fatalf("Error writing serial number: %v", err)
+	}
+	log.Printf("Sent serial number: %d to server", serialNumber)
+	// 从此处扩展以接收和处理来自服务器的数据
+}
 
-// 		gzReader, err := gzip.NewReader(&compressedData)
-// 		if err != nil {s
-// 			log.Fatalf("Failed to create gzip reader: %v", err)
-// 		}
-// 		uncompressedData, err := io.ReadAll(gzReader)
-// 		gzReader.Close()
-// 		if err != nil {
-// 			log.Fatalf("Failed to read uncompressed data: %v", err)
-// 			continue
-// 		}
-
-// 		var obj MyObject
-// 		dec := gob.NewDecoder(bytes.NewReader(uncompressedData))
-// 		if err := dec.Decode(&obj); err != nil {
-// 			log.Fatalf("Failed to decode: %v", err)
-// 			continue
-// 		}
-
-// 		log.Printf("Received Object: %+v", obj)
-// 	}
+// func main() {
+// 	client := NewTCPClient("localhost:9999")
+// 	client.ConnectAndSend(20)
 // }

@@ -1,0 +1,7 @@
+replication:
+  serverid: 9999
+  host: "db1"
+  port: 3306
+  user: "root"
+  password: "root_password"
+  gtid: "d185500e-225e-11ef-8161-0242ac140006:1"
