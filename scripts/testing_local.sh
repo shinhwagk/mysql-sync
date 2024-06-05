@@ -64,24 +64,24 @@ for dbid in `seq 1 1`; do
     time sysbench_load_data "testdb_${dbid}"
 done
 
-
-# echo "sync source to target"
+echo "sync source to target"
 # time python3.12 main.py --config settings.py
+time go run src/*
 
-# rm -f /tmp/source.sql /tmp/target.sql
-# for db in $(MYSQL_SOURCE_CLIENT -e "SHOW DATABASES;" | grep -Ev "(Database|information_schema|performance_schema|mysql|sys)"); do
-#     mysqldump --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} --set-gtid-purged=OFF --compact --databases $db >>/tmp/source.sql
-#     mysqldump --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} --set-gtid-purged=OFF --compact --databases $db >>/tmp/target.sql
-# done
+rm -f /tmp/source.sql /tmp/target.sql
+for db in $(MYSQL_SOURCE_CLIENT -e "SHOW DATABASES;" | grep -Ev "(Database|information_schema|performance_schema|mysql|sys)"); do
+    mysqldump --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} --set-gtid-purged=OFF --compact --databases $db >>/tmp/source.sql
+    mysqldump --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} --set-gtid-purged=OFF --compact --databases $db >>/tmp/target.sql
+done
 
-# # mysqldump --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} --set-gtid-purged=OFF --compact --ignore-database --all-databases  >/tmp/source.sql
-# # mysqldump --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} --set-gtid-purged=OFF --compact --all-databases >/tmp/target.sql
+# mysqldump --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} --set-gtid-purged=OFF --compact --ignore-database --all-databases  >/tmp/source.sql
+# mysqldump --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} --set-gtid-purged=OFF --compact --all-databases >/tmp/target.sql
 
-# MYSQL_SOURCE_CLIENT -e "SHOW MASTER STATUS\G"
-# MYSQL_TARGET_CLIENT -e "SHOW MASTER STATUS\G"
+MYSQL_SOURCE_CLIENT -e "SHOW MASTER STATUS\G"
+MYSQL_TARGET_CLIENT -e "SHOW MASTER STATUS\G"
 
-# sha1sum /tmp/source.sql
-# sha1sum /tmp/target.sql
+sha1sum /tmp/source.sql
+sha1sum /tmp/target.sql
 
 
-# diff /tmp/source.sql /tmp/target.sql; exit $?
+diff /tmp/source.sql /tmp/target.sql; exit $?

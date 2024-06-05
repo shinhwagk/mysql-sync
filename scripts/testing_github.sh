@@ -50,8 +50,8 @@ echo "start load data to source database"
 function sysbench_load_data() {
     local testdb=$1
     MYSQL_SOURCE_CLIENT -e "CREATE DATABASE IF NOT EXISTS ${testdb};"
-    # for testname in oltp_insert oltp_delete oltp_update_index oltp_update_non_index oltp_write_only bulk_insert; do
-    for testname in oltp_insert oltp_delete oltp_update_non_index oltp_update_index bulk_insert; do
+    for testname in oltp_insert oltp_delete oltp_update_index oltp_update_non_index oltp_write_only bulk_insert; do
+    # for testname in oltp_insert oltp_delete oltp_update_non_index oltp_update_index bulk_insert; do
         for action in cleanup prepare run; do
             echo "sysbench ${testdb}-${testname}-${action} start."
             sysbench /usr/share/sysbench/${testname}.lua --table-size=1000 --tables=10 --threads=10 --time=10 --mysql-db=${testdb} --mysql-host=${ARGS_SOURCE_HOST} --mysql-port=${ARGS_SOURCE_PORT} --mysql-user=${ARGS_SOURCE_USER} --mysql-password=${ARGS_SOURCE_PASSWORD} --db-driver=mysql $action >/dev/null
@@ -66,7 +66,8 @@ done
 
 
 echo "sync source to target"
-time python3.12 main.py --config settings.py
+# time python3.12 main.py --config settings.py
+time go run src/*
 
 mysqldump --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} --set-gtid-purged=OFF --compact >/tmp/source.sql
 mysqldump --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} --set-gtid-purged=OFF --compact >/tmp/target.sql

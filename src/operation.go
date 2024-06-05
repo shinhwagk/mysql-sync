@@ -8,11 +8,11 @@ import (
 type MysqlOperation interface {
 	Statement()
 }
-
 type MysqlOperationDDLTable struct {
-	schema string
-	table  string
-	query  string
+	Schema    string
+	Table     string
+	Query     string
+	Timestamp uint32
 }
 
 func (op MysqlOperationDDLTable) Statement() {
@@ -24,8 +24,9 @@ func (op MysqlOperationBegin) Statement() {
 }
 
 type OperationDDLDatabase struct {
-	schema string
-	query  string
+	Schema    string
+	Query     string
+	Timestamp uint32
 }
 
 func (op OperationDDLDatabase) Statement() {
@@ -42,7 +43,7 @@ type MysqlOperationDMLInsert struct {
 	Database   string
 	Table      string
 	Columns    []MysqlOperationDMLColumn
-	PrimaryKey interface{}
+	PrimaryKey []uint64
 }
 
 func (op MysqlOperationDMLInsert) Statement() {
@@ -53,7 +54,7 @@ type MysqlOperationDMLDelete struct {
 	Database   string
 	Table      string
 	Columns    []MysqlOperationDMLColumn
-	PrimaryKey interface{}
+	PrimaryKey []uint64
 }
 
 func (op MysqlOperationDMLDelete) Statement() {
@@ -65,7 +66,7 @@ type MysqlOperationDMLUpdate struct {
 	Table         string
 	AfterColumns  []MysqlOperationDMLColumn
 	BeforeColumns []MysqlOperationDMLColumn
-	PrimaryKey    interface{}
+	PrimaryKey    []uint64
 }
 
 func (op MysqlOperationDMLUpdate) Statement() {
@@ -76,8 +77,35 @@ type OperationDML interface {
 	GenerateSQL() (string, []interface{})
 }
 
+func GenerateConditionAndValues(primaryKeys []uint64, columns []MysqlOperationDMLColumn) (string, []interface{}) {
+	var placeholder string
+	var primary_values []interface{}
+
+	if len(primaryKeys) >= 1 {
+		parts := make([]string, len(primaryKeys))
+		for i, k := range primaryKeys {
+			parts[i] = fmt.Sprintf("`%s` = ?", columns[k].ColumnName)
+			primary_values = append(primary_values, columns[k].ColumnValue)
+
+		}
+		placeholder = strings.Join(parts, " AND ")
+	} else {
+		parts := make([]string, len(columns))
+		for i, c := range columns {
+			parts[i] = fmt.Sprintf("`%s` = ?", c.ColumnName)
+			primary_values = append(primary_values, c.ColumnValue)
+		}
+		placeholder = strings.Join(parts, " AND ")
+		// for _, k := range primaryKeys {
+		// 	primary_values = append(primary_values, columns[k].ColumnValue)
+		// }
+
+	}
+	return placeholder, primary_values
+
+}
+
 func (op *MysqlOperationDMLInsert) GenerateSQL() (string, []interface{}) {
-	fmt.Println("GenerateSQL")
 	var keys []string
 	var params []interface{}
 	var placeholders []string
@@ -89,36 +117,38 @@ func (op *MysqlOperationDMLInsert) GenerateSQL() (string, []interface{}) {
 	}
 
 	sql := fmt.Sprintf("REPLACE INTO `%s`.`%s` (%s) VALUES (%s)", op.Database, op.Table, strings.Join(keys, ", "), strings.Join(placeholders, ", "))
-	fmt.Println("Insert GenerateSQL", sql, params)
+
 	return sql, params
 }
 
-// GenerateSQL generates the SQL statement and parameters for DELETE operations
 func (op *MysqlOperationDMLDelete) GenerateSQL() (string, []interface{}) {
-	condition := fmt.Sprintf("%s = ?", op.PrimaryKey)
-	sql := fmt.Sprintf("DELETE FROM `%s`.`%s` WHERE %s", op.Database, op.Table, condition)
-	params := []interface{}{op.PrimaryKey}
-	return sql, params
+	wherePlaceholder, whereParams := GenerateConditionAndValues(op.PrimaryKey, op.Columns)
+
+	sql := fmt.Sprintf("DELETE FROM `%s`.`%s` WHERE %s", op.Database, op.Table, wherePlaceholder)
+
+	return sql, whereParams
 }
 
-// GenerateSQL generates the SQL statement and parameters for UPDATE operations
-// func (op *MysqlOperationDMLUpdate) GenerateSQL() (string, []interface{}) {
-// 	var sets []string
-// 	var params []interface{}
+func (op *MysqlOperationDMLUpdate) GenerateSQL() (string, []interface{}) {
+	params := []interface{}{}
 
-// 	for k, v := range op.AfterColumns {
-// 		sets = append(sets, fmt.Sprintf("%s = ?", k))
-// 		params = append(params, v)
-// 	}
+	wherePlaceholder, whereParams := GenerateConditionAndValues(op.PrimaryKey, op.BeforeColumns)
 
-// 	condition := fmt.Sprintf("%s = ?", op.PrimaryKey)
-// 	params = append(params, op.BeforeValues[op.PrimaryKey])
+	setPlaceholder := make([]string, len(op.AfterColumns))
 
-// 	sql := fmt.Sprintf("UPDATE `%s`.`%s` SET %s WHERE %s",
-// 		op.Schema, op.Table, strings.Join(sets, ", "), condition)
+	for i, c := range op.AfterColumns {
+		setPlaceholder[i] = fmt.Sprintf("`%s` = ?", c.ColumnName)
+		params = append(params, c.ColumnValue)
+	}
 
-// 	return sql, params
-// }
+	for _, param := range whereParams {
+		params = append(params, param)
+	}
+
+	sql := fmt.Sprintf("UPDATE `%s`.`%s` SET %s WHERE %s", op.Database, op.Table, strings.Join(setPlaceholder, ", "), wherePlaceholder)
+
+	return sql, params
+}
 
 type MysqlOperationXid struct {
 	Timestamp uint32
