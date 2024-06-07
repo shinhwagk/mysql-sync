@@ -75,3 +75,13 @@ func columnTypeAstrict(colName string, colType byte, colValue interface{}) (stri
 	// }
 	return "", fmt.Errorf("column type unmatch  %s %d %s ", colName, colType, reflect.TypeOf(colValue))
 }
+
+func emptyChannel(ch <-chan interface{}) {
+	for {
+		select {
+		case <-ch:
+		default:
+			return
+		}
+	}
+}

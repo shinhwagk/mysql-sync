@@ -6,7 +6,7 @@ import (
 )
 
 type MysqlOperation interface {
-	Statement()
+	OperationType() string
 }
 type MysqlOperationDDLTable struct {
 	Schema    string
@@ -15,21 +15,23 @@ type MysqlOperationDDLTable struct {
 	Timestamp uint32
 }
 
-func (op MysqlOperationDDLTable) Statement() {
+func (op MysqlOperationDDLTable) OperationType() string {
+	return "MysqlOperationDDLTable"
+}
+
+func (op MysqlOperationBegin) OperationType() string {
+	return "MysqlOperationBegin"
 
 }
 
-func (op MysqlOperationBegin) Statement() {
-
-}
-
-type OperationDDLDatabase struct {
+type MysqlOperationDDLDatabase struct {
 	Schema    string
 	Query     string
 	Timestamp uint32
 }
 
-func (op OperationDDLDatabase) Statement() {
+func (op MysqlOperationDDLDatabase) OperationType() string {
+	return "MysqlOperationDDLDatabase"
 
 }
 
@@ -46,8 +48,8 @@ type MysqlOperationDMLInsert struct {
 	PrimaryKey []uint64
 }
 
-func (op MysqlOperationDMLInsert) Statement() {
-
+func (op MysqlOperationDMLInsert) OperationType() string {
+	return "MysqlOperationDMLInsert"
 }
 
 type MysqlOperationDMLDelete struct {
@@ -57,8 +59,8 @@ type MysqlOperationDMLDelete struct {
 	PrimaryKey []uint64
 }
 
-func (op MysqlOperationDMLDelete) Statement() {
-
+func (op MysqlOperationDMLDelete) OperationType() string {
+	return "MysqlOperationDMLDelete"
 }
 
 type MysqlOperationDMLUpdate struct {
@@ -69,8 +71,8 @@ type MysqlOperationDMLUpdate struct {
 	PrimaryKey    []uint64
 }
 
-func (op MysqlOperationDMLUpdate) Statement() {
-
+func (op MysqlOperationDMLUpdate) OperationType() string {
+	return "MysqlOperationDMLUpdate"
 }
 
 type OperationDML interface {
@@ -154,7 +156,8 @@ type MysqlOperationXid struct {
 	Timestamp uint32
 }
 
-func (op MysqlOperationXid) Statement() {
+func (op MysqlOperationXid) OperationType() string {
+	return "MysqlOperationXid"
 
 }
 
@@ -172,14 +175,14 @@ type MysqlOperationBegin struct {
 	Timestamp uint32
 }
 
-func (op MysqlOperationGTID) Statement() {
-
+func (op MysqlOperationGTID) OperationType() string {
+	return "MysqlOperationGTID"
 }
 
 type MysqlOperationHeartbeat struct {
 	Timestamp uint32
 }
 
-func (op MysqlOperationHeartbeat) Statement() {
-
+func (op MysqlOperationHeartbeat) OperationType() string {
+	return "MysqlOperationHeartbeat"
 }

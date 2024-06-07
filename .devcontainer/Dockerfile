@@ -1,4 +1,4 @@
-FROM --platform=linux/amd64 quay.io/centos/centos:stream9
+FROM quay.io/centos/centos:stream9
 
 RUN dnf install -y git zsh
 

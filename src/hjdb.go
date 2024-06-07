@@ -32,37 +32,41 @@ type CheckpointGtidSet struct {
 	xtd         int64
 }
 
-func NewHJDB(addr string, db string, logger *Logger) *HJDB {
-	return &HJDB{addr, db, logger}
+func NewHJDB(logLevel int, addr string, db string) *HJDB {
+	return &HJDB{
+		addr,
+		db,
+		NewLogger(logLevel, "hjdb"),
+	}
 }
 
 func (hjdb HJDB) Update(tab string, data interface{}) error {
 	jsonData, err := json.Marshal(data)
 	if err != nil {
-		hjdb.Logger.Error("hjdb", fmt.Sprintf("Update -- %s", err))
+		hjdb.Logger.Error(fmt.Sprintf("Update -- %s", err))
 		return err
 	}
 
 	resp, err := http.Post(fmt.Sprintf("http://%s/db/%s/tab/%s", hjdb.Addr, hjdb.DB, tab), "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
-		hjdb.Logger.Error("hjdb", fmt.Sprintf("Update -- db: '%s' tab: '%s' err: %s", hjdb.DB, tab, err.Error()))
+		hjdb.Logger.Error(fmt.Sprintf("Update -- db: '%s' tab: '%s' err: %s", hjdb.DB, tab, err.Error()))
 		return err
 	}
 	defer resp.Body.Close()
 
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		hjdb.Logger.Error("hjdb", fmt.Sprintf("Update -- db: '%s' tab: '%s' err: %s", hjdb.DB, tab, err))
+		hjdb.Logger.Error(fmt.Sprintf("Update -- db: '%s' tab: '%s' err: %s", hjdb.DB, tab, err))
 		return err
 	}
 
-	hjdb.Logger.Debug("hjdb", fmt.Sprintf("Update -- db: '%s' tab: '%s' %s %s", hjdb.DB, tab, string(jsonData), string(responseBody)))
+	hjdb.Logger.Debug(fmt.Sprintf("Update -- db: '%s' tab: '%s' %s %s", hjdb.DB, tab, string(jsonData), string(responseBody)))
 
 	return nil
 }
 
-func (hjdb HJDB) query(db string, tab string) (*HJDBResponseData, error) {
-	resp, err := http.Get(fmt.Sprintf("http://%s/db/%s/tab/%s", hjdb.Addr, db, tab))
+func (hjdb HJDB) query(tab string) (*HJDBResponseData, error) {
+	resp, err := http.Get(fmt.Sprintf("http://%s/db/%s/tab/%s", hjdb.Addr, hjdb.DB, tab))
 	if err != nil {
 		return nil, err
 	}

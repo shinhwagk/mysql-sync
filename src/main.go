@@ -1,59 +1,110 @@
 package main
 
 import (
-	"context"
+	"encoding/gob"
 	"fmt"
 	"log"
+	"net"
 	"time"
 
-	"github.com/go-mysql-org/go-mysql/replication"
+	"github.com/klauspost/compress/zstd"
 )
 
+func init() {
+	gob.Register(&MysqlOperationHeartbeat{})
+	gob.Register(&MysqlOperationGTID{})
+	gob.Register(&MysqlOperationDDLDatabase{})
+
+	gob.Register(&DTOPause{})
+	gob.Register(&DTOResume{})
+	gob.Register(&DTOGtidSet{})
+
+}
+
+// func sendServer(encoder *gob.Encoder, dto DTO) {
+// 	if err := encoder.Encode(&dto); err != nil {
+// 		fmt.Println("Error encoding DTO1:", err)
+// 		return
+// 	}
+
+// }
 func main() {
-	config, err := LoadConfig("/workspaces/mysqlbinlog-sync/src/config.yml")
+	conn, err := net.Dial("tcp", "localhost:9998")
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		log.Fatal("Dial error:", err)
 	}
+	defer conn.Close()
 
-	fmt.Println(config)
+	zstdReader, err := zstd.NewReader(conn)
+	if err != nil {
+		fmt.Println("Error creating zstd reader:", err)
+		return
+	}
+	defer zstdReader.Close()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	decoder := gob.NewDecoder(zstdReader)
+	encoder := gob.NewEncoder(conn)
+
+	// ctrlCh := make(chan string)
+
+	ch := make(chan MysqlOperation, 10)
+
+	x := 3
+
+	// go func() {
+	// 	for cmd := range ctrlCh {
+	// 		_, err := conn.Write([]byte(cmd + "\n"))
+	// 		fmt.Println("send pause")
+	// 		if err != nil {
+	// 			fmt.Println("Error sending control command:", err)
+	// 			break
+	// 		}
+	// 	}
+	// }()
 
 	go func() {
-		time.Sleep(20 * time.Second)
-
-		cancel()
+		for oper := range ch {
+			fmt.Println("process oper", oper)
+			time.Sleep(time.Second * time.Duration(x))
+			x--
+			if x == 0 && x <= 5 {
+				x++
+			}
+		}
 	}()
 
-	ch := make(chan MysqlOperation)
+	var cache_operations []MysqlOperation = []MysqlOperation{}
 
-	logger := &Logger{LevelDebug}
+	for {
+		var operations []MysqlOperation
+		if err := decoder.Decode(&operations); err != nil {
+			fmt.Println("Error decoding message:", err)
+			break
+		}
 
-	hjdb := NewHJDB(config.HJDB.Addr, config.HJDB.DB, logger)
+		for _, oper := range operations {
+			select {
+			case ch <- oper:
+			default:
+				sendServer(encoder, &DTOPause{})
+				// ctrlCh <- "pause"
+				fmt.Println("cache ooper", len(cache_operations))
+				cache_operations = append(cache_operations, oper)
+			}
+		}
 
-	metricDirector := &MetricDirector{hjdb, logger}
-
-	fmt.Println(config.Replication.ServerID)
-	cfg := replication.BinlogSyncerConfig{
-		ServerID:        uint32(config.Replication.ServerID),
-		Flavor:          "mysql",
-		Host:            config.Replication.Host,
-		Port:            uint16(config.Replication.Port),
-		User:            config.Replication.User,
-		Password:        config.Destination.Password,
-		Charset:         "utf8mb4",
-		HeartbeatPeriod: time.Second * 1,
+		if len(cache_operations) >= 1 {
+			for len(cache_operations) > 0 {
+				select {
+				case ch <- cache_operations[0]:
+					cache_operations = cache_operations[1:]
+				}
+			}
+			if len(cache_operations) == 0 {
+				// ctrlCh <- "resume"
+				sendServer(encoder, &DTOResume{})
+				fmt.Println("send resume")
+			}
+		}
 	}
-
-	canal := NewCanal(ctx, cancel, cfg, config.Replication.GTID, ch, logger)
-
-	//"root:root_password@tcp(db2:3306)/sys?autocommit=false"
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/?%s", config.Destination.User, config.Replication.Password, config.Replication.Host, config.Destination.Port, config.Destination.Params)
-	fmt.Println(dsn)
-
-	md1 := NewMysqlDestination(ctx, cancel, logger, config.Destination.Name, ch, dsn, hjdb, metricDirector)
-
-	canal.AddDestination(md1)
-
-	canal.Run()
 }

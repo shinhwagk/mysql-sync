@@ -1,0 +1,74 @@
+[
+    {
+        "matchers": [
+            {
+                "name": "alertname",
+                "value": "Disk Read rate",
+                "isRegex": false
+            },
+            {
+                "name": "server",
+                "value": "co-litb-message-db2",
+                "isRegex": false
+            }
+        ],
+        "start": "06:00:00",
+        "duration": "5h",
+        "creator": "opsdba",
+        "comment": "silence alerts caused by backups"
+    },
+    {
+        "matchers": [
+            {
+                "name": "alertname",
+                "value": "Disk Read rate",
+                "isRegex": false
+            },
+            {
+                "name": "server",
+                "value": "co-litb-ordersort-db3",
+                "isRegex": false
+            }
+        ],
+        "start": "06:00:00",
+        "duration": "5h",
+        "creator": "opsdba",
+        "comment": "silence alerts caused by backups"
+    },
+    {
+        "matchers": [
+            {
+                "name": "alertname",
+                "value": "Disk Read rate",
+                "isRegex": false
+            },
+            {
+                "name": "server",
+                "value": "co-litb-sc-db3",
+                "isRegex": false
+            }
+        ],
+        "start": "06:00:00",
+        "duration": "5h",
+        "creator": "opsdba",
+        "comment": "silence alerts caused by backups"
+    },
+    {
+        "matchers": [
+            {
+                "name": "alertname",
+                "value": "Disk Read rate",
+                "isRegex": false
+            },
+            {
+                "name": "server",
+                "value": " co-litb-elpay-db4",
+                "isRegex": false
+            }
+        ],
+        "start": "06:00:00",
+        "duration": "5h",
+        "creator": "opsdba",
+        "comment": "silence alerts caused by backups"
+    }
+]

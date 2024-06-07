@@ -1,17 +1,24 @@
+name: abcbcvb
 replication:
+  name: ""
+  tcpaddr: "0.0.0.0:9998"
   serverid: 9999
   host: "db1"
   port: 3306
   user: "root"
   password: "root_password"
   gtid: "d185500e-225e-11ef-8161-0242ac140006:1"
+  loglevel: 
 destination:
   name: "dest1-mysql"
+  tcpaddr: "127.0.0.1:9998"
   host: "db2"
   port: 3306
   user: "root"
   password: "root_password"
   params: "autocommit=false"
+  loglevel: 
 hjdb: 
   addr: 192.168.200.146:8000
   db: test
+  loglevel: 

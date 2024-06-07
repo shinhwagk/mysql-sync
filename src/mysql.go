@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"time"
@@ -15,11 +14,11 @@ type MysqlClient struct {
 	logger *Logger
 }
 
-func NewMysqlClient(ctx context.Context, logger *Logger, dsn string) *MysqlClient {
+func NewMysqlClient(logLevel int, dsn string) *MysqlClient {
 	db, err := sql.Open("mysql", dsn)
 
 	if err != nil {
-		logger.Error("NewMysqlClient", err.Error())
+		fmt.Println(err.Error())
 		// logger.Fatal("Failed to connect to database: ", err)
 	}
 
@@ -28,21 +27,21 @@ func NewMysqlClient(ctx context.Context, logger *Logger, dsn string) *MysqlClien
 	db.SetMaxOpenConns(2)
 
 	myclient := &MysqlClient{
-		db:     db, //user:password@tcp(localhost:5555)/dbname?tls=skip-verify&autocommit=true
+		db:     db,
 		tx:     nil,
-		logger: logger,
+		logger: NewLogger(logLevel, "mysql-client"),
 	}
 
-	go func() {
-		<-ctx.Done()
-		myclient.Close()
-	}()
+	// go func() {
+	// 	<-ctx.Done()
+	// 	myclient.Close()
+	// }()
 
 	return myclient
 }
 
 func (mc *MysqlClient) Close() error {
-	mc.logger.Info("mysqlclient", "close")
+	mc.logger.Info("close")
 	return mc.db.Close()
 }
 
