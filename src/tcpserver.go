@@ -16,9 +16,9 @@ import (
 )
 
 func init() {
-	gob.Register(&MysqlOperationHeartbeat{})
-	gob.Register(&MysqlOperationDDLDatabase{})
-	gob.Register(&MysqlOperationGTID{})
+	gob.Register(MysqlOperationHeartbeat{})
+	gob.Register(MysqlOperationDDLDatabase{})
+	gob.Register(MysqlOperationGTID{})
 
 	// gob.Register(&DTOPause{})
 	// gob.Register(&DTOResume{})
@@ -27,13 +27,18 @@ func init() {
 }
 
 type TCPServer struct {
-	Name string
+	logger *Logger
 
-	Logger *Logger
+	listenAddress string
 
-	ListenAddress string
+	Clients sync.Map
 
 	// ch <-chan MysqlOperation
+}
+
+type Client struct {
+	conn    net.Conn
+	channel chan MysqlOperation
 }
 
 type ServerConnectionState struct {
@@ -42,18 +47,18 @@ type ServerConnectionState struct {
 
 func NewTCPServer(logLevel int, address string) *TCPServer {
 	return &TCPServer{
-		Logger:        NewLogger(logLevel, "tcp server"),
-		ListenAddress: address,
+		logger:        NewLogger(logLevel, "tcp server"),
+		listenAddress: address,
 	}
 }
 
 func (s *TCPServer) Start(ctx context.Context, moCh <-chan MysqlOperation, gtidsetsh chan<- string) error {
-	listener, err := net.Listen("tcp", s.ListenAddress)
+	listener, err := net.Listen("tcp", s.listenAddress)
 	if err != nil {
-		s.Logger.Error(fmt.Sprintf("Error listening: " + err.Error()))
+		s.logger.Error(fmt.Sprintf("Error listening: " + err.Error()))
 	}
 	defer listener.Close()
-	s.Logger.Info("listening on:" + s.ListenAddress)
+	s.logger.Info("listening on:" + s.listenAddress)
 
 	go func() {
 		<-ctx.Done()
@@ -61,22 +66,44 @@ func (s *TCPServer) Start(ctx context.Context, moCh <-chan MysqlOperation, gtids
 		listener.Close()
 	}()
 
+	go func() {
+		for msg := range moCh {
+			s.Clients.Range(func(key, value interface{}) bool {
+				client := value.(*Client)
+				client.channel <- msg
+				return true
+			})
+		}
+	}()
+
 	for {
 		conn, err := listener.Accept()
-		s.Logger.Info("start listener...")
+		s.logger.Info("start listener...")
 
 		if err != nil {
-			s.Logger.Info("Error accepting:" + err.Error())
+			s.logger.Info("Error accepting:" + err.Error())
 			return err
 		}
 
-		go s.handleConnection(conn, moCh, gtidsetsh)
+		clientChannel := make(chan MysqlOperation, 100)
+		client := &Client{
+			conn:    conn,
+			channel: clientChannel,
+		}
+
+		s.Clients.Store(conn.RemoteAddr().String(), client)
+
+		go s.handleConnection(client, gtidsetsh)
 	}
 
 }
 
-func (s *TCPServer) handleConnection(conn net.Conn, moCh <-chan MysqlOperation, gtidsetCh chan<- string) {
-	defer conn.Close()
+func (s *TCPServer) handleConnection(client *Client, gtidsetCh chan<- string) {
+	defer func() {
+		client.conn.Close()
+		s.Clients.Delete(client.conn.RemoteAddr().String())
+		close(client.channel)
+	}()
 
 	resumeChan := make(chan struct{})
 
@@ -90,21 +117,21 @@ func (s *TCPServer) handleConnection(conn net.Conn, moCh <-chan MysqlOperation, 
 
 	go func() {
 		defer wg.Done()
-		s.handleFromClient(ctx, conn, connState, gtidsetCh, resumeChan)
-		s.Logger.Info("tcp from client handler close.")
+		s.handleFromClient(ctx, client.conn, connState, gtidsetCh, resumeChan)
+		s.logger.Info("tcp from client handler close.")
 		cancel()
 	}()
 
 	go func() {
 		defer wg.Done()
-		s.handleToClient(ctx, conn, connState, moCh, gtidsetCh, resumeChan)
-		s.Logger.Info("tcp to client handler close.")
+		s.handleToClient(ctx, client.conn, connState, client.channel, gtidsetCh, resumeChan)
+		s.logger.Info("tcp to client handler close.")
 		cancel()
 	}()
 
 	wg.Wait()
 
-	s.Logger.Info(fmt.Sprintf("tcp connection '%s' close.", conn.RemoteAddr().String()))
+	s.logger.Info(fmt.Sprintf("tcp connection '%s' close.", client.conn.RemoteAddr().String()))
 }
 
 func (s *TCPServer) handleToClient(ctx context.Context, conn net.Conn, scs *ServerConnectionState, ch <-chan MysqlOperation, gtidsetsh chan<- string, resumeChan <-chan struct{}) {
@@ -126,7 +153,7 @@ func (s *TCPServer) handleToClient(ctx context.Context, conn net.Conn, scs *Serv
 	var mysqlOperations []MysqlOperation
 
 	for {
-		s.Logger.Debug("sendClient error:  + err.Error()")
+		s.logger.Debug("sendClient error:  + err.Error()")
 
 		if scs.paused {
 			select {
@@ -143,11 +170,11 @@ func (s *TCPServer) handleToClient(ctx context.Context, conn net.Conn, scs *Serv
 			return
 		case val := <-ch:
 			mysqlOperations = append(mysqlOperations, val)
-			s.Logger.Info("received value")
+			s.logger.Info("received value")
 
 			if len(mysqlOperations) >= 10 {
 				if err := s.sendClient(encoder, zstdWriter, mysqlOperations); err != nil {
-					s.Logger.Error("sendClient error: " + err.Error())
+					s.logger.Error("sendClient error: " + err.Error())
 					return
 				}
 				fmt.Printf("Compressed data sent: %d bytes\n", buf.Len())
@@ -158,7 +185,7 @@ func (s *TCPServer) handleToClient(ctx context.Context, conn net.Conn, scs *Serv
 		case <-timer.C:
 			if len(mysqlOperations) > 0 {
 				if err := s.sendClient(encoder, zstdWriter, mysqlOperations); err != nil {
-					s.Logger.Error("sendClient error: " + err.Error())
+					s.logger.Error("sendClient error: " + err.Error())
 					return
 				}
 				fmt.Printf("Compressed data sent: %d bytes\n", buf.Len())
@@ -183,9 +210,9 @@ func (s *TCPServer) handleFromClient(ctx context.Context, conn net.Conn, scs *Se
 			var dto string
 			if err := decoder.Decode(&dto); err != nil {
 				if err == io.EOF {
-					s.Logger.Info("tcp client close.")
+					s.logger.Info("tcp client close.")
 				} else {
-					s.Logger.Error("Error decoding message:" + err.Error())
+					s.logger.Error("Error decoding message:" + err.Error())
 				}
 				return
 			}

@@ -8,7 +8,7 @@ replication:
   user: "root"
   password: "root_password"
   gtid: "d185500e-225e-11ef-8161-0242ac140006:1"
-  loglevel: 
+  loglevel: 1
 destination:
   name: "dest1-mysql"
   tcpaddr: "127.0.0.1:9998"
@@ -17,8 +17,8 @@ destination:
   user: "root"
   password: "root_password"
   params: "autocommit=false"
-  loglevel: 
+  loglevel: 1
 hjdb: 
   addr: 192.168.200.146:8000
   db: test
-  loglevel: 
+  loglevel: 1

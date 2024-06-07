@@ -59,8 +59,7 @@ func (mc *MysqlClient) ExecuteDML(query string, args []interface{}) error {
 	if mc.tx != nil {
 		_, err := mc.tx.Exec(query, args...)
 		if err != nil {
-			mc.tx.Rollback()
-			return err
+			return mc.Rollback()
 		}
 	}
 	return nil
@@ -92,7 +91,9 @@ func (mc *MysqlClient) ExecuteOnDatabase(query string) error {
 	_, err := mc.tx.Exec(query)
 
 	if err != nil {
-		fmt.Println(err)
+		mc.logger.Error(fmt.Sprintf("query: '%s', error: %s", query, err.Error()))
+		mc.Rollback()
+		return err
 	}
 
 	return mc.Commit()
@@ -101,6 +102,17 @@ func (mc *MysqlClient) ExecuteOnDatabase(query string) error {
 func (mc *MysqlClient) Commit() error {
 	if mc.tx != nil {
 		err := mc.tx.Commit()
+		if err != nil {
+			return err
+		}
+		mc.tx = nil
+	}
+	return nil
+}
+
+func (mc *MysqlClient) Rollback() error {
+	if mc.tx != nil {
+		err := mc.tx.Rollback()
 		if err != nil {
 			return err
 		}

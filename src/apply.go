@@ -39,67 +39,68 @@ type MysqlApply struct {
 	metricDestination *MetricDestination
 }
 
-func (ma *MysqlApply) start(ch <-chan MysqlOperation) error {
-	for oper := range ch {
+func (ma *MysqlApply) start(moCh <-chan MysqlOperation) {
+	ma.logger.Info("started.")
+loop:
+	for oper := range moCh {
 		switch op := oper.(type) {
 		case MysqlOperationDDLDatabase:
-			ma.logger.Debug("OperationDDLDatabase")
 			if err := ma.OnDDLDatabase(op); err != nil {
-				ma.logger.Error(fmt.Sprintf("OperationDDLDatabase %s", err))
-				return err
+				ma.logger.Error(fmt.Sprintf("OnDDLDatabase -- %s", err))
+				break loop
 			}
 		case MysqlOperationDMLInsert:
-			ma.logger.Debug("MysqlOperationDMLInsert")
 			if err := ma.OnDMLInsert(op); err != nil {
 				ma.logger.Error("MysqlOperationDMLInsert " + err.Error())
-				return err
+				break loop
 			}
 		case MysqlOperationDMLDelete:
 			ma.logger.Debug("MysqlOperationDMLDelete")
 			if err := ma.OnDMLDelete(op); err != nil {
 				ma.logger.Error("MysqlOperationDMLDelete " + err.Error())
-				return err
+				break loop
 			}
 		case MysqlOperationDMLUpdate:
 			ma.logger.Debug("MysqlOperationDMLUpdate")
 			if err := ma.OnDMLUpdate(op); err != nil {
 				ma.logger.Error("MysqlOperationDMLUpdate " + err.Error())
-				return err
+				break loop
 			}
 		case MysqlOperationDDLTable:
 			ma.logger.Debug("MysqlOperationDDLTable")
 			if err := ma.OnDDLTable(op); err != nil {
 				ma.logger.Error("MysqlOperationDDLTable " + err.Error())
-				return err
+				break loop
 			}
 		case MysqlOperationXid:
 			ma.logger.Debug("MysqlOperationXid")
 			if err := ma.OnXID(op); err != nil {
 				ma.logger.Error("MysqlOperationXid " + err.Error())
-				return err
+				return
 			}
 		case MysqlOperationGTID:
 			ma.logger.Debug("MysqlOperationGTID")
 			if err := ma.OnGTID(op); err != nil {
 				ma.logger.Error("MysqlOperationGTID " + err.Error())
-				return err
+				break loop
 			}
 		case MysqlOperationHeartbeat:
 			ma.logger.Debug("MysqlOperationHeartbeat")
 			if err := ma.OnHeartbeat(op); err != nil {
 				ma.logger.Error("MysqlOperationHeartbeat " + err.Error())
-				return err
+				break loop
 			}
 		case MysqlOperationBegin:
 			ma.logger.Debug("MysqlOperationBegin")
 			if err := ma.OnBegin(op); err != nil {
 				ma.logger.Error("MysqlOperationBegin " + err.Error())
-				return err
+				break loop
 			}
 		default:
+			fmt.Println("xxxx")
 		}
 	}
-	return nil
+	ma.logger.Info("stopped.")
 }
 
 func (ma *MysqlApply) OnDMLInsert(op MysqlOperationDMLInsert) error {
@@ -143,11 +144,11 @@ func (ma *MysqlApply) OnDMLUpdate(op MysqlOperationDMLUpdate) error {
 }
 
 func (ma *MysqlApply) OnDDLDatabase(op MysqlOperationDDLDatabase) error {
+	ma.logger.Debug(fmt.Sprintf("OnDDLDatabase -- query: '%s'", op.Query))
+
 	ma.LastOperationTimestamp = op.Timestamp
-	ma.logger.Debug(fmt.Sprintf("OnDDLDatabase -- query: %s", op.Query))
 
 	if err := ma.mysqlClient.ExecuteOnDatabase(op.Query); err != nil {
-		ma.logger.Error(fmt.Sprintf("OnDDLDatabase -- %s", err))
 		return err
 	}
 
@@ -156,8 +157,9 @@ func (ma *MysqlApply) OnDDLDatabase(op MysqlOperationDDLDatabase) error {
 }
 
 func (ma *MysqlApply) OnDDLTable(op MysqlOperationDDLTable) error {
-	ma.LastOperationTimestamp = op.Timestamp
 	ma.logger.Debug(fmt.Sprintf("OnDDLTable -- schema: %s  query: %s", op.Schema, op.Query))
+
+	ma.LastOperationTimestamp = op.Timestamp
 
 	if err := ma.mysqlClient.ExecuteOnTable(op.Schema, op.Query); err != nil {
 		ma.logger.Error(fmt.Sprintf("OnDDLTable -- %s", err))
@@ -169,8 +171,9 @@ func (ma *MysqlApply) OnDDLTable(op MysqlOperationDDLTable) error {
 }
 
 func (ma *MysqlApply) OnXID(op MysqlOperationXid) error {
-	ma.LastOperationTimestamp = op.Timestamp
 	ma.logger.Debug(fmt.Sprintf("OnXID"))
+
+	ma.LastOperationTimestamp = op.Timestamp
 	ma.AllowCommit = true
 	return nil
 }
@@ -185,7 +188,7 @@ func (ma *MysqlApply) OnBegin(op MysqlOperationBegin) error {
 }
 
 func (ma *MysqlApply) OnGTID(op MysqlOperationGTID) error {
-	ma.logger.Info(fmt.Sprintf("OnGTID -- %s:%d", op.ServerUUID, op.TrxID))
+	ma.logger.Debug(fmt.Sprintf("OnGTID -- %s:%d", op.ServerUUID, op.TrxID))
 
 	if ma.LastCommitted != op.LastCommitted {
 		ma.MergeCommit()

@@ -59,7 +59,6 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) e
 	go func() {
 		if err := repl.tcpServer.Start(ctx, moCh, gsCh); err != nil {
 			repl.logger.Error("tcp server start failed: " + err.Error())
-
 			cancel()
 		}
 	}()

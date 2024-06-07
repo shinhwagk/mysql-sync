@@ -17,14 +17,15 @@ func main() {
 
 	fmt.Println(config)
 
-	ctx, _ := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	destination, err := NewDestination(config.Name, config.Destination, config.HJDB)
 	if err != nil {
 		logger.Error(fmt.Sprintf("Failed to NewDestination: %v", err))
 	}
 
-	destination.Start(ctx)
+	destination.Start(ctx, cancel)
 }
 
 type Destination struct {
@@ -63,24 +64,26 @@ func NewDestination(name string, dc DestinationConfig, hc HJDBConfig) (*Destinat
 	}, nil
 }
 
-func (dest *Destination) Start(ctx context.Context) error {
+func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) {
 	gtidset, err := dest.getGtidSet()
 	if err != nil {
-		return err
+		dest.logger.Error("gtidset parse " + err.Error())
+		return
 	}
 
-	myoperCh := make(chan MysqlOperation, 100)
+	moCh := make(chan MysqlOperation, 100)
 
 	fmt.Println(gtidset)
 	go func() {
-		for oper := range myoperCh {
-			fmt.Println("sjoudao ", oper)
-		}
-		// dest.mysqlApply.start(myoperCh)
+		// for oper := range moCh {
+		// 	fmt.Println(oper)
+		// }
+		dest.mysqlApply.start(moCh)
+		cancel()
 	}()
-	dest.tcpClient.Start(ctx, myoperCh, gtidset)
 
-	return nil
+	dest.tcpClient.Start(ctx, moCh, gtidset)
+	dest.logger.Info("stopped")
 }
 
 func (dest Destination) getGtidSet() (string, error) {
