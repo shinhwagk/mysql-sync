@@ -23,8 +23,8 @@ func main() {
 	}
 	syncer := replication.NewBinlogSyncer(cfg)
 
-	gtidSet, err := mysql.ParseGTIDSet("mysql", "d185500e-225e-11ef-8161-0242ac140006:172")
-	fmt.Println(gtidSet)
+	// Start sync with specified binlog file and position
+	gtidSet, err := mysql.ParseGTIDSet("mysql", "d185500e-225e-11ef-8161-0242ac140006:1-172")
 
 	if err != nil {
 		fmt.Println("sdfsfsdfsd", err)

@@ -11,8 +11,14 @@ import (
 
 func init() {
 	gob.Register(MysqlOperationHeartbeat{})
-	gob.Register(MysqlOperationGTID{})
 	gob.Register(MysqlOperationDDLDatabase{})
+	gob.Register(MysqlOperationGTID{})
+	gob.Register(MysqlOperationDDLTable{})
+	gob.Register(MysqlOperationDMLInsert{})
+	gob.Register(MysqlOperationDMLUpdate{})
+	gob.Register(MysqlOperationDMLDelete{})
+	gob.Register(MysqlOperationBegin{})
+	gob.Register(MysqlOperationXid{})
 
 	// gob.Register(&DTOPause{})
 	// gob.Register(&DTOResume{})
@@ -26,14 +32,19 @@ type TCPClient struct {
 	ServerAddress string
 	logger        *Logger
 
+	metric   *MetricTCPClient
+	metricCh chan<- MetricUnit
 	// decoder *gob.Decoder
 	// encoder *gob.Encoder
 }
 
-func NewTCPClient(logLevel int, serverAddress string) *TCPClient {
+func NewTCPClient(logLevel int, serverAddress string, metricCh chan<- MetricUnit) *TCPClient {
 	return &TCPClient{
-		ServerAddress: serverAddress,
 		logger:        NewLogger(logLevel, "tcp client"),
+		ServerAddress: serverAddress,
+
+		metric:   &MetricTCPClient{0, 0},
+		metricCh: metricCh,
 	}
 }
 
@@ -89,6 +100,9 @@ loop:
 				c.logger.Error("Error decoding message:" + err.Error())
 				break loop
 			}
+
+			c.metric.Operations += uint(len(operations))
+			c.logger.Debug(fmt.Sprintf("receive operations number:'%d' from server success, total %d.", len(operations), c.metric.Operations))
 
 			for _, oper := range operations {
 				select {

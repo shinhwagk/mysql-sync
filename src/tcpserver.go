@@ -19,11 +19,12 @@ func init() {
 	gob.Register(MysqlOperationHeartbeat{})
 	gob.Register(MysqlOperationDDLDatabase{})
 	gob.Register(MysqlOperationGTID{})
-
-	// gob.Register(&DTOPause{})
-	// gob.Register(&DTOResume{})
-	// gob.Register(&DTOGtidSet{})
-
+	gob.Register(MysqlOperationDDLTable{})
+	gob.Register(MysqlOperationDMLInsert{})
+	gob.Register(MysqlOperationDMLUpdate{})
+	gob.Register(MysqlOperationDMLDelete{})
+	gob.Register(MysqlOperationBegin{})
+	gob.Register(MysqlOperationXid{})
 }
 
 type TCPServer struct {
@@ -33,22 +34,26 @@ type TCPServer struct {
 
 	Clients sync.Map
 
-	// ch <-chan MysqlOperation
+	metric   *MetricTCPServer
+	metricCh chan<- interface{}
 }
 
 type Client struct {
 	conn    net.Conn
 	channel chan MysqlOperation
+	close   chan bool
 }
 
 type ServerConnectionState struct {
 	paused bool
 }
 
-func NewTCPServer(logLevel int, address string) *TCPServer {
+func NewTCPServer(logLevel int, address string, metricCh chan<- interface{}) *TCPServer {
 	return &TCPServer{
 		logger:        NewLogger(logLevel, "tcp server"),
 		listenAddress: address,
+		metric:        &MetricTCPServer{0, 0},
+		metricCh:      metricCh,
 	}
 }
 
@@ -70,7 +75,11 @@ func (s *TCPServer) Start(ctx context.Context, moCh <-chan MysqlOperation, gtids
 		for msg := range moCh {
 			s.Clients.Range(func(key, value interface{}) bool {
 				client := value.(*Client)
-				client.channel <- msg
+				select {
+				case client.channel <- msg:
+				case <-client.close:
+					return true
+				}
 				return true
 			})
 		}
@@ -101,8 +110,8 @@ func (s *TCPServer) Start(ctx context.Context, moCh <-chan MysqlOperation, gtids
 func (s *TCPServer) handleConnection(client *Client, gtidsetCh chan<- string) {
 	defer func() {
 		client.conn.Close()
-		s.Clients.Delete(client.conn.RemoteAddr().String())
 		close(client.channel)
+		s.Clients.Delete(client.conn.RemoteAddr().String())
 	}()
 
 	resumeChan := make(chan struct{})
@@ -153,8 +162,6 @@ func (s *TCPServer) handleToClient(ctx context.Context, conn net.Conn, scs *Serv
 	var mysqlOperations []MysqlOperation
 
 	for {
-		s.logger.Debug("sendClient error:  + err.Error()")
-
 		if scs.paused {
 			select {
 			case <-resumeChan:
@@ -170,14 +177,13 @@ func (s *TCPServer) handleToClient(ctx context.Context, conn net.Conn, scs *Serv
 			return
 		case val := <-ch:
 			mysqlOperations = append(mysqlOperations, val)
-			s.logger.Info("received value")
 
-			if len(mysqlOperations) >= 10 {
+			if len(mysqlOperations) >= 1000 {
 				if err := s.sendClient(encoder, zstdWriter, mysqlOperations); err != nil {
 					s.logger.Error("sendClient error: " + err.Error())
 					return
 				}
-				fmt.Printf("Compressed data sent: %d bytes\n", buf.Len())
+				s.logger.Debug(fmt.Sprintf("Compressed data sent: %d bytes\n", buf.Len()))
 				mysqlOperations = mysqlOperations[:0]
 				timer.Reset(100 * time.Millisecond)
 			}
@@ -188,13 +194,17 @@ func (s *TCPServer) handleToClient(ctx context.Context, conn net.Conn, scs *Serv
 					s.logger.Error("sendClient error: " + err.Error())
 					return
 				}
-				fmt.Printf("Compressed data sent: %d bytes\n", buf.Len())
+				s.logger.Debug(fmt.Sprintf("Compressed data sent: %d bytes\n", buf.Len()))
 				mysqlOperations = mysqlOperations[:0]
 			}
 			timer.Reset(100 * time.Millisecond)
 		default:
-			time.Sleep(1 * time.Second)
+			time.Sleep(100 * time.Millisecond)
+			s.logger.Debug("handleToClient sleep 1s")
 		}
+		s.metric.Outgoing += uint(buf.Len())
+
+		s.metricCh <- s.metric
 		buf.Reset()
 	}
 }
@@ -217,18 +227,11 @@ func (s *TCPServer) handleFromClient(ctx context.Context, conn net.Conn, scs *Se
 				return
 			}
 
-			fmt.Println("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-
 			if strings.HasPrefix(dto, "gtidset") {
-				fmt.Println("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx1")
-
+				s.logger.Info("from client resdf gtidset " + dto)
 				parts := strings.Split(dto, "@")
 				gtidsetCh <- parts[1]
-				fmt.Println("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx1e")
-
 			} else if dto == "pause" {
-				fmt.Println("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx2")
-
 				fmt.Printf("Received DTOPause: %+v\n", dto)
 				if scs.paused {
 					select {
@@ -236,20 +239,14 @@ func (s *TCPServer) handleFromClient(ctx context.Context, conn net.Conn, scs *Se
 						fmt.Println("Resuming event processing...")
 					}
 				}
-				fmt.Println("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx2e")
 
 			} else if dto == "resume" {
-				fmt.Println("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx3")
-
 				scs.paused = false
 				resumeChan <- struct{}{}
-				fmt.Println("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx3e")
 
 			} else {
 				fmt.Println("dcode nill")
 			}
-
-			fmt.Println("yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy")
 
 			// switch v := dto.(type) {
 			// case *DTOPause:
@@ -279,5 +276,8 @@ func (s *TCPServer) sendClient(encoder *gob.Encoder, zstdWriter *zstd.Encoder, o
 		fmt.Println("Error flushing zstd writer:", err)
 		return err
 	}
+	s.metric.Operations += uint(len(operations))
+
+	s.logger.Debug(fmt.Sprintf("send operations number:'%d' to client success, total %d.", len(operations), s.metric.Operations))
 	return nil
 }

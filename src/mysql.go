@@ -14,12 +14,11 @@ type MysqlClient struct {
 	logger *Logger
 }
 
-func NewMysqlClient(logLevel int, dsn string) *MysqlClient {
+func NewMysqlClient(logLevel int, dsn string) (*MysqlClient, error) {
 	db, err := sql.Open("mysql", dsn)
 
 	if err != nil {
-		fmt.Println(err.Error())
-		// logger.Fatal("Failed to connect to database: ", err)
+		return nil, err
 	}
 
 	db.SetConnMaxLifetime(time.Minute * 1)
@@ -32,12 +31,7 @@ func NewMysqlClient(logLevel int, dsn string) *MysqlClient {
 		logger: NewLogger(logLevel, "mysql-client"),
 	}
 
-	// go func() {
-	// 	<-ctx.Done()
-	// 	myclient.Close()
-	// }()
-
-	return myclient
+	return myclient, nil
 }
 
 func (mc *MysqlClient) Close() error {
@@ -71,13 +65,19 @@ func (mc *MysqlClient) ExecuteOnTable(db string, query string) error {
 	mc.Begin()
 
 	if db != "" {
-		mc.tx.Exec("USE " + db)
+		mc.logger.Debug("USE " + db)
+
+		_, err := mc.tx.Exec("USE " + db)
+
+		if err != nil {
+			return err
+		}
 	}
 
 	_, err := mc.tx.Exec(query)
 
 	if err != nil {
-		fmt.Println(err)
+		return err
 	}
 
 	return mc.Commit()

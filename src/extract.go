@@ -11,17 +11,27 @@ import (
 	"github.com/go-mysql-org/go-mysql/replication"
 	"github.com/pingcap/tidb/pkg/parser"
 	"github.com/pingcap/tidb/pkg/parser/ast"
+
+	_ "github.com/pingcap/tidb/pkg/types/parser_driver"
 )
+
+type BinlogExtractMetric struct {
+	Trx    uint
+	Insert uint
+	Update uint
+	Delete uint
+}
 
 type BinlogExtract struct {
 	logger             *Logger
 	binlogSyncer       *replication.BinlogSyncer
 	binlogSyncerConfig replication.BinlogSyncerConfig
 
-	running bool
+	metric   *BinlogExtractMetric
+	metricCh chan<- interface{}
 }
 
-func NewBinlogExtract(logLevel int, config ReplicationConfig) *BinlogExtract {
+func NewBinlogExtract(logLevel int, config ReplicationConfig, metricCh chan<- interface{}) *BinlogExtract {
 	cfg := replication.BinlogSyncerConfig{
 		ServerID:        uint32(config.ServerID),
 		Flavor:          "mysql",
@@ -37,37 +47,14 @@ func NewBinlogExtract(logLevel int, config ReplicationConfig) *BinlogExtract {
 		logger:             NewLogger(config.LogLevel, "extract"),
 		binlogSyncer:       nil,
 		binlogSyncerConfig: cfg,
+
+		metric:   &BinlogExtractMetric{0, 0, 0, 0},
+		metricCh: metricCh,
 	}
 
 }
 
-// func (ext *BinlogExtract) RestartSync(ctx context.Context, gtid string, ch chan<- MysqlOperation) error {
-// 	if ext.binlogSyncer != nil {
-// 		ext.binlogSyncer.Close()
-// 	}
-
-// 	ext.binlogSyncer = replication.NewBinlogSyncer(ext.binlogSyncerConfig)
-
-// 	gtidSet, err := mysql.ParseGTIDSet("mysql", gtid)
-// 	if err != nil {
-// 		ext.logger.Error("ParseGTIDSet " + err.Error())
-// 		return err
-// 	}
-
-// 	ext.logger.Info("start")
-
-// 	err = ext.start(ctx, gtidSet, ch)
-
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	return nil
-// }
-
 func (repl BinlogExtract) start(ctx context.Context, gtidset string, ch chan<- MysqlOperation) error {
-	repl.running = true
-
 	if repl.binlogSyncer == nil {
 		repl.binlogSyncer = replication.NewBinlogSyncer(repl.binlogSyncerConfig)
 	}
@@ -77,6 +64,8 @@ func (repl BinlogExtract) start(ctx context.Context, gtidset string, ch chan<- M
 		repl.logger.Error("ParseGTIDSet " + err.Error())
 		return err
 	}
+
+	repl.logger.Info("start from gtidset:" + gtidSet.String())
 
 	streamer, err := repl.binlogSyncer.StartSyncGTID(gtidSet)
 
@@ -101,8 +90,6 @@ func (repl BinlogExtract) start(ctx context.Context, gtidset string, ch chan<- M
 			repl.logger.Error("error event " + err.Error())
 			return err
 		}
-
-		repl.logger.Debug("parse mysql event " + ev.Header.EventType.String())
 
 		switch e := ev.Event.(type) {
 		case *replication.RowsEvent:
@@ -131,7 +118,6 @@ func (repl BinlogExtract) start(ctx context.Context, gtidset string, ch chan<- M
 			}
 		case *replication.XIDEvent:
 			ch <- MysqlOperationXid{ev.Header.Timestamp}
-			repl.logger.Debug("MysqlOperationXid -> ch")
 		case *replication.RotateEvent:
 			switch ev.Header.EventType {
 			case replication.ROTATE_EVENT:
@@ -148,6 +134,7 @@ func (repl BinlogExtract) start(ctx context.Context, gtidset string, ch chan<- M
 				repl.logger.Debug("MysqlOperationHeartbeat -> ch")
 			}
 		}
+		repl.metricCh <- repl.metric
 	}
 }
 
@@ -157,12 +144,13 @@ func (repl BinlogExtract) handleEventWriteRows(e *replication.RowsEvent, ch chan
 		for i := 0; i < int(e.Table.ColumnCount); i++ {
 			mod.Columns = append(mod.Columns, MysqlOperationDMLColumn{ColumnName: string(e.Table.ColumnName[i]), ColumnType: e.Table.ColumnType[i], ColumnValue: row[i]})
 		}
+		repl.metric.Insert += 1
 		ch <- mod
 	}
 	return nil
 }
 
-func (repl BinlogExtract) handleEventDeleteRows(e *replication.RowsEvent, ch chan<- MysqlOperation) error {
+func (ext BinlogExtract) handleEventDeleteRows(e *replication.RowsEvent, ch chan<- MysqlOperation) error {
 	for _, row := range e.Rows {
 		mod := MysqlOperationDMLDelete{
 			Database:   string(e.Table.Schema),
@@ -172,7 +160,9 @@ func (repl BinlogExtract) handleEventDeleteRows(e *replication.RowsEvent, ch cha
 		}
 		for i := 0; i < int(e.Table.ColumnCount); i++ {
 			mod.Columns = append(mod.Columns, MysqlOperationDMLColumn{ColumnName: string(e.Table.ColumnName[i]), ColumnType: e.Table.ColumnType[i], ColumnValue: row[i]})
+			ext.metric.Insert += 1
 		}
+		ext.metric.Delete += 1
 		ch <- mod
 	}
 	return nil
@@ -195,6 +185,7 @@ func (ext BinlogExtract) handleEventUpdateRows(e *replication.RowsEvent, ch chan
 			mod.BeforeColumns = append(mod.BeforeColumns, MysqlOperationDMLColumn{ColumnName: string(e.Table.ColumnName[i]), ColumnType: e.Table.ColumnType[i], ColumnValue: before_value[i]})
 			mod.AfterColumns = append(mod.AfterColumns, MysqlOperationDMLColumn{ColumnName: string(e.Table.ColumnName[i]), ColumnType: e.Table.ColumnType[i], ColumnValue: after_value[i]})
 		}
+		ext.metric.Update += 1
 		ch <- mod
 	}
 	return nil
@@ -208,6 +199,7 @@ func (repl BinlogExtract) handleEventGtid(e *replication.GTIDEvent, eh *replicat
 		// fmt.Println("GTID:", gtidNext.String())
 
 		parts := strings.Split(gtidNext.String(), ":")
+		repl.logger.Debug("gtid " + gtidNext.String())
 		if len(parts) == 2 {
 			xid, err := strconv.ParseInt(parts[1], 10, 64)
 			if err != nil {
@@ -215,6 +207,7 @@ func (repl BinlogExtract) handleEventGtid(e *replication.GTIDEvent, eh *replicat
 				return err
 			} else {
 				ch <- MysqlOperationGTID{e.LastCommitted, eh.ServerID, eh.Timestamp, parts[0], xid}
+				repl.metric.Trx += 1
 				return nil
 			}
 		}

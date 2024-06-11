@@ -1,6 +1,6 @@
 name: abcbcvb
 replication:
-  name: ""
+  name: "xxxx"
   tcpaddr: "0.0.0.0:9998"
   serverid: 9999
   host: "db1"

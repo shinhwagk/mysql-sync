@@ -75,10 +75,6 @@ func (op MysqlOperationDMLUpdate) OperationType() string {
 	return "MysqlOperationDMLUpdate"
 }
 
-type OperationDML interface {
-	GenerateSQL() (string, []interface{})
-}
-
 func GenerateConditionAndValues(primaryKeys []uint64, columns []MysqlOperationDMLColumn) (string, []interface{}) {
 	var placeholder string
 	var primary_values []interface{}
@@ -105,51 +101,6 @@ func GenerateConditionAndValues(primaryKeys []uint64, columns []MysqlOperationDM
 	}
 	return placeholder, primary_values
 
-}
-
-func (op *MysqlOperationDMLInsert) GenerateSQL() (string, []interface{}) {
-	var keys []string
-	var params []interface{}
-	var placeholders []string
-
-	for _, col := range op.Columns {
-		keys = append(keys, col.ColumnName)
-		params = append(params, col.ColumnValue)
-		placeholders = append(placeholders, "?")
-	}
-
-	sql := fmt.Sprintf("REPLACE INTO `%s`.`%s` (%s) VALUES (%s)", op.Database, op.Table, strings.Join(keys, ", "), strings.Join(placeholders, ", "))
-
-	return sql, params
-}
-
-func (op *MysqlOperationDMLDelete) GenerateSQL() (string, []interface{}) {
-	wherePlaceholder, whereParams := GenerateConditionAndValues(op.PrimaryKey, op.Columns)
-
-	sql := fmt.Sprintf("DELETE FROM `%s`.`%s` WHERE %s", op.Database, op.Table, wherePlaceholder)
-
-	return sql, whereParams
-}
-
-func (op *MysqlOperationDMLUpdate) GenerateSQL() (string, []interface{}) {
-	params := []interface{}{}
-
-	wherePlaceholder, whereParams := GenerateConditionAndValues(op.PrimaryKey, op.BeforeColumns)
-
-	setPlaceholder := make([]string, len(op.AfterColumns))
-
-	for i, c := range op.AfterColumns {
-		setPlaceholder[i] = fmt.Sprintf("`%s` = ?", c.ColumnName)
-		params = append(params, c.ColumnValue)
-	}
-
-	for _, param := range whereParams {
-		params = append(params, param)
-	}
-
-	sql := fmt.Sprintf("UPDATE `%s`.`%s` SET %s WHERE %s", op.Database, op.Table, strings.Join(setPlaceholder, ", "), wherePlaceholder)
-
-	return sql, params
 }
 
 type MysqlOperationXid struct {

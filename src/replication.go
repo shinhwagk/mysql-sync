@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sync"
-
-	_ "github.com/pingcap/tidb/pkg/types/parser_driver"
 )
 
 func main() {
@@ -16,24 +14,33 @@ func main() {
 		logger.Error(fmt.Sprintf("Failed to load config: %v", err))
 	}
 
-	// hjdb := NewHJDB(config.HJDB.LogLevel, config.HJDB.Addr, config.Name)
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	replication, err := NewReplication(config.Name, config.Replication, config.HJDB)
+	// hjdb := NewHJDB(config.HJDB.LogLevel, config.HJDB.Addr, config.Name)
+
+	// metricDirector = NewMetricDirector(config.Replication.LogLevel, hjdb)
+
+	metricCh := make(chan interface{}, 100)
+
+	go func() {
+		for range metricCh {
+
+		}
+	}()
+
+	replication, err := NewReplication(config.Name, config.Replication, metricCh, config.HJDB)
 	if err != nil {
-		fmt.Println(err.Error())
+		logger.Error(fmt.Sprintf("Failed to NewReplication: %v", err))
 	}
 
 	replication.start(ctx, cancel)
-
 }
 
-func NewReplication(name string, rc ReplicationConfig, hc HJDBConfig) (*Replication, error) {
+func NewReplication(name string, rc ReplicationConfig, metricCh chan<- interface{}, hc HJDBConfig) (*Replication, error) {
 	return &Replication{
-		tcpServer:     NewTCPServer(rc.LogLevel, rc.TCPAddr),
-		binlogExtract: NewBinlogExtract(rc.LogLevel, rc),
+		tcpServer:     NewTCPServer(rc.LogLevel, rc.TCPAddr, metricCh),
+		binlogExtract: NewBinlogExtract(rc.LogLevel, rc, metricCh),
 		logger:        NewLogger(rc.LogLevel, "replication"),
 	}, nil
 }

@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"strings"
+	"sync"
 )
 
 func main() {
@@ -15,96 +15,99 @@ func main() {
 		logger.Error(fmt.Sprintf("Failed to LoadConfig: %v", err))
 	}
 
-	fmt.Println(config)
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	destination, err := NewDestination(config.Name, config.Destination, config.HJDB)
-	if err != nil {
-		logger.Error(fmt.Sprintf("Failed to NewDestination: %v", err))
+	destination := NewDestination(config.Name, config.Destination, config.HJDB)
+	if err := destination.Start(ctx, cancel); err != nil {
+		logger.Error("main error: " + err.Error())
 	}
-
-	destination.Start(ctx, cancel)
 }
 
-type Destination struct {
-	tcpClient      *TCPClient
-	mysqlApply     *MysqlApply
-	metricDirector *MetricDirector
-	hjdb           *HJDB
+func GetGtidSet(hjdb *HJDB) (string, error) {
+	resp, err := hjdb.query("file", "gtidset")
 
-	cancel context.CancelFunc
-
-	logger *Logger
-}
-
-func NewDestination(name string, dc DestinationConfig, hc HJDBConfig) (*Destination, error) {
-	ctx, _ := context.WithCancel(context.Background())
-
-	hjdb := NewHJDB(hc.LogLevel, hc.Addr, hc.DB)
-	dns := fmt.Sprintf("%s:%s@tcp(%s:%d)/?%s", dc.User, dc.Password, dc.Host, dc.Port, dc.Params)
-	mysqlClient := NewMysqlClient(dc.LogLevel, dns)
-
-	tcpClient := NewTCPClient(dc.LogLevel, dc.TCPAddr)
-	metricDirector := NewMetricDirector(dc.LogLevel, hjdb)
-
-	go func() {
-		<-ctx.Done()
-		mysqlClient.Close()
-		tcpClient.Close()
-	}()
-
-	return &Destination{
-		tcpClient:      tcpClient,
-		mysqlApply:     NewMysqlApply(dc.LogLevel, mysqlClient, hjdb),
-		metricDirector: metricDirector,
-		hjdb:           hjdb,
-		logger:         NewLogger(dc.LogLevel, "destination"),
-	}, nil
-}
-
-func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) {
-	gtidset, err := dest.getGtidSet()
-	if err != nil {
-		dest.logger.Error("gtidset parse " + err.Error())
-		return
-	}
-
-	moCh := make(chan MysqlOperation, 100)
-
-	fmt.Println(gtidset)
-	go func() {
-		// for oper := range moCh {
-		// 	fmt.Println(oper)
-		// }
-		dest.mysqlApply.start(moCh)
-		cancel()
-	}()
-
-	dest.tcpClient.Start(ctx, moCh, gtidset)
-	dest.logger.Info("stopped")
-}
-
-func (dest Destination) getGtidSet() (string, error) {
-	resp, err := dest.hjdb.query("gtidset")
 	if err != nil {
 		return "", err
 	}
 
-	fmt.Println(resp.Data, reflect.TypeOf(resp.Data))
-	if keyValueMap, ok := (resp.Data).(map[string]interface{}); ok {
-		fmt.Println("Converted successfully:", keyValueMap)
+	if resp.Data == nil {
+		return "", nil
+	}
 
+	if keyValueMap, ok := (*resp.Data).(map[string]interface{}); ok {
 		var pairs []string
-
 		for key, value := range keyValueMap {
-			pairs = append(pairs, fmt.Sprintf("%s:%s", key, value))
+			if floatValue, ok := value.(float64); ok {
+				intValue := int(floatValue)
+				pair := fmt.Sprintf("%s:1-%d", key, intValue)
+				pairs = append(pairs, pair)
+			}
 		}
-
 		return strings.Join(pairs, ","), nil
 	} else {
-		return "", fmt.Errorf("unexpected type for Data field: %T", resp.Data)
-
+		return "", fmt.Errorf("unexpected type for Data field: %T", *resp.Data)
 	}
+}
+
+func NewDestination(name string, dc DestinationConfig, hc HJDBConfig) *Destination {
+	return &Destination{
+		name:   name,
+		dc:     dc,
+		hc:     hc,
+		logger: NewLogger(dc.LogLevel, "destination"),
+	}
+}
+
+type Destination struct {
+	name   string
+	dc     DestinationConfig
+	hc     HJDBConfig
+	logger *Logger
+}
+
+func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) error {
+	metricCh := make(chan MetricUnit)
+	moCh := make(chan MysqlOperation, 100)
+
+	dns := fmt.Sprintf("%s:%s@tcp(%s:%d)/?%s", dest.dc.User, dest.dc.Password, dest.dc.Host, dest.dc.Port, dest.dc.Params)
+
+	hjdb := NewHJDB(dest.hc.LogLevel, dest.hc.Addr, dest.name)
+	metricDirector := NewMetricDirector(dest.dc.LogLevel, hjdb, "metrics_destination")
+	tcpClient := NewTCPClient(dest.dc.LogLevel, dest.dc.TCPAddr, metricCh)
+	mysqlClient, err := NewMysqlClient(dest.dc.LogLevel, dns)
+	if err != nil {
+		dest.logger.Error("NewMysqlClient error: " + err.Error())
+		cancel()
+	}
+	mysqlApplier := NewMysqlApplier(dest.dc.LogLevel, hjdb, mysqlClient, metricCh)
+
+	if gtidset, err := GetGtidSet(hjdb); err != nil {
+		return err
+	} else {
+		dest.logger.Info("Destination start from gtidset '" + gtidset + "'")
+
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			mysqlApplier.start(ctx, moCh)
+			cancel()
+		}()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			metricDirector.Start(ctx, metricCh)
+			cancel()
+		}()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			tcpClient.Start(ctx, moCh, gtidset)
+			cancel()
+		}()
+		wg.Wait()
+		dest.logger.Info("stopped")
+	}
+	return nil
 }
