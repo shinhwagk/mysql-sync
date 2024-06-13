@@ -10,7 +10,7 @@ import (
 func main() {
 	logger := NewLogger(1, "main")
 
-	config, err := LoadConfig("/workspaces/mysqlbinlog-sync/src/config.yml")
+	config, err := LoadConfig("/etc/mysqlsync/config.yml")
 	if err != nil {
 		logger.Error(fmt.Sprintf("Failed to LoadConfig: %v", err))
 	}
@@ -55,7 +55,7 @@ func NewDestination(name string, dc DestinationConfig, hc HJDBConfig) *Destinati
 		name:   name,
 		dc:     dc,
 		hc:     hc,
-		logger: NewLogger(dc.LogLevel, "destination"),
+		Logger: NewLogger(dc.LogLevel, "destination"),
 	}
 }
 
@@ -63,21 +63,21 @@ type Destination struct {
 	name   string
 	dc     DestinationConfig
 	hc     HJDBConfig
-	logger *Logger
+	Logger *Logger
 }
 
 func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) error {
 	metricCh := make(chan MetricUnit)
-	moCh := make(chan MysqlOperation, 100)
+	moCh := make(chan MysqlOperation, 1000)
 
 	dns := fmt.Sprintf("%s:%s@tcp(%s:%d)/?%s", dest.dc.User, dest.dc.Password, dest.dc.Host, dest.dc.Port, dest.dc.Params)
 
 	hjdb := NewHJDB(dest.hc.LogLevel, dest.hc.Addr, dest.name)
-	metricDirector := NewMetricDirector(dest.dc.LogLevel, hjdb, "metrics_destination")
+	metricDirector := NewMetricDirector(dest.dc.LogLevel, hjdb, "destination", metricCh)
 	tcpClient := NewTCPClient(dest.dc.LogLevel, dest.dc.TCPAddr, metricCh)
 	mysqlClient, err := NewMysqlClient(dest.dc.LogLevel, dns)
 	if err != nil {
-		dest.logger.Error("NewMysqlClient error: " + err.Error())
+		dest.Logger.Error("NewMysqlClient error: " + err.Error())
 		cancel()
 	}
 	mysqlApplier := NewMysqlApplier(dest.dc.LogLevel, hjdb, mysqlClient, metricCh)
@@ -85,29 +85,44 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) e
 	if gtidset, err := GetGtidSet(hjdb); err != nil {
 		return err
 	} else {
-		dest.logger.Info("Destination start from gtidset '" + gtidset + "'")
+		dest.Logger.Info("Destination start from gtidset '" + gtidset + "'")
+
+		mdCtx, mdCancel := context.WithCancel(context.Background())
+		defer mdCancel()
+
+		var wg0 sync.WaitGroup
+		wg0.Add(1)
+		go func() {
+			defer wg0.Done()
+			metricDirector.Logger.Info("started.")
+			metricDirector.Start(mdCtx)
+			metricDirector.Logger.Info("stopped.")
+		}()
 
 		var wg sync.WaitGroup
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			mysqlApplier.start(ctx, moCh)
+			mysqlApplier.Logger.Info("started.")
+			mysqlApplier.Start(ctx, moCh)
+			mysqlApplier.Logger.Info("stopped.")
 			cancel()
 		}()
+
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			metricDirector.Start(ctx, metricCh)
-			cancel()
-		}()
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+			tcpClient.Logger.Info("started.")
 			tcpClient.Start(ctx, moCh, gtidset)
+			tcpClient.Logger.Info("stopped.")
 			cancel()
 		}()
 		wg.Wait()
-		dest.logger.Info("stopped")
+
+		mdCancel()
+		wg0.Wait()
+
+		dest.Logger.Info("stopped")
 	}
 	return nil
 }

@@ -9,13 +9,13 @@ import (
 
 func NewMysqlApplier(logLevel int, hjdb *HJDB, mysqlClient *MysqlClient, metricCh chan<- MetricUnit) *MysqlApplier {
 	return &MysqlApplier{
-		logger: NewLogger(logLevel, "mysql applier"),
+		Logger: NewLogger(logLevel, "mysql applier"),
 
 		mysqlClient: mysqlClient,
 		hjdb:        hjdb,
 
-		GtidSets:               make(map[string]uint64),
-		LastGtidSets:           make(map[string]uint64),
+		GtidSets:               make(map[string]uint),
+		LastGtidSets:           make(map[string]uint),
 		LastServerUUID:         "",
 		LastCommitted:          0,
 		LastOperationTimestamp: 0,
@@ -28,13 +28,13 @@ func NewMysqlApplier(logLevel int, hjdb *HJDB, mysqlClient *MysqlClient, metricC
 }
 
 type MysqlApplier struct {
-	logger      *Logger
+	Logger      *Logger
 	mysqlClient *MysqlClient
 	hjdb        *HJDB
 
 	// state
-	GtidSets               map[string]uint64
-	LastGtidSets           map[string]uint64
+	GtidSets               map[string]uint
+	LastGtidSets           map[string]uint
 	LastServerUUID         string
 	LastCommitted          int64
 	LastOperationTimestamp uint32
@@ -46,87 +46,96 @@ type MysqlApplier struct {
 	// metric *MetricDestination
 }
 
-func (ma *MysqlApplier) start(ctx context.Context, moCh <-chan MysqlOperation) {
-	ma.logger.Info("started.")
-loop:
-	for oper := range moCh {
+func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
+	timer := time.NewTimer(100 * time.Millisecond)
+	defer timer.Stop()
+
+	for {
 		select {
+		case <-timer.C:
+			timer.Reset(100 * time.Millisecond)
 		case <-ctx.Done():
-			break loop
-		default:
+			ma.Logger.Info("ctx done signal received.")
+			if err := ma.mysqlClient.Rollback(); err != nil {
+				ma.mysqlClient.Logger.Info("mysql connect rollback error: " + err.Error())
+			} else {
+				ma.mysqlClient.Logger.Info("mysql connect rollback complate.")
+			}
+			if err := ma.mysqlClient.Close(); err != nil {
+				ma.mysqlClient.Logger.Info("mysql connect close error: " + err.Error())
+			} else {
+				ma.mysqlClient.Logger.Info("mysql connect close complate.")
+			}
+			return
+		case oper, ok := <-moCh:
+			if !ok {
+				ma.Logger.Info("mysql operation channel closed.")
+				return
+			}
+			ma.metricCh <- MetricUnit{Name: MetricApplierOperations, Value: 1}
 			switch op := oper.(type) {
 			case MysqlOperationDDLDatabase:
 				if err := ma.OnDDLDatabase(op); err != nil {
-					ma.logger.Error(fmt.Sprintf("OnDDLDatabase -- %s", err))
-					break loop
-				}
-				ma.metricCh <- MetricUnit{Name: MetricDestDMLInsertTimes}
-			case MysqlOperationDMLInsert:
-				if err := ma.OnDMLInsert(op); err != nil {
-					ma.logger.Error("MysqlOperationDMLInsert " + err.Error())
-					break loop
-				}
-				ma.metricCh <- MetricUnit{Name: MetricDestDMLInsertTimes}
-			case MysqlOperationDMLDelete:
-				ma.logger.Debug("MysqlOperationDMLDelete")
-				if err := ma.OnDMLDelete(op); err != nil {
-					ma.logger.Error("MysqlOperationDMLDelete " + err.Error())
-					break loop
-				}
-				ma.metricCh <- MetricUnit{Name: MetricDestDMLDeleteTimes}
-			case MysqlOperationDMLUpdate:
-				ma.logger.Debug("MysqlOperationDMLUpdate")
-				if err := ma.OnDMLUpdate(op); err != nil {
-					ma.logger.Error("MysqlOperationDMLUpdate " + err.Error())
-					break loop
-				}
-				ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdateTimes}
-			case MysqlOperationDDLTable:
-				ma.logger.Debug("MysqlOperationDDLTable")
-				if err := ma.OnDDLTable(op); err != nil {
-					ma.logger.Error("MysqlOperationDDLTable " + err.Error())
-					break loop
-				}
-				// ma.metric.DDLTableTimes += 1
-			case MysqlOperationXid:
-				ma.logger.Debug("MysqlOperationXid")
-				if err := ma.OnXID(op); err != nil {
-					ma.logger.Error("MysqlOperationXid " + err.Error())
+					ma.Logger.Error(fmt.Sprintf("OnDDLDatabase -- %s", err))
 					return
 				}
-				ma.metricCh <- MetricUnit{Name: MetricDestTrx}
+				ma.metricCh <- MetricUnit{Name: MetricDestDMLInsertTimes, Value: 1}
+			case MysqlOperationDMLInsert:
+				if err := ma.OnDMLInsert(op); err != nil {
+					ma.Logger.Error("MysqlOperationDMLInsert " + err.Error())
+					return
+				}
+				ma.metricCh <- MetricUnit{Name: MetricDestDMLInsertTimes, Value: 1}
+			case MysqlOperationDMLDelete:
+				if err := ma.OnDMLDelete(op); err != nil {
+					ma.Logger.Error("MysqlOperationDMLDelete " + err.Error())
+					return
+				}
+				ma.metricCh <- MetricUnit{Name: MetricDestDMLDeleteTimes, Value: 1}
+			case MysqlOperationDMLUpdate:
+				if err := ma.OnDMLUpdate(op); err != nil {
+					ma.Logger.Error("MysqlOperationDMLUpdate " + err.Error())
+					return
+				}
+				ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdateTimes, Value: 1}
+			case MysqlOperationDDLTable:
+				if err := ma.OnDDLTable(op); err != nil {
+					ma.Logger.Error("MysqlOperationDDLTable " + err.Error())
+					return
+				}
+			case MysqlOperationXid:
+				if err := ma.OnXID(op); err != nil {
+					ma.Logger.Error("MysqlOperationXid " + err.Error())
+					return
+				}
+				ma.metricCh <- MetricUnit{Name: MetricDestTrx, Value: 1}
 			case MysqlOperationGTID:
-				ma.logger.Debug("MysqlOperationGTID")
 				if err := ma.OnGTID(op); err != nil {
-					ma.logger.Error("MysqlOperationGTID " + err.Error())
-					break loop
+					ma.Logger.Error("MysqlOperationGTID " + err.Error())
+					return
 				}
 			case MysqlOperationHeartbeat:
-				ma.logger.Debug("MysqlOperationHeartbeat")
 				if err := ma.OnHeartbeat(op); err != nil {
-					ma.logger.Error("MysqlOperationHeartbeat " + err.Error())
-					break loop
+					ma.Logger.Error("MysqlOperationHeartbeat " + err.Error())
+					return
 				}
 			case MysqlOperationBegin:
-				ma.logger.Debug("MysqlOperationBegin")
 				if err := ma.OnBegin(op); err != nil {
-					ma.logger.Error("MysqlOperationBegin " + err.Error())
-					break loop
+					ma.Logger.Error("MysqlOperationBegin " + err.Error())
+					return
 				}
 			default:
 				fmt.Println("xxxx")
 			}
-
-			// metricCh <- ma.metric
+			timer.Reset(100 * time.Millisecond)
 		}
-		ma.logger.Info("stopped.")
 	}
 }
 
 func (ma *MysqlApplier) OnDMLInsert(op MysqlOperationDMLInsert) error {
 	sql, params := BuildDMLInsertQuery(op.Database, op.Table, op.Columns)
 
-	ma.logger.Debug(fmt.Sprintf("OnDMLInsert -- query: '%s' params: '%s'", sql, params))
+	// ma.logger.Debug(fmt.Sprintf("OnDMLInsert -- query: '%s' params: '%s'", sql, params))
 
 	if err := ma.mysqlClient.ExecuteDML(sql, params); err != nil {
 		return err
@@ -137,7 +146,7 @@ func (ma *MysqlApplier) OnDMLInsert(op MysqlOperationDMLInsert) error {
 func (ma *MysqlApplier) OnDMLDelete(op MysqlOperationDMLDelete) error {
 	sql, params := BuildDMLDeleteQuery(op.Database, op.Table, op.Columns, op.PrimaryKey)
 
-	ma.logger.Debug(fmt.Sprintf("OnDMLDelete -- query: '%s' params: '%s'", sql, params))
+	// ma.logger.Debug(fmt.Sprintf("OnDMLDelete -- query: '%s' params: '%s'", sql, params))
 
 	if err := ma.mysqlClient.ExecuteDML(sql, params); err != nil {
 		return err
@@ -147,14 +156,14 @@ func (ma *MysqlApplier) OnDMLDelete(op MysqlOperationDMLDelete) error {
 }
 
 func (ma *MysqlApplier) OnDMLUpdate(op MysqlOperationDMLUpdate) error {
-	sql, params := BuildDMLDeleteQuery(op.Database, op.Table, op.AfterColumns, op.PrimaryKey)
-	ma.logger.Debug(fmt.Sprintf("OnDMLUpdate -- query: '%s' params: '%s'", sql, params))
+	sql, params := BuildDMLDeleteQuery(op.Database, op.Table, op.BeforeColumns, op.PrimaryKey)
+	ma.Logger.Debug(fmt.Sprintf("OnDMLUpdate -- query: '%s' params: '%s'", sql, params))
 	if err := ma.mysqlClient.ExecuteDML(sql, params); err != nil {
 		return err
 	}
 
-	sql, params = BuildDMLInsertQuery(op.Database, op.Table, op.BeforeColumns)
-	ma.logger.Debug(fmt.Sprintf("OnDMLUpdate -- query: '%s' params: '%s'", sql, params))
+	sql, params = BuildDMLInsertQuery(op.Database, op.Table, op.AfterColumns)
+	ma.Logger.Debug(fmt.Sprintf("OnDMLUpdate -- query: '%s' params: '%s'", sql, params))
 	if err := ma.mysqlClient.ExecuteDML(sql, params); err != nil {
 		return err
 	}
@@ -163,7 +172,7 @@ func (ma *MysqlApplier) OnDMLUpdate(op MysqlOperationDMLUpdate) error {
 }
 
 func (ma *MysqlApplier) OnDDLDatabase(op MysqlOperationDDLDatabase) error {
-	ma.logger.Debug(fmt.Sprintf("OnDDLDatabase -- query: '%s'", op.Query))
+	ma.Logger.Debug(fmt.Sprintf("OnDDLDatabase -- query: '%s'", op.Query))
 
 	ma.LastOperationTimestamp = op.Timestamp
 
@@ -175,12 +184,12 @@ func (ma *MysqlApplier) OnDDLDatabase(op MysqlOperationDDLDatabase) error {
 }
 
 func (ma *MysqlApplier) OnDDLTable(op MysqlOperationDDLTable) error {
-	ma.logger.Debug(fmt.Sprintf("OnDDLTable -- schema: %s  query: %s", op.Schema, op.Query))
+	ma.Logger.Debug(fmt.Sprintf("OnDDLTable -- schema: %s  query: %s", op.Schema, op.Query))
 
 	ma.LastOperationTimestamp = op.Timestamp
 
 	if err := ma.mysqlClient.ExecuteOnTable(op.Schema, op.Query); err != nil {
-		ma.logger.Error(fmt.Sprintf("OnDDLTable -- %s", err))
+		ma.Logger.Error(fmt.Sprintf("OnDDLTable -- %s", err))
 		return err
 	}
 
@@ -188,8 +197,6 @@ func (ma *MysqlApplier) OnDDLTable(op MysqlOperationDDLTable) error {
 }
 
 func (ma *MysqlApplier) OnXID(op MysqlOperationXid) error {
-	ma.logger.Debug(fmt.Sprintf("OnXID"))
-
 	ma.LastOperationTimestamp = op.Timestamp
 	ma.AllowCommit = true
 
@@ -197,7 +204,7 @@ func (ma *MysqlApplier) OnXID(op MysqlOperationXid) error {
 }
 
 func (ma *MysqlApplier) OnBegin(op MysqlOperationBegin) error {
-	ma.logger.Debug(fmt.Sprintf("OnBegin"))
+	// ma.logger.Debug(fmt.Sprintf("OnBegin"))
 
 	if err := ma.mysqlClient.Begin(); err != nil {
 		return err
@@ -207,13 +214,13 @@ func (ma *MysqlApplier) OnBegin(op MysqlOperationBegin) error {
 }
 
 func (ma *MysqlApplier) OnGTID(op MysqlOperationGTID) error {
-	ma.logger.Debug(fmt.Sprintf("OnGTID -- %s:%d", op.ServerUUID, op.TrxID))
+	ma.Logger.Debug(fmt.Sprintf("OnGTID -- %s:%d", op.ServerUUID, op.TrxID))
 
 	if ma.LastCommitted != op.LastCommitted {
 		ma.MergeCommit()
 		ma.LastCommitted = op.LastCommitted
 	}
-	ma.LastGtidSets[op.ServerUUID] = uint64(op.TrxID)
+	ma.LastGtidSets[op.ServerUUID] = uint(op.TrxID)
 	ma.LastServerUUID = op.ServerUUID
 	return nil
 }
@@ -234,8 +241,8 @@ func (ma *MysqlApplier) MergeCommit() error {
 			return err
 		}
 
-		ma.logger.Debug(fmt.Sprintf("MergeCommit -- %T", ma.LastGtidSets))
-		ma.metricCh <- MetricUnit{Name: MetricDestMergeTrx}
+		ma.Logger.Debug(fmt.Sprintf("MergeCommit -- %T", ma.LastGtidSets))
+		ma.metricCh <- MetricUnit{Name: MetricDestMergeTrx, Value: 1}
 
 		return ma.Checkpoint()
 	}
@@ -244,12 +251,12 @@ func (ma *MysqlApplier) MergeCommit() error {
 }
 
 func (ma *MysqlApplier) Checkpoint() error {
-	ma.logger.Info(fmt.Sprintf("Checkpoint -- %s:%d", ma.LastServerUUID, ma.LastGtidSets[ma.LastServerUUID]))
+	// ma.Logger.Info(fmt.Sprintf("Checkpoint -- %s:%d", ma.LastServerUUID, ma.LastGtidSets[ma.LastServerUUID]))
 
 	ma.metricCh <- MetricUnit{Name: MetricDestDelay, Value: uint(time.Now().Unix() - int64(ma.LastOperationTimestamp))}
 
 	if err := ma.hjdb.Update("file", "gtidset", ma.LastGtidSets); err != nil {
-		ma.logger.Error(fmt.Sprintf("Checkpoint -- %s", err))
+		ma.Logger.Error(fmt.Sprintf("Checkpoint -- %s", err))
 		return err
 	}
 

@@ -1,4 +1,5 @@
 name: abcbcvb
+loglevel: 1
 replication:
   name: "xxxx"
   tcpaddr: "0.0.0.0:9998"
@@ -7,7 +8,6 @@ replication:
   port: 3306
   user: "root"
   password: "root_password"
-  gtid: "d185500e-225e-11ef-8161-0242ac140006:1"
   loglevel: 1
 destination:
   name: "dest1-mysql"
@@ -17,8 +17,12 @@ destination:
   user: "root"
   password: "root_password"
   params: "autocommit=false"
-  loglevel: 1
+  gtidset: "d185500e-225e-11ef-8161-0242ac140006:1"
+  loglevel: 0
 hjdb: 
   addr: 192.168.200.146:8000
   db: test
   loglevel: 1
+prometheus:
+  name: xx
+  

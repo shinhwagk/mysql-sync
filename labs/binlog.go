@@ -22,6 +22,7 @@ func main() {
 		Password: "root_passowrd",
 	}
 	syncer := replication.NewBinlogSyncer(cfg)
+	fmt.Println("xxxxx")
 
 	// Start sync with specified binlog file and position
 	gtidSet, err := mysql.ParseGTIDSet("mysql", "d185500e-225e-11ef-8161-0242ac140006:1-172")
@@ -33,8 +34,15 @@ func main() {
 	streamer, _ := syncer.StartSyncGTID(gtidSet)
 
 	for {
-		ev, _ := streamer.GetEvent(context.Background())
+		fmt.Println("xxxxx1")
+
+		ev, err := streamer.GetEvent(context.Background())
+		if err != nil {
+			fmt.Println(err.Error())
+		}
+
 		// Dump event
 		ev.Dump(os.Stdout)
+		// time.Sleep(time.Second * 60)
 	}
 }

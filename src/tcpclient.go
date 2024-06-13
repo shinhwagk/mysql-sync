@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/gob"
 	"fmt"
+	"io"
 	"net"
+	"sync"
+	"time"
 
 	"github.com/klauspost/compress/zstd"
 )
@@ -30,9 +33,9 @@ type TCPClient struct {
 	Name string
 
 	ServerAddress string
-	logger        *Logger
+	Logger        *Logger
 
-	metric   *MetricTCPClient
+	// metric   *MetricTCPClient
 	metricCh chan<- MetricUnit
 	// decoder *gob.Decoder
 	// encoder *gob.Encoder
@@ -40,97 +43,226 @@ type TCPClient struct {
 
 func NewTCPClient(logLevel int, serverAddress string, metricCh chan<- MetricUnit) *TCPClient {
 	return &TCPClient{
-		logger:        NewLogger(logLevel, "tcp client"),
+		Logger:        NewLogger(logLevel, "tcp client"),
 		ServerAddress: serverAddress,
 
-		metric:   &MetricTCPClient{0, 0},
 		metricCh: metricCh,
 	}
 }
 
-func (c *TCPClient) handleConnection(ctx context.Context, conn net.Conn) {
-}
-
-func (c *TCPClient) Close() {
+func (tc *TCPClient) Close() {
 
 }
 
-func (c *TCPClient) sendServer(encoder *gob.Encoder, dto string) error {
-	if err := encoder.Encode(&dto); err != nil {
-		fmt.Println("Error encoding DTO1:", err)
+func (tc *TCPClient) sendServer(encoder *gob.Encoder, controlSignal string) error {
+	if err := encoder.Encode(&controlSignal); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (c *TCPClient) Start(ctx context.Context, ch chan<- MysqlOperation, gtidset string) {
-	c.logger.Info("start " + c.ServerAddress)
-	conn, err := net.Dial("tcp", c.ServerAddress)
+func (tc *TCPClient) Stop() {
+
+}
+
+func (tc *TCPClient) SendSignalReceive(encoder *gob.Encoder, reciveCount int) error {
+	signal := fmt.Sprintf("receive@%d", reciveCount)
+	fmt.Println(signal)
+	if err := tc.sendServer(encoder, signal); err != nil {
+		tc.Logger.Error(fmt.Sprintf("send control signal '%s' to server error: %s", signal, err.Error()))
+		return err
+	} else {
+		tc.Logger.Debug(fmt.Sprintf("send control signal '%s' to server."))
+	}
+	return nil
+}
+
+func (tc *TCPClient) handleConnection(conn net.Conn, moCh chan<- MysqlOperation, gtidset string) {
+	rcCh := make(chan int)
+	defer close(rcCh)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		rcCh <- cap(moCh)
+		fmt.Println("init moch ", cap(moCh))
+	}()
+
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		tc.handleToServer(ctx, conn, rcCh, gtidset)
+		tc.Logger.Info(fmt.Sprintf("tcp to server(%s) handler close.", conn.RemoteAddr().String()))
+		cancel()
+
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		tc.handleFromServer(ctx, conn, rcCh, moCh)
+		tc.Logger.Info(fmt.Sprintf("tcp from server(%s) handler close.", conn.RemoteAddr().String()))
+		cancel()
+	}()
+	wg.Wait()
+
+}
+
+func (tc *TCPClient) handleToServer(ctx context.Context, conn net.Conn, rcCh <-chan int, gtidset string) {
+	encoder := gob.NewEncoder(conn)
+
+	if err := tc.sendServer(encoder, fmt.Sprintf("gtidset@%s", gtidset)); err != nil {
+		tc.Logger.Error("sender gtidset faile " + err.Error())
+		return
+	}
+
+	fmt.Println("xxxx", fmt.Sprintf("gtidset@%s", gtidset))
+
+	timer := time.NewTimer(1 * time.Second)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+			timer.Reset(time.Second * 1)
+		case rc, ok := <-rcCh:
+			if !ok {
+				tc.Logger.Info("ReceiveCountCh")
+				return
+			}
+			if err := tc.SendSignalReceive(encoder, rc); err != nil {
+				return
+			}
+			timer.Reset(time.Second * 1)
+		}
+	}
+
+}
+
+func (tc *TCPClient) handleFromServer(ctx context.Context, conn net.Conn, rcCh chan<- int, moCh chan<- MysqlOperation) {
+	zstdReader, err := zstd.NewReader(conn)
 	if err != nil {
-		c.logger.Error("connection error: " + err.Error())
+		tc.Logger.Error("Error creating zstd reader:" + err.Error())
+		return
+	}
+	defer zstdReader.Close()
+	decoder := gob.NewDecoder(zstdReader)
+
+	var count = 0
+
+	var rcCnt = cap(moCh)
+
+	for {
+		var operations []MysqlOperation
+		if err := decoder.Decode(&operations); err != nil {
+			if err == io.ErrUnexpectedEOF {
+				tc.Logger.Info("tcp server close, unexpected eof.")
+			} else if err == io.EOF {
+				tc.Logger.Info("tcp server close, eof.")
+			} else {
+				tc.Logger.Error("Error decoding message:" + err.Error())
+			}
+			return
+		}
+
+		for _, oper := range operations {
+			moCh <- oper
+			count += 1
+			rcCnt -= 1
+
+			tc.metricCh <- MetricUnit{Name: MetricTCPClientOperations, Value: 1}
+		}
+
+		if rcCnt == 0 {
+			rcCnt += 100
+			rcCh <- 100
+			time.Sleep(time.Second * 1)
+		}
+	}
+
+}
+
+func (tc *TCPClient) Start(ctx context.Context, moCh chan<- MysqlOperation, gtidset string) {
+	conn, err := net.Dial("tcp", tc.ServerAddress)
+	if err != nil {
+		tc.Logger.Error("connection error: " + err.Error())
 		return
 	}
 	defer conn.Close()
 
-	zstdReader, err := zstd.NewReader(conn)
-	if err != nil {
-		c.logger.Error("Error creating zstd reader:" + err.Error())
-		return
-	}
-	defer zstdReader.Close()
+	tc.handleConnection(conn, moCh, gtidset)
+	// zstdReader, err := zstd.NewReader(conn)
+	// if err != nil {
+	// 	tc.Logger.Error("Error creating zstd reader:" + err.Error())
+	// 	return
+	// }
+	// defer zstdReader.Close()
 
-	decoder := gob.NewDecoder(zstdReader)
-	encoder := gob.NewEncoder(conn)
+	// decoder := gob.NewDecoder(zstdReader)
+	// encoder := gob.NewEncoder(conn)
 
-	if err := c.sendServer(encoder, fmt.Sprintf("gtidset@%s", gtidset)); err != nil {
-		c.logger.Error("sender gtidset faile " + err.Error())
-		return
-	}
+	// if err := tc.sendServer(encoder, fmt.Sprintf("gtidset@%s", gtidset)); err != nil {
+	// 	tc.Logger.Error("sender gtidset faile " + err.Error())
+	// 	return
+	// }
 
-	var cacheMysqlOperations []MysqlOperation = []MysqlOperation{}
+	// if err := tc.SendSignalReceive(encoder, cap(moCh)); err != nil {
+	// 	return
+	// }
 
-loop:
-	for {
-		select {
-		case <-ctx.Done():
-			break loop
-		default:
-			var operations []MysqlOperation
-			if err := decoder.Decode(&operations); err != nil {
-				c.logger.Error("Error decoding message:" + err.Error())
-				break loop
-			}
+	// var moChLen = 0
+	// // moChCap := cap(moCh)
+	// receive := cap(moCh)
+	// var count = 0
 
-			c.metric.Operations += uint(len(operations))
-			c.logger.Debug(fmt.Sprintf("receive operations number:'%d' from server success, total %d.", len(operations), c.metric.Operations))
+	// for {
+	// 	select {
+	// 	case <-ctx.Done():
+	// 		tc.Logger.Info("ctx done signal received.")
+	// 		return
+	// 	default:
+	// 		var operations []MysqlOperation
+	// 		if err := decoder.Decode(&operations); err != nil {
+	// 			if err == io.ErrUnexpectedEOF {
+	// 				tc.Logger.Info("tcp server close, unexpected eof.")
+	// 			} else if err == io.EOF {
+	// 				tc.Logger.Info("tcp server close, eof.")
+	// 			} else {
+	// 				tc.Logger.Error("Error decoding message:" + err.Error())
+	// 			}
+	// 			return
+	// 		}
 
-			for _, oper := range operations {
-				select {
-				case ch <- oper:
-				default:
-					c.logger.Info(fmt.Sprintf("Cache MysqlOperation %v", oper))
-					cacheMysqlOperations = append(cacheMysqlOperations, oper)
-				}
-			}
+	// 		tc.Logger.Debug(fmt.Sprintf("receive operations count:'%d' from server.", len(operations)))
 
-			if len(cacheMysqlOperations) >= 1 {
-				c.sendServer(encoder, "pause")
-				c.logger.Info("sender to server 'pause'.")
+	// 		moChLen += len(operations)
 
-				c.logger.Info(fmt.Sprintf("Cache MysqlOperation number: %d", len(cacheMysqlOperations)))
+	// 		count += len(operations)
+	// 		fmt.Println("colunt", count)
 
-				for len(cacheMysqlOperations) > 0 {
-					select {
-					case ch <- cacheMysqlOperations[0]:
-						cacheMysqlOperations = cacheMysqlOperations[1:]
-					}
-				}
-				if len(cacheMysqlOperations) == 0 {
-					c.sendServer(encoder, "resume")
-					c.logger.Info("sender to server 'resume'.")
-				}
-			}
-		}
-	}
-	c.logger.Info("stopped.")
+	// 		for _, oper := range operations {
+	// 			moCh <- oper
+	// 			moChLen -= 1
+	// 			receive -= 1
+	// 			tc.metricCh <- MetricUnit{Name: MetricTCPClientOperations, Value: 1}
+	// 		}
+
+	// 		fmt.Println(fmt.Sprintf("receive operations receive:'%d' from server.", receive))
+	// 		// time.Sleep(time.Second * 1000)
+
+	// 		// if receive == 0 {
+	// 		// 	if moChLen <= moChCap*20/100 {
+	// 		// 		if err := tc.SendSignalReceive(encoder, uint(moChCap-moChLen)); err != nil {
+	// 		// 			return
+	// 		// 		}
+	// 		// 		receive = moChCap - moChLen
+	// 		// 		tc.Logger.Info(fmt.Sprintf("send signal receive '%d'.", uint(moChCap-moChLen)))
+	// 		// 	}
+	// 		// }
+	// 	}
+	// }
 }

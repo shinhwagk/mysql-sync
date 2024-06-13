@@ -11,7 +11,7 @@ import (
 type MysqlClient struct {
 	db     *sql.DB
 	tx     *sql.Tx
-	logger *Logger
+	Logger *Logger
 }
 
 func NewMysqlClient(logLevel int, dsn string) (*MysqlClient, error) {
@@ -28,14 +28,13 @@ func NewMysqlClient(logLevel int, dsn string) (*MysqlClient, error) {
 	myclient := &MysqlClient{
 		db:     db,
 		tx:     nil,
-		logger: NewLogger(logLevel, "mysql-client"),
+		Logger: NewLogger(logLevel, "mysql-client"),
 	}
 
 	return myclient, nil
 }
 
 func (mc *MysqlClient) Close() error {
-	mc.logger.Info("close")
 	return mc.db.Close()
 }
 
@@ -65,7 +64,7 @@ func (mc *MysqlClient) ExecuteOnTable(db string, query string) error {
 	mc.Begin()
 
 	if db != "" {
-		mc.logger.Debug("USE " + db)
+		mc.Logger.Debug("USE " + db)
 
 		_, err := mc.tx.Exec("USE " + db)
 
@@ -91,7 +90,7 @@ func (mc *MysqlClient) ExecuteOnDatabase(query string) error {
 	_, err := mc.tx.Exec(query)
 
 	if err != nil {
-		mc.logger.Error(fmt.Sprintf("query: '%s', error: %s", query, err.Error()))
+		mc.Logger.Error(fmt.Sprintf("query: '%s', error: %s", query, err.Error()))
 		mc.Rollback()
 		return err
 	}

@@ -55,13 +55,13 @@ func (hjdb HJDB) Update(store string, tab string, data interface{}) error {
 	}
 	defer resp.Body.Close()
 
-	responseBody, err := io.ReadAll(resp.Body)
+	_, err = io.ReadAll(resp.Body)
 	if err != nil {
 		hjdb.Logger.Error(fmt.Sprintf("Update -- db: '%s' tab: '%s' err: %s", hjdb.DB, tab, err))
 		return err
 	}
 
-	hjdb.Logger.Debug(fmt.Sprintf("Update -- db: '%s' tab: '%s' %s %s", hjdb.DB, tab, string(jsonData), string(responseBody)))
+	// hjdb.Logger.Debug(fmt.Sprintf("Update -- db: '%s' tab: '%s' %s %s", hjdb.DB, tab, string(jsonData), string(responseBody)))
 
 	return nil
 }
