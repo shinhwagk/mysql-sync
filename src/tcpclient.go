@@ -35,6 +35,14 @@ type TCPClient struct {
 	metricCh      chan<- MetricUnit
 }
 
+type TCPClientConn struct {
+	ctx     context.Context
+	conn    net.Conn
+	rcCh    chan int
+	moCh    chan<- MysqlOperation
+	gtidSet string
+}
+
 func NewTCPClient(logLevel int, serverAddress string, metricCh chan<- MetricUnit) *TCPClient {
 	return &TCPClient{
 		Logger:        NewLogger(logLevel, "tcp client"),
@@ -44,21 +52,13 @@ func NewTCPClient(logLevel int, serverAddress string, metricCh chan<- MetricUnit
 	}
 }
 
-func (tc *TCPClient) sendServer(encoder *gob.Encoder, controlSignal string) error {
-	if err := encoder.Encode(&controlSignal); err != nil {
-		return err
-	}
-	return nil
-}
-
 func (tc *TCPClient) SendSignalReceive(encoder *gob.Encoder, reciveCount int) error {
+	tc.Logger.Debug(fmt.Sprintf("Request operations count: %d from tcp server.", reciveCount))
+
 	signal := fmt.Sprintf("receive@%d", reciveCount)
-	fmt.Println(signal)
-	if err := tc.sendServer(encoder, signal); err != nil {
-		tc.Logger.Error(fmt.Sprintf("send control signal '%s' to server error: %s", signal, err.Error()))
+	if err := encoder.Encode(signal); err != nil {
+		tc.Logger.Error(fmt.Sprintf("Request operations count: %d from tcp server, error: %s.", reciveCount, err.Error()))
 		return err
-	} else {
-		tc.Logger.Debug(fmt.Sprintf("send control signal '%s' to server."))
 	}
 	return nil
 }
@@ -67,66 +67,57 @@ func (tc *TCPClient) handleConnection(ctx context.Context, conn net.Conn, moCh c
 	rcCh := make(chan int)
 	defer close(rcCh)
 
-	// ctx, cancel := context.WithCancel(context.Background())
-	// defer cancel()
-
-	go func() {
-		rcCh <- cap(moCh)
-		fmt.Println("init moch ", cap(moCh))
-	}()
+	_ctx, _cancel := context.WithCancel(context.Background())
+	defer _cancel()
 
 	var wg sync.WaitGroup
 
+	tcc := &TCPClientConn{_ctx, conn, rcCh, moCh, gtidset}
+
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		tc.handleToServer(ctx, conn, rcCh, gtidset)
-		tc.Logger.Info(fmt.Sprintf("tcp to server(%s) handler close.", conn.RemoteAddr().String()))
-		// cancel()
-
+		tc.handleToServer(tcc)
+		tc.Logger.Info(fmt.Sprintf("tcp to server '%s' handler close.", conn.RemoteAddr().String()))
+		_cancel()
 	}()
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		tc.handleFromServer(ctx, conn, rcCh, moCh)
-		tc.Logger.Info(fmt.Sprintf("tcp from server(%s) handler close.", conn.RemoteAddr().String()))
-		// cancel()
-
+		tc.handleFromServer(_ctx, conn, rcCh, moCh)
+		tc.Logger.Info(fmt.Sprintf("tcp from server '%s' handler close.", conn.RemoteAddr().String()))
+		_cancel()
 	}()
 	wg.Wait()
 }
 
-func (tc *TCPClient) handleToServer(ctx context.Context, conn net.Conn, rcCh <-chan int, gtidset string) {
-	encoder := gob.NewEncoder(conn)
+func (tc *TCPClient) handleToServer(tcc *TCPClientConn) {
+	encoder := gob.NewEncoder(tcc.conn)
 
-	if err := tc.sendServer(encoder, fmt.Sprintf("gtidset@%s", gtidset)); err != nil {
-		tc.Logger.Error("sender gtidset faile " + err.Error())
+	if err := encoder.Encode(fmt.Sprintf("gtidset@%s", tcc.gtidSet)); err != nil {
+		tc.Logger.Info(fmt.Sprintf("Requesting operations from server with gtidset '%s' error: %s.", tcc.gtidSet, err.Error()))
 		return
 	}
-
-	fmt.Println("xxxx", fmt.Sprintf("gtidset@%s", gtidset))
+	tc.Logger.Info(fmt.Sprintf("Requesting operations from server with gtidset '%s'.", tcc.gtidSet))
 
 	for {
 		select {
-		case <-ctx.Done():
-			return
 		case <-time.After(time.Second * 1):
-		case rc, ok := <-rcCh:
+		case <-tcc.ctx.Done():
+			return
+		case rc, ok := <-tcc.rcCh:
 			if !ok {
-				tc.Logger.Info("ReceiveCountCh")
 				return
 			}
 			if err := tc.SendSignalReceive(encoder, rc); err != nil {
 				return
 			}
+			tc.metricCh <- MetricUnit{Name: MetricTCPClientRequestOperations, Value: uint(rc)}
 		}
 	}
-
 }
 
 func (tc *TCPClient) handleFromServer(ctx context.Context, conn net.Conn, rcCh chan<- int, moCh chan<- MysqlOperation) {
-	// conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-
 	zstdReader, err := zstd.NewReader(conn)
 	if err != nil {
 		tc.Logger.Error("Error creating zstd reader:" + err.Error())
@@ -135,13 +126,15 @@ func (tc *TCPClient) handleFromServer(ctx context.Context, conn net.Conn, rcCh c
 	defer zstdReader.Close()
 	decoder := gob.NewDecoder(zstdReader)
 
-	var count = 0
+	var maxRcCnt = 1000
+	var rcCnt = maxRcCnt
 
-	var rcCnt = cap(moCh)
+	rcCh <- maxRcCnt
+	tc.Logger.Info(fmt.Sprintf("Frist request operations: %d from tcp server.", maxRcCnt))
 
 	for {
 		select {
-		case <-ctx.Done(): // 检查 context 是否被取消或超时
+		case <-ctx.Done():
 			tc.Logger.Info("Context cancelled, stopping handleFromServer loop.")
 			return
 		default:
@@ -159,16 +152,18 @@ func (tc *TCPClient) handleFromServer(ctx context.Context, conn net.Conn, rcCh c
 
 			for _, oper := range operations {
 				moCh <- oper
-				count += 1
 				rcCnt -= 1
 
-				tc.metricCh <- MetricUnit{Name: MetricTCPClientOperations, Value: 1}
+				tc.metricCh <- MetricUnit{Name: MetricTCPClientReceiveOperations, Value: 1}
 			}
 
 			if rcCnt == 0 {
-				rcCnt += 100
-				rcCh <- 100
+				rcCnt += maxRcCnt
+				rcCh <- maxRcCnt
 				// time.Sleep(time.Second * 1)
+			} else if rcCnt == 200 {
+				rcCnt += 800
+				rcCh <- 800
 			}
 		}
 	}

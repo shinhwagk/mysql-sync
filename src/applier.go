@@ -7,16 +7,16 @@ import (
 	"time"
 )
 
-func NewMysqlApplier(logLevel int, hjdb *HJDB, gtidSets map[string]uint, mysqlClient *MysqlClient, metricCh chan<- MetricUnit) *MysqlApplier {
+func NewMysqlApplier(logLevel int, hjdb *HJDB, gtidSetsMap map[string]uint, mysqlClient *MysqlClient, metricCh chan<- MetricUnit) *MysqlApplier {
 	return &MysqlApplier{
 		Logger: NewLogger(logLevel, "mysql applier"),
 
 		mysqlClient: mysqlClient,
 		hjdb:        hjdb,
 
-		GtidSets:            gtidSets,
-		LastGtidSets:        make(map[string]uint),
-		LastServerUUID:      "",
+		// LastGtidSets:        make(map[string]uint),
+		LastGtidSets:        gtidSetsMap,
+		LastGtidServerUUID:  "",
 		LastCommitted:       0,
 		LastCommitTimestamp: 0,
 		AllowCommit:         false,
@@ -33,9 +33,9 @@ type MysqlApplier struct {
 	hjdb        *HJDB
 
 	// state
-	GtidSets            map[string]uint
+	GtidSetMap          map[string]uint
 	LastGtidSets        map[string]uint
-	LastServerUUID      string
+	LastGtidServerUUID  string
 	LastCommitted       int64
 	LastCommitTimestamp uint32
 	AllowCommit         bool
@@ -172,9 +172,7 @@ func (ma *MysqlApplier) OnDDLDatabase(op MysqlOperationDDLDatabase) error {
 		return err
 	}
 
-	if err := ma.Checkpoint(op.Timestamp); err != nil {
-		return err
-	}
+	ma.Checkpoint(op.Timestamp)
 
 	ma.metricCh <- MetricUnit{Name: MetricDestDDLDatabaseTimes, Value: 1}
 	return nil
@@ -184,13 +182,12 @@ func (ma *MysqlApplier) OnDDLTable(op MysqlOperationDDLTable) error {
 	ma.Logger.Debug(fmt.Sprintf("OnDDLTable -- schema: %s  query: %s", op.Schema, op.Query))
 
 	if err := ma.mysqlClient.ExecuteOnTable(op.Schema, op.Query); err != nil {
-		ma.Logger.Error(fmt.Sprintf("Gtid: '%s:%d'", ma.LastServerUUID, ma.LastGtidSets[ma.LastServerUUID]))
-		ma.Logger.Error(fmt.Sprintf("OnDDLTable -- gtid: '%s:%d' %s", ma.LastServerUUID, ma.LastGtidSets[ma.LastServerUUID], err))
+		ma.Logger.Error(fmt.Sprintf("Gtid: '%s:%d'", ma.LastGtidServerUUID, ma.LastGtidSets[ma.LastGtidServerUUID]))
+		ma.Logger.Error(fmt.Sprintf("OnDDLTable -- gtid: '%s:%d' %s", ma.LastGtidServerUUID, ma.LastGtidSets[ma.LastGtidServerUUID], err))
 		return err
 	}
-	if err := ma.Checkpoint(op.Timestamp); err != nil {
-		return err
-	}
+
+	ma.Checkpoint(op.Timestamp)
 
 	ma.metricCh <- MetricUnit{Name: MetricDestDDLTableTimes, Value: 1}
 	return nil
@@ -225,7 +222,7 @@ func (ma *MysqlApplier) OnGTID(op MysqlOperationGTID) error {
 	// lastTrxID := ma.LastGtidSets[op.ServerUUID]
 
 	ma.LastGtidSets[op.ServerUUID] = uint(op.TrxID)
-	ma.LastServerUUID = op.ServerUUID
+	ma.LastGtidServerUUID = op.ServerUUID
 
 	return nil
 }
@@ -243,11 +240,8 @@ func (ma *MysqlApplier) TryMergeCommit() error {
 			return err
 		}
 
-		if err := ma.Checkpoint(ma.LastCommitTimestamp); err != nil {
-			return err
-		}
+		ma.Checkpoint(ma.LastCommitTimestamp)
 
-		ma.Logger.Debug(fmt.Sprintf("TryMergeCommit -- %T", ma.LastGtidSets))
 		ma.metricCh <- MetricUnit{Name: MetricDestMergeTrx, Value: 1}
 		ma.AllowCommit = false
 	}
@@ -256,7 +250,7 @@ func (ma *MysqlApplier) TryMergeCommit() error {
 }
 
 func (ma *MysqlApplier) Checkpoint(timestamp uint32) error {
-	// ma.Logger.Info(fmt.Sprintf("Checkpoint -- %s:%d", ma.LastServerUUID, ma.LastGtidSets[ma.LastServerUUID]))
+	ma.Logger.Debug(fmt.Sprintf("Checkpoint -- %s:%d", ma.LastGtidServerUUID, ma.LastGtidSets[ma.LastGtidServerUUID]))
 
 	ma.metricCh <- MetricUnit{Name: MetricDestDelay, Value: uint(time.Now().Unix() - int64(timestamp))}
 

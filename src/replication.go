@@ -79,7 +79,6 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) e
 				for {
 					select {
 					case <-moCh:
-						fmt.Println("xxxxxxx")
 					default:
 						return
 					}

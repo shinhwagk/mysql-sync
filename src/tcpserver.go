@@ -84,12 +84,9 @@ func (s *TCPServer) Start(ctx context.Context) error {
 					s.Logger.Info("mysql operation channal close.")
 					return
 				}
-				fmt.Println("sdfsdfsd")
-
 				s.Clients.Range(func(key, value interface{}) bool {
 					client := value.(*TcpServerClient)
 					client.channel <- mo
-					fmt.Println("sdfsdfsd")
 					return true
 				})
 			case <-time.After(time.Second * 1):
@@ -174,12 +171,7 @@ func (s *TCPServer) handleToClient(ctx context.Context, tsc *TcpServerClient, rc
 
 	var mysqlOperations []MysqlOperation
 
-	var count = 0
-
-	var dida = 0
 	for {
-		fmt.Println("111", dida)
-		dida += 1
 		select {
 		case <-ctx.Done():
 			s.Logger.Info("ctx done signal received.")
@@ -191,7 +183,7 @@ func (s *TCPServer) handleToClient(ctx context.Context, tsc *TcpServerClient, rc
 				s.Logger.Info("ReceiveCountCh")
 				return
 			}
-			var ccount = 0
+
 			for rc >= 1 {
 				rcCnt := rc
 
@@ -201,8 +193,6 @@ func (s *TCPServer) handleToClient(ctx context.Context, tsc *TcpServerClient, rc
 
 				select {
 				case oper, ok := <-tsc.channel:
-					count += 1
-
 					if !ok {
 						s.Logger.Info("mysql operation channel closed.")
 						return
@@ -210,8 +200,6 @@ func (s *TCPServer) handleToClient(ctx context.Context, tsc *TcpServerClient, rc
 
 					mysqlOperations = append(mysqlOperations, oper)
 
-					fmt.Println("rc sendcnt,", rc, rcCnt)
-
 					if len(mysqlOperations) >= rcCnt {
 						sendMO := mysqlOperations[:rcCnt]
 						mysqlOperations = mysqlOperations[rcCnt:]
@@ -221,16 +209,12 @@ func (s *TCPServer) handleToClient(ctx context.Context, tsc *TcpServerClient, rc
 						}
 						rc -= rcCnt
 
-						ccount += rcCnt
-						fmt.Println("ccount ccount", ccount, rc)
 						s.Logger.Debug(fmt.Sprintf("Compressed data sent: %d bytes\n", buf.Len()))
-						s.metricCh <- MetricUnit{Name: MetricTCPServerOperations, Value: uint(len(sendMO))}
+						s.metricCh <- MetricUnit{Name: MetricTCPServerOutgoing, Value: uint(buf.Len())}
+						s.metricCh <- MetricUnit{Name: MetricTCPServerSendOperations, Value: uint(len(sendMO))}
 						buf.Reset()
 					}
-
 				case <-time.After((time.Millisecond * 100)):
-					fmt.Println("rc sendcnt,", rc, rcCnt)
-
 					if len(mysqlOperations) >= rcCnt {
 						sendMO := mysqlOperations[:rcCnt]
 						mysqlOperations = mysqlOperations[rcCnt:]
@@ -240,10 +224,9 @@ func (s *TCPServer) handleToClient(ctx context.Context, tsc *TcpServerClient, rc
 						}
 						rc -= rcCnt
 
-						ccount += rcCnt
-						fmt.Println("ccount ccount", ccount, rc)
 						s.Logger.Debug(fmt.Sprintf("Compressed data sent: %d bytes\n", buf.Len()))
-						s.metricCh <- MetricUnit{Name: MetricTCPServerOperations, Value: uint(len(sendMO))}
+						s.metricCh <- MetricUnit{Name: MetricTCPServerOutgoing, Value: uint(buf.Len())}
+						s.metricCh <- MetricUnit{Name: MetricTCPServerSendOperations, Value: uint(len(sendMO))}
 						buf.Reset()
 					}
 				}
@@ -258,6 +241,7 @@ func (s *TCPServer) handleFromClient(ctx context.Context, tsc *TcpServerClient, 
 	for {
 		select {
 		case <-ctx.Done():
+			s.Logger.Info("ctx done signal received.")
 			return
 		default:
 			var signal string
@@ -280,15 +264,13 @@ func (s *TCPServer) handleFromClient(ctx context.Context, tsc *TcpServerClient, 
 				if len(parts) == 2 {
 					result, err := strconv.Atoi(parts[1])
 					if err != nil {
-						fmt.Println("Error converting string to int:", err)
+						s.Logger.Error(fmt.Sprintf("Converting signal '%s' error: ", signal, err.Error()))
 					} else {
-						fmt.Println("Converted integer1:", result)
 						rcCh <- result
-						fmt.Println("Converted integer:", result)
 					}
 				}
 			} else {
-				fmt.Println("dcode nill")
+				s.Logger.Error(fmt.Sprintf("Unknow signal '%s'.", signal))
 			}
 		}
 	}

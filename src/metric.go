@@ -21,7 +21,7 @@ const (
 	MetricDestMergeTrx
 	MetricExtractOperations
 
-	MetricTCPServerOperations
+	MetricTCPServerSendOperations
 	MetricTCPServerOutgoing
 
 	MetricReplDelay
@@ -32,7 +32,8 @@ const (
 	MetricReplDDLTableTimes
 	MetricReplTrx
 	MetricApplierOperations
-	MetricTCPClientOperations
+	MetricTCPClientReceiveOperations
+	MetricTCPClientRequestOperations
 )
 
 type MetricUnit struct {
@@ -122,8 +123,10 @@ func (md *MetricDirector) Start(ctx context.Context, addr string) {
 				md.inc("ddl_table_times", metric.Value)
 			case MetricDestDelay:
 				md.set("delay", metric.Value)
-			case MetricTCPClientOperations:
-				md.inc("tcp_client_operations", metric.Value)
+			case MetricTCPClientReceiveOperations:
+				md.inc("tcp_client_receive_operations", metric.Value)
+			case MetricTCPClientRequestOperations:
+				md.inc("tcp_client_request_operations", metric.Value)
 			case MetricApplierOperations:
 				md.inc("applier_operations", metric.Value)
 
@@ -135,8 +138,8 @@ func (md *MetricDirector) Start(ctx context.Context, addr string) {
 				md.inc("extract_operations", metric.Value)
 			case MetricTCPServerOutgoing:
 				md.inc("tcp_server_outgoing_bytes", metric.Value)
-			case MetricTCPServerOperations:
-				md.inc("tcp_server_operations", metric.Value)
+			case MetricTCPServerSendOperations:
+				md.inc("tcp_server_send_operations", metric.Value)
 			}
 		}
 	}

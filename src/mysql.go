@@ -35,7 +35,11 @@ func NewMysqlClient(logLevel int, dsn string) (*MysqlClient, error) {
 }
 
 func (mc *MysqlClient) Close() error {
-	return mc.db.Close()
+	err := mc.db.Close()
+	if err != nil {
+		mc.Logger.Error("connection close error: " + err.Error())
+	}
+	return err
 }
 
 func (mc *MysqlClient) Begin() error {

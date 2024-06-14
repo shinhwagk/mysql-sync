@@ -18,11 +18,10 @@ destination:
   password: "root_password"
   params: "autocommit=false"
   gtidset: "d185500e-225e-11ef-8161-0242ac140006:1"
-  loglevel: 0
-hjdb: 
-  addr: 192.168.200.146:8000
-  db: test
   loglevel: 1
+  hjdb: 
+    addr: 192.168.200.146:8000
+    db: test
 prometheus:
   name: xx
   

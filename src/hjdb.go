@@ -66,7 +66,8 @@ func (hjdb HJDB) Update(tab string, data interface{}) {
 }
 
 func (hjdb HJDB) query(tab string) (*HJDBResponseData, error) {
-	resp, err := http.Get(fmt.Sprintf("http://%s/db/%s/tab/%s/store/file", hjdb.Addr, hjdb.DB, tab))
+	url := fmt.Sprintf("http://%s/db/%s/tab/%s/store/file", hjdb.Addr, hjdb.DB, tab)
+	resp, err := http.Get(url)
 	if err != nil {
 		return nil, err
 	}
