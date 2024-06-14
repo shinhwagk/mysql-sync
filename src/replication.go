@@ -17,21 +17,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// hjdb := NewHJDB(config.HJDB.LogLevel, config.HJDB.Addr, config.Name)
-
-	// metricDirector = NewMetricDirector(config.Replication.LogLevel, hjdb)
-
-	metricCh := make(chan interface{})
-	moCh := make(chan MysqlOperation, 1000)
-	gsCh := make(chan string)
-
-	go func() {
-		for range metricCh {
-
-		}
-	}()
-
-	replication, err := NewReplication(config.Name, config.Replication, metricCh, moCh, gsCh, config.HJDB)
+	replication, err := NewReplication(config.Name, config.Replication)
 	if err != nil {
 		logger.Error(fmt.Sprintf("Failed to NewReplication: %v", err))
 	}
@@ -39,77 +25,77 @@ func main() {
 	replication.start(ctx, cancel)
 }
 
-func NewReplication(
-	name string,
-	rc ReplicationConfig,
-	metricCh chan<- interface{},
-	moCh chan MysqlOperation,
-	gtidsetCh chan string,
-	hc HJDBConfig,
-) (*Replication, error) {
+func NewReplication(name string, rc ReplicationConfig) (*Replication, error) {
 	return &Replication{
-		tcpServer:     NewTCPServer(rc.LogLevel, rc.TCPAddr, moCh, gtidsetCh, metricCh),
-		binlogExtract: NewBinlogExtract(rc.LogLevel, rc, moCh, gtidsetCh, metricCh),
-		logger:        NewLogger(rc.LogLevel, "replication"),
-		gtidsetCh:     gtidsetCh,
-		moCh:          moCh,
+		name:   name,
+		rc:     rc,
+		Logger: NewLogger(rc.LogLevel, "replication"),
 	}, nil
 }
 
 type Replication struct {
-	tcpServer     *TCPServer
-	binlogExtract *BinlogExtract
-	metric        *MetricDirector
-
-	gtidsetCh chan string
-	moCh      chan MysqlOperation
-
-	cancel context.CancelFunc
-
-	logger *Logger
+	name   string
+	rc     ReplicationConfig
+	Logger *Logger
 }
 
 func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) error {
 	metricCh := make(chan MetricUnit)
+	moCh := make(chan MysqlOperation, 1000)
+	// gtidset
+	gsCh := make(chan string)
+	defer close(metricCh)
+	defer close(moCh)
+	defer close(gsCh)
+
+	metricDirector := NewMetricDirector(repl.rc.LogLevel, "replication", metricCh)
+	tcpServer := NewTCPServer(repl.rc.LogLevel, repl.rc.TCPAddr, gsCh, moCh, metricCh)
+	binlogExtract := NewBinlogExtract(repl.rc.LogLevel, repl.rc, gsCh, moCh, metricCh)
 
 	var childCtx context.Context
 	var childCancel context.CancelFunc = func() {}
 	var wg sync.WaitGroup
 
 	go func() {
-		if err := repl.tcpServer.Start(ctx); err != nil {
-			repl.logger.Error("tcp server start failed: " + err.Error())
+		if err := tcpServer.Start(ctx); err != nil {
+			repl.Logger.Error("tcp server start failed: " + err.Error())
 			cancel()
 		}
 	}()
 
+	go func() {
+		metricDirector.Logger.Info("started.")
+		metricDirector.Start(ctx, "0.0.0.0:9091")
+		metricDirector.Logger.Info("stopped.")
+	}()
+
 	for {
 		select {
-		case gtidset := <-repl.gtidsetCh:
+		case gtidset := <-gsCh:
 			childCancel()
 			wg.Wait()
 
-			// go func() {
-			// 	for {
-			// 		select {
-			// 		case <-repl.moCh:
-			// 			fmt.Println("xxxxxxx")
-			// 		default:
-			// 			return
-			// 		}
-			// 	}
-			// }()
+			go func() {
+				for {
+					select {
+					case <-moCh:
+						fmt.Println("xxxxxxx")
+					default:
+						return
+					}
+				}
+			}()
 
 			childCtx, childCancel = context.WithCancel(context.Background())
 
 			wg.Add(1)
 			go func(gtid string) {
 				defer wg.Done()
-				if err := repl.binlogExtract.start(childCtx, gtid); err != nil { // 假设 RestartSync 需要 GTID 作为参数
-					repl.logger.Error("failed to restart sync: " + err.Error())
+				if err := binlogExtract.start(childCtx, gtidset); err != nil { // 假设 RestartSync 需要 GTID 作为参数
+					repl.Logger.Error("failed to restart sync: " + err.Error())
 				}
 
-				repl.logger.Info("binlog extract stopped.")
+				repl.Logger.Info("binlog extract stopped.")
 			}(gtidset)
 		case <-ctx.Done():
 			childCancel()

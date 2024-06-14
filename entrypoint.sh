@@ -1,5 +1,22 @@
-#!/usr/bin/env bash
+#!/usr/bin/env sh
 
-git clone --depth=1 https://github.com/shinhwagk/mysql-sync /app >/dev/null 2>&1
+if [[ $1 == "--help" || $1 == "-h" ]]; then
+    echo ""
+    echo "Welcome to 'mysqlsync'"
+    echo "  - configuration file:"
+    echo "     /etc/mysqlsync/config.yml"
+    echo "  - option:"
+    echo "     --replication"
+    echo "     --destination"
+    echo "  - prometheus export:"
+    echo "    :9091/metrics"
+    exit 0
+fi
 
-python -u /app/main.py "$@"
+if [[ $1 == "--replication" ]]; then
+    /app/replication
+fi
+
+if [[ $1 == "--destination" ]]; then
+    /app/replication
+fi

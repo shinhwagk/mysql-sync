@@ -7,7 +7,9 @@ import (
 
 type MysqlOperation interface {
 	OperationType() string
+	GetTimestamp() uint32
 }
+
 type MysqlOperationDDLTable struct {
 	Schema    string
 	Table     string
@@ -19,9 +21,8 @@ func (op MysqlOperationDDLTable) OperationType() string {
 	return "MysqlOperationDDLTable"
 }
 
-func (op MysqlOperationBegin) OperationType() string {
-	return "MysqlOperationBegin"
-
+func (op MysqlOperationDDLTable) GetTimestamp() uint32 {
+	return op.Timestamp
 }
 
 type MysqlOperationDDLDatabase struct {
@@ -32,7 +33,10 @@ type MysqlOperationDDLDatabase struct {
 
 func (op MysqlOperationDDLDatabase) OperationType() string {
 	return "MysqlOperationDDLDatabase"
+}
 
+func (op MysqlOperationDDLDatabase) GetTimestamp() uint32 {
+	return op.Timestamp
 }
 
 type MysqlOperationDMLColumn struct {
@@ -46,10 +50,15 @@ type MysqlOperationDMLInsert struct {
 	Table      string
 	Columns    []MysqlOperationDMLColumn
 	PrimaryKey []uint64
+	Timestamp  uint32
 }
 
 func (op MysqlOperationDMLInsert) OperationType() string {
 	return "MysqlOperationDMLInsert"
+}
+
+func (op MysqlOperationDMLInsert) GetTimestamp() uint32 {
+	return op.Timestamp
 }
 
 type MysqlOperationDMLDelete struct {
@@ -57,10 +66,15 @@ type MysqlOperationDMLDelete struct {
 	Table      string
 	Columns    []MysqlOperationDMLColumn
 	PrimaryKey []uint64
+	Timestamp  uint32
 }
 
 func (op MysqlOperationDMLDelete) OperationType() string {
 	return "MysqlOperationDMLDelete"
+}
+
+func (op MysqlOperationDMLDelete) GetTimestamp() uint32 {
+	return op.Timestamp
 }
 
 type MysqlOperationDMLUpdate struct {
@@ -69,10 +83,15 @@ type MysqlOperationDMLUpdate struct {
 	AfterColumns  []MysqlOperationDMLColumn
 	BeforeColumns []MysqlOperationDMLColumn
 	PrimaryKey    []uint64
+	Timestamp     uint32
 }
 
 func (op MysqlOperationDMLUpdate) OperationType() string {
 	return "MysqlOperationDMLUpdate"
+}
+
+func (op MysqlOperationDMLUpdate) GetTimestamp() uint32 {
+	return op.Timestamp
 }
 
 func GenerateConditionAndValues(primaryKeys []uint64, columns []MysqlOperationDMLColumn) (string, []interface{}) {
@@ -109,6 +128,10 @@ type MysqlOperationXid struct {
 
 func (op MysqlOperationXid) OperationType() string {
 	return "MysqlOperationXid"
+}
+
+func (op MysqlOperationXid) GetTimestamp() uint32 {
+	return op.Timestamp
 
 }
 
@@ -121,13 +144,25 @@ type MysqlOperationGTID struct {
 	// GtidNext      string
 }
 
+func (op MysqlOperationGTID) OperationType() string {
+	return "MysqlOperationGTID"
+}
+
+func (op MysqlOperationGTID) GetTimestamp() uint32 {
+	return op.Timestamp
+}
+
 type MysqlOperationBegin struct {
 	ServerID  uint32
 	Timestamp uint32
 }
 
-func (op MysqlOperationGTID) OperationType() string {
-	return "MysqlOperationGTID"
+func (op MysqlOperationBegin) OperationType() string {
+	return "MysqlOperationBegin"
+}
+
+func (op MysqlOperationBegin) GetTimestamp() uint32 {
+	return op.Timestamp
 }
 
 type MysqlOperationHeartbeat struct {
@@ -136,4 +171,8 @@ type MysqlOperationHeartbeat struct {
 
 func (op MysqlOperationHeartbeat) OperationType() string {
 	return "MysqlOperationHeartbeat"
+}
+
+func (op MysqlOperationHeartbeat) GetTimestamp() uint32 {
+	return op.Timestamp
 }

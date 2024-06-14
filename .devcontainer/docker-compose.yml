@@ -30,7 +30,7 @@ services:
       - --binlog-format=ROW
       - --binlog-row-image=FULL
       - --max-connections=3000
-      - --innodb-flush-log-at-trx-commit=0
+      - --innodb-flush-log-at-trx-commit=1
       - --sync-binlog=0
       - --binlog-row-metadata=FULL
       # - --binlog-order-commits
@@ -49,8 +49,8 @@ services:
       - --binlog-format=ROW
       - --binlog-row-image=FULL
       - --max-connections=3000
-      - --innodb-flush-log-at-trx-commit=0
-      - --sync-binlog=0
+      - --innodb-flush-log-at-trx-commit=1
+      - --sync-binlog=1
   dtle-consul:
     image: consul:1.15.4
     ports:

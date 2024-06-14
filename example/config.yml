@@ -1,0 +1,28 @@
+name: abcbcvb
+loglevel: 1
+replication:
+  name: "xxxx"
+  tcpaddr: "0.0.0.0:9998"
+  serverid: 9999
+  host: "db1"
+  port: 3306
+  user: "root"
+  password: "root_password"
+  loglevel: 1
+destination:
+  name: "dest1-mysql"
+  tcpaddr: "mysqlsync-replication:9998"
+  host: "db2"
+  port: 3306
+  user: "root"
+  password: "root_password"
+  params: "autocommit=false"
+  gtidset: "d185500e-225e-11ef-8161-0242ac140006:1"
+  loglevel: 0
+hjdb: 
+  addr: hjdb:8000
+  db: test
+  loglevel: 1
+prometheus:
+  name: xx
+  

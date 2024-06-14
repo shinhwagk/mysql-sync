@@ -20,15 +20,15 @@ type BinlogExtract struct {
 	binlogSyncer       *replication.BinlogSyncer
 	binlogSyncerConfig replication.BinlogSyncerConfig
 
-	moCh      chan<- MysqlOperation
-	gtidsetCh <-chan string
+	moCh chan<- MysqlOperation
+	gsCh <-chan string
 
-	metricCh chan<- interface{}
+	metricCh chan<- MetricUnit
 
 	ccc int
 }
 
-func NewBinlogExtract(logLevel int, config ReplicationConfig, moCh chan<- MysqlOperation, gtidsetCh <-chan string, metricCh chan<- interface{}) *BinlogExtract {
+func NewBinlogExtract(logLevel int, config ReplicationConfig, gsCh <-chan string, moCh chan<- MysqlOperation, metricCh chan<- MetricUnit) *BinlogExtract {
 	cfg := replication.BinlogSyncerConfig{
 		ServerID:        uint32(config.ServerID),
 		Flavor:          "mysql",
@@ -46,7 +46,7 @@ func NewBinlogExtract(logLevel int, config ReplicationConfig, moCh chan<- MysqlO
 		binlogSyncer:       nil,
 		binlogSyncerConfig: cfg,
 		moCh:               moCh,
-		gtidsetCh:          gtidsetCh,
+		gsCh:               gsCh,
 
 		metricCh: metricCh,
 		ccc:      0,
@@ -56,6 +56,8 @@ func NewBinlogExtract(logLevel int, config ReplicationConfig, moCh chan<- MysqlO
 func (bext *BinlogExtract) toMoCh(mo MysqlOperation) {
 	bext.moCh <- mo
 	bext.metricCh <- MetricUnit{Name: MetricExtractOperations, Value: 1}
+	bext.metricCh <- MetricUnit{Name: MetricReplDelay, Value: uint(time.Now().Unix() - int64(mo.GetTimestamp()))}
+
 }
 
 func (bext *BinlogExtract) start(ctx context.Context, gtidset string) error {
@@ -99,15 +101,15 @@ func (bext *BinlogExtract) start(ctx context.Context, gtidset string) error {
 		case *replication.RowsEvent:
 			switch ev.Header.EventType {
 			case replication.WRITE_ROWS_EVENTv0, replication.WRITE_ROWS_EVENTv1, replication.WRITE_ROWS_EVENTv2:
-				if err := bext.handleEventWriteRows(e); err != nil {
+				if err := bext.handleEventWriteRows(e, ev.Header); err != nil {
 					return err
 				}
 			case replication.UPDATE_ROWS_EVENTv0, replication.UPDATE_ROWS_EVENTv1, replication.UPDATE_ROWS_EVENTv2:
-				if err := bext.handleEventUpdateRows(e); err != nil {
+				if err := bext.handleEventUpdateRows(e, ev.Header); err != nil {
 					return err
 				}
 			case replication.DELETE_ROWS_EVENTv0, replication.DELETE_ROWS_EVENTv1, replication.DELETE_ROWS_EVENTv2:
-				if err := bext.handleEventDeleteRows(e); err != nil {
+				if err := bext.handleEventDeleteRows(e, ev.Header); err != nil {
 					return err
 				}
 			}
@@ -140,9 +142,15 @@ func (bext *BinlogExtract) start(ctx context.Context, gtidset string) error {
 	}
 }
 
-func (bext *BinlogExtract) handleEventWriteRows(e *replication.RowsEvent) error {
+func (bext *BinlogExtract) handleEventWriteRows(e *replication.RowsEvent, eh *replication.EventHeader) error {
 	for _, row := range e.Rows {
-		mod := MysqlOperationDMLInsert{Database: string(e.Table.Schema), Table: string(e.Table.Table), Columns: []MysqlOperationDMLColumn{}, PrimaryKey: e.Table.PrimaryKey}
+		mod := MysqlOperationDMLInsert{
+			Database:   string(e.Table.Schema),
+			Table:      string(e.Table.Table),
+			Columns:    []MysqlOperationDMLColumn{},
+			PrimaryKey: e.Table.PrimaryKey,
+			Timestamp:  eh.Timestamp,
+		}
 		for i := 0; i < int(e.Table.ColumnCount); i++ {
 			mod.Columns = append(mod.Columns, MysqlOperationDMLColumn{ColumnName: string(e.Table.ColumnName[i]), ColumnType: e.Table.ColumnType[i], ColumnValue: row[i]})
 		}
@@ -152,13 +160,14 @@ func (bext *BinlogExtract) handleEventWriteRows(e *replication.RowsEvent) error 
 	return nil
 }
 
-func (bext *BinlogExtract) handleEventDeleteRows(e *replication.RowsEvent) error {
+func (bext *BinlogExtract) handleEventDeleteRows(e *replication.RowsEvent, eh *replication.EventHeader) error {
 	for _, row := range e.Rows {
 		mod := MysqlOperationDMLDelete{
 			Database:   string(e.Table.Schema),
 			Table:      string(e.Table.Table),
 			Columns:    []MysqlOperationDMLColumn{},
 			PrimaryKey: e.Table.PrimaryKey,
+			Timestamp:  eh.Timestamp,
 		}
 		for i := 0; i < int(e.Table.ColumnCount); i++ {
 			mod.Columns = append(mod.Columns, MysqlOperationDMLColumn{ColumnName: string(e.Table.ColumnName[i]), ColumnType: e.Table.ColumnType[i], ColumnValue: row[i]})
@@ -169,7 +178,7 @@ func (bext *BinlogExtract) handleEventDeleteRows(e *replication.RowsEvent) error
 	return nil
 }
 
-func (bext *BinlogExtract) handleEventUpdateRows(e *replication.RowsEvent) error {
+func (bext *BinlogExtract) handleEventUpdateRows(e *replication.RowsEvent, eh *replication.EventHeader) error {
 	for i := 0; i < len(e.Rows); i += 2 {
 		before_value := e.Rows[i]
 		after_value := e.Rows[i+1]
@@ -180,6 +189,7 @@ func (bext *BinlogExtract) handleEventUpdateRows(e *replication.RowsEvent) error
 			BeforeColumns: []MysqlOperationDMLColumn{},
 			AfterColumns:  []MysqlOperationDMLColumn{},
 			PrimaryKey:    e.Table.PrimaryKey,
+			Timestamp:     eh.Timestamp,
 		}
 
 		for i := 0; i < int(e.Table.ColumnCount); i++ {
@@ -269,7 +279,7 @@ func (bext *BinlogExtract) handleQueryEvent(e *replication.QueryEvent, eh *repli
 		case *ast.DropDatabaseStmt:
 			bext.toMoCh(MysqlOperationDDLDatabase{Schema: t.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})
 		case *ast.BeginStmt:
-			bext.toMoCh(MysqlOperationBegin{})
+			bext.toMoCh(MysqlOperationBegin{Timestamp: eh.Timestamp})
 		case *ast.CommitStmt:
 			// warning
 		}

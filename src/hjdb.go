@@ -41,29 +41,28 @@ func NewHJDB(logLevel int, addr string, db string) *HJDB {
 	}
 }
 
-func (hjdb HJDB) Update(store string, tab string, data interface{}) error {
+func (hjdb HJDB) Update(tab string, data interface{}) {
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		hjdb.Logger.Error(fmt.Sprintf("Update -- %s", err))
-		return err
+
 	}
 
-	resp, err := http.Post(fmt.Sprintf("http://%s/db/%s/tab/%s/store/%s", hjdb.Addr, hjdb.DB, tab, store), "application/json", bytes.NewBuffer(jsonData))
+	url := fmt.Sprintf("http://%s/db/%s/tab/%s/store/file", hjdb.Addr, hjdb.DB, tab)
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		hjdb.Logger.Error(fmt.Sprintf("Update -- db: '%s' tab: '%s' err: %s", hjdb.DB, tab, err.Error()))
-		return err
+
 	}
 	defer resp.Body.Close()
 
 	_, err = io.ReadAll(resp.Body)
 	if err != nil {
 		hjdb.Logger.Error(fmt.Sprintf("Update -- db: '%s' tab: '%s' err: %s", hjdb.DB, tab, err))
-		return err
+
 	}
 
 	// hjdb.Logger.Debug(fmt.Sprintf("Update -- db: '%s' tab: '%s' %s %s", hjdb.DB, tab, string(jsonData), string(responseBody)))
-
-	return nil
 }
 
 func (hjdb HJDB) query(store string, tab string) (*HJDBResponseData, error) {

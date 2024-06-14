@@ -24,32 +24,6 @@ func main() {
 	}
 }
 
-func GetGtidSet(hjdb *HJDB) (string, error) {
-	resp, err := hjdb.query("file", "gtidset")
-
-	if err != nil {
-		return "", err
-	}
-
-	if resp.Data == nil {
-		return "", nil
-	}
-
-	if keyValueMap, ok := (*resp.Data).(map[string]interface{}); ok {
-		var pairs []string
-		for key, value := range keyValueMap {
-			if floatValue, ok := value.(float64); ok {
-				intValue := int(floatValue)
-				pair := fmt.Sprintf("%s:1-%d", key, intValue)
-				pairs = append(pairs, pair)
-			}
-		}
-		return strings.Join(pairs, ","), nil
-	} else {
-		return "", fmt.Errorf("unexpected type for Data field: %T", *resp.Data)
-	}
-}
-
 func NewDestination(name string, dc DestinationConfig, hc HJDBConfig) *Destination {
 	return &Destination{
 		name:   name,
@@ -69,11 +43,13 @@ type Destination struct {
 func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) error {
 	metricCh := make(chan MetricUnit)
 	moCh := make(chan MysqlOperation, 1000)
+	defer close(metricCh)
+	defer close(moCh)
 
 	dns := fmt.Sprintf("%s:%s@tcp(%s:%d)/?%s", dest.dc.User, dest.dc.Password, dest.dc.Host, dest.dc.Port, dest.dc.Params)
 
 	hjdb := NewHJDB(dest.hc.LogLevel, dest.hc.Addr, dest.name)
-	metricDirector := NewMetricDirector(dest.dc.LogLevel, hjdb, "destination", metricCh)
+	metricDirector := NewMetricDirector(dest.dc.LogLevel, "destination", metricCh)
 	tcpClient := NewTCPClient(dest.dc.LogLevel, dest.dc.TCPAddr, metricCh)
 	mysqlClient, err := NewMysqlClient(dest.dc.LogLevel, dns)
 	if err != nil {
@@ -95,7 +71,7 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) e
 		go func() {
 			defer wg0.Done()
 			metricDirector.Logger.Info("started.")
-			metricDirector.Start(mdCtx)
+			metricDirector.Start(mdCtx, "0.0.0.0:9092")
 			metricDirector.Logger.Info("stopped.")
 		}()
 
@@ -125,4 +101,30 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) e
 		dest.Logger.Info("stopped")
 	}
 	return nil
+}
+
+func GetGtidSet(hjdb *HJDB) (map[string]uint, error) {
+	resp, err := hjdb.query("file", "gtidset")
+
+	if err != nil {
+		return "", err
+	}
+
+	if resp.Data == nil {
+		return "", nil
+	}
+
+	if keyValueMap, ok := (*resp.Data).(map[string]interface{}); ok {
+		var pairs []string
+		for key, value := range keyValueMap {
+			if floatValue, ok := value.(float64); ok {
+				intValue := int(floatValue)
+				pair := fmt.Sprintf("%s:1-%d", key, intValue)
+				pairs = append(pairs, pair)
+			}
+		}
+		return strings.Join(pairs, ","), nil
+	} else {
+		return "", fmt.Errorf("unexpected type for Data field: %T", *resp.Data)
+	}
 }

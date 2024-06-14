@@ -29,16 +29,14 @@ func init() {
 }
 
 type TCPServer struct {
-	Logger *Logger
-
+	Logger        *Logger
 	listenAddress string
 
-	Clients sync.Map
+	gsCh     chan<- string
+	moCh     <-chan MysqlOperation
+	metricCh chan<- MetricUnit
 
-	// metric   *MetricTCPServer
-	moCh      <-chan MysqlOperation
-	gtidsetCh chan<- string
-	metricCh  chan<- interface{}
+	Clients sync.Map
 }
 
 type TcpServerClient struct {
@@ -51,13 +49,14 @@ type SendOperationControl struct {
 	ReceiveCountCh chan uint
 }
 
-func NewTCPServer(logLevel int, address string, moCh <-chan MysqlOperation, gtidsetCh chan<- string, metricCh chan<- interface{}) *TCPServer {
+func NewTCPServer(logLevel int, listenAddress string, gsCh chan<- string, moCh <-chan MysqlOperation, metricCh chan<- MetricUnit) *TCPServer {
 	return &TCPServer{
 		Logger:        NewLogger(logLevel, "tcp server"),
-		listenAddress: address,
-		metricCh:      metricCh,
-		gtidsetCh:     gtidsetCh,
-		moCh:          moCh,
+		listenAddress: listenAddress,
+
+		gsCh:     gsCh,
+		moCh:     moCh,
+		metricCh: metricCh,
 	}
 }
 
@@ -273,7 +272,7 @@ func (s *TCPServer) handleFromClient(ctx context.Context, tsc *TcpServerClient, 
 			if strings.HasPrefix(signal, "gtidset@") {
 				s.Logger.Info("from client resdf gtidset " + signal)
 				parts := strings.Split(signal, "@")
-				s.gtidsetCh <- parts[1]
+				s.gsCh <- parts[1]
 			} else if strings.HasPrefix(signal, "receive@") {
 				parts := strings.Split(signal, "@")
 				if len(parts) == 2 {

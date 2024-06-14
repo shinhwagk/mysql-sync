@@ -1,8 +1,8 @@
-# to kafka
-gcc tokafka.c -o kafka_producer -lrdkafka
+#!/bin/bash
 
+VERSION=`cat version`
+docker build -f Dockerfile.go -t shinhwagk/mysqlsync:${VERSION} .
+docker tag shinhwagk/mysqlsync:${VERSION} shinhwagk/mysqlsync:latest
 
-
-export KAFKA_BROKERS=redpanda-0:19092
-export KAFKA_TOPIC=mysqlbinlog
-./kafka_producer
+docker push shinhwagk/mysqlsync:${VERSION}
+docker push shinhwagk/mysqlsync:latest

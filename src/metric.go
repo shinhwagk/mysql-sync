@@ -2,8 +2,12 @@ package main
 
 import (
 	"context"
-	"sort"
+	"fmt"
+	"net/http"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 const (
@@ -31,36 +35,6 @@ const (
 	MetricTCPClientOperations
 )
 
-// type MetricDestination struct {
-// 	Delay            uint64 `json:"delay"`
-// 	DMLInsertTimes   uint64 `json:"dml_insert_times"`
-// 	DMLUpdateTimes   uint64 `json:"dml_update_times"`
-// 	DMLDeleteTimes   uint64 `json:"dml_delete_times"`
-// 	DDLDatabaseTimes uint64 `json:"ddl_database_times"`
-// 	DDLTableTimes    uint64 `json:"ddl_table_times"`
-// 	Trx              uint64 `json:"trx"`
-// 	MergeTrx         uint64 `json:"merge_trx"`
-// }
-
-type MetricTCPServer struct {
-	Operations uint `json:"operations"`
-	Outgoing   uint `json:"outgoing"`
-}
-
-type MetricTCPClient struct {
-	Operations uint `json:"operations"`
-	Incoming   uint `json:"incoming"`
-}
-
-// type MetricReplication struct {
-// 	Delay            uint64 `json:"delay"`
-// 	DMLInsertTimes   uint64 `json:"dml_insert_times"`
-// 	DMLUpdateTimes   uint64 `json:"dml_update_times"`
-// 	DMLDeleteTimes   uint64 `json:"dml_delete_times"`
-// 	DDLDatabaseTimes uint64 `json:"ddl_database_times"`
-// 	DDLTableTimes    uint64 `json:"ddl_table_times"`
-// }
-
 type MetricUnit struct {
 	Name  uint
 	Value uint
@@ -68,70 +42,62 @@ type MetricUnit struct {
 
 type PrometheusMetric struct {
 	MetricName   string
-	MetricType   string
+	MetricType   string // gauge, counter
 	MetricValue  uint
 	MetricLabels map[string]string
+
+	PromCollector prometheus.Collector
 }
 
 type MetricDirector struct {
 	Name     string
 	Logger   *Logger
-	hjdb     *HJDB
 	metrics  map[string]*PrometheusMetric
 	metricCh <-chan MetricUnit
 
-	change bool
+	// prometheus
+	PromNamespace string
+	PromSubsystem string
+	PromRegistry  *prometheus.Registry
 }
 
-func NewMetricDirector(logLevel int, hjdb *HJDB, name string, metricCh <-chan MetricUnit) *MetricDirector {
+func NewMetricDirector(logLevel int, subsystem string, metricCh <-chan MetricUnit) *MetricDirector {
 	return &MetricDirector{
-		Name:     name,
+		Name:     "destination",
 		Logger:   NewLogger(logLevel, "metric director"),
-		hjdb:     hjdb,
 		metrics:  make(map[string]*PrometheusMetric),
 		metricCh: metricCh,
-		change:   false,
+
+		PromNamespace: "mysqlsync",
+		PromSubsystem: subsystem,
+		PromRegistry:  prometheus.NewRegistry(),
 	}
 }
 
 func (md *MetricDirector) inc(name string, value uint) {
-	if _, exists := md.metrics[name]; exists {
-		md.metrics[name].MetricValue += value
-	} else {
-		md.metrics[name] = &PrometheusMetric{MetricType: "counter", MetricValue: 0}
-		md.metrics[name].MetricName = name
-		md.metrics[name].MetricValue = value
+	if _, exists := md.metrics[name]; !exists {
+		md.registerMetric(name, "counter")
 	}
-	md.change = true
+	metric, _ := md.metrics[name]
+	counter, _ := metric.PromCollector.(prometheus.Counter)
+	counter.Add(float64(value))
+
 }
 
 func (md *MetricDirector) set(name string, value uint) {
-	if _, exists := md.metrics[name]; exists {
-		md.metrics[name].MetricValue = value
-	} else {
-		md.metrics[name] = &PrometheusMetric{MetricType: "gauge", MetricValue: 0}
-		md.metrics[name].MetricValue = value
-		md.metrics[name].MetricName = name
+	if _, exists := md.metrics[name]; !exists {
+		md.registerMetric(name, "gauge")
 	}
-	md.change = true
+	metric, _ := md.metrics[name]
+	gauge, _ := metric.PromCollector.(prometheus.Gauge)
+	gauge.Set(float64(value))
 }
 
-func (md *MetricDirector) push() {
-	var metricsSlice []*PrometheusMetric
-	for _, metric := range md.metrics {
-		metricsSlice = append(metricsSlice, metric)
-	}
+func (md *MetricDirector) Start(ctx context.Context, addr string) {
+	go func() {
+		md.StartHTTPServer(ctx, addr)
+	}()
 
-	sort.Slice(metricsSlice, func(i, j int) bool {
-		return metricsSlice[i].MetricName < metricsSlice[j].MetricName
-	})
-
-	if err := md.hjdb.Update("memory", md.Name, metricsSlice); err != nil {
-		md.Logger.Error("push error " + err.Error())
-	}
-}
-
-func (md *MetricDirector) Start(ctx context.Context) {
 	for {
 		select {
 		case <-time.After(time.Millisecond * 100):
@@ -161,6 +127,8 @@ func (md *MetricDirector) Start(ctx context.Context) {
 			case MetricApplierOperations:
 				md.inc("applier_operations", metric.Value)
 
+			case MetricReplDelay:
+				md.set("delay", metric.Value)
 			case MetricReplTrx:
 				md.inc("trx", metric.Value)
 			case MetricExtractOperations:
@@ -170,11 +138,60 @@ func (md *MetricDirector) Start(ctx context.Context) {
 			case MetricTCPServerOperations:
 				md.inc("tcp_server_operations", metric.Value)
 			}
-
-			if md.change {
-				md.push()
-				md.change = false
-			}
 		}
+	}
+}
+
+func (md *MetricDirector) registerMetric(name string, metricType string) {
+	if _, exists := md.metrics[name]; !exists {
+		var collector prometheus.Collector
+		if metricType == "gauge" {
+			collector = prometheus.NewGauge(prometheus.GaugeOpts{
+				Namespace: md.PromNamespace,
+				Subsystem: md.PromSubsystem,
+				Name:      name,
+				Help:      "A dynamically created gauge",
+			})
+		} else if metricType == "counter" {
+			collector = prometheus.NewCounter(prometheus.CounterOpts{
+				Namespace: md.PromNamespace,
+				Subsystem: md.PromSubsystem,
+				Name:      name,
+				Help:      "A dynamically created counter",
+			})
+		}
+
+		md.PromRegistry.MustRegister(collector)
+		md.metrics[name] = &PrometheusMetric{
+			MetricName:    name,
+			MetricType:    metricType,
+			PromCollector: collector,
+		}
+		md.Logger.Info(fmt.Sprintln("Metric registered: %s, Type: %s", name, metricType))
+	}
+}
+
+func (md *MetricDirector) StartHTTPServer(ctx context.Context, addr string) {
+	srv := &http.Server{Addr: addr, Handler: nil}
+
+	http.Handle("/metrics", promhttp.HandlerFor(md.PromRegistry, promhttp.HandlerOpts{}))
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`<html>
+			<head><title>Mysql Sync Exporter</title></head>
+			<body>
+			<p><a href="/metrics">Metrics</a></p>
+			</body>
+			</html>`))
+	})
+	go func() {
+		<-ctx.Done()
+		if err := srv.Shutdown(context.Background()); err != nil {
+			// md.Logger.Printf("HTTP server Shutdown: %v", err)
+		}
+	}()
+
+	md.Logger.Info(fmt.Sprintf("Prometheus metrics are being served at %s/metrics", addr))
+	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
+		// md.Logger.Printf("HTTP server ListenAndServe: %v", err)
 	}
 }

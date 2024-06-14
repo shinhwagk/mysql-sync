@@ -30,15 +30,9 @@ func init() {
 }
 
 type TCPClient struct {
-	Name string
-
-	ServerAddress string
 	Logger        *Logger
-
-	// metric   *MetricTCPClient
-	metricCh chan<- MetricUnit
-	// decoder *gob.Decoder
-	// encoder *gob.Encoder
+	ServerAddress string
+	metricCh      chan<- MetricUnit
 }
 
 func NewTCPClient(logLevel int, serverAddress string, metricCh chan<- MetricUnit) *TCPClient {
@@ -190,74 +184,4 @@ func (tc *TCPClient) Start(ctx context.Context, moCh chan<- MysqlOperation, gtid
 	defer conn.Close()
 
 	tc.handleConnection(conn, moCh, gtidset)
-	// zstdReader, err := zstd.NewReader(conn)
-	// if err != nil {
-	// 	tc.Logger.Error("Error creating zstd reader:" + err.Error())
-	// 	return
-	// }
-	// defer zstdReader.Close()
-
-	// decoder := gob.NewDecoder(zstdReader)
-	// encoder := gob.NewEncoder(conn)
-
-	// if err := tc.sendServer(encoder, fmt.Sprintf("gtidset@%s", gtidset)); err != nil {
-	// 	tc.Logger.Error("sender gtidset faile " + err.Error())
-	// 	return
-	// }
-
-	// if err := tc.SendSignalReceive(encoder, cap(moCh)); err != nil {
-	// 	return
-	// }
-
-	// var moChLen = 0
-	// // moChCap := cap(moCh)
-	// receive := cap(moCh)
-	// var count = 0
-
-	// for {
-	// 	select {
-	// 	case <-ctx.Done():
-	// 		tc.Logger.Info("ctx done signal received.")
-	// 		return
-	// 	default:
-	// 		var operations []MysqlOperation
-	// 		if err := decoder.Decode(&operations); err != nil {
-	// 			if err == io.ErrUnexpectedEOF {
-	// 				tc.Logger.Info("tcp server close, unexpected eof.")
-	// 			} else if err == io.EOF {
-	// 				tc.Logger.Info("tcp server close, eof.")
-	// 			} else {
-	// 				tc.Logger.Error("Error decoding message:" + err.Error())
-	// 			}
-	// 			return
-	// 		}
-
-	// 		tc.Logger.Debug(fmt.Sprintf("receive operations count:'%d' from server.", len(operations)))
-
-	// 		moChLen += len(operations)
-
-	// 		count += len(operations)
-	// 		fmt.Println("colunt", count)
-
-	// 		for _, oper := range operations {
-	// 			moCh <- oper
-	// 			moChLen -= 1
-	// 			receive -= 1
-	// 			tc.metricCh <- MetricUnit{Name: MetricTCPClientOperations, Value: 1}
-	// 		}
-
-	// 		fmt.Println(fmt.Sprintf("receive operations receive:'%d' from server.", receive))
-	// 		// time.Sleep(time.Second * 1000)
-
-	// 		// if receive == 0 {
-	// 		// 	if moChLen <= moChCap*20/100 {
-	// 		// 		if err := tc.SendSignalReceive(encoder, uint(moChCap-moChLen)); err != nil {
-	// 		// 			return
-	// 		// 		}
-	// 		// 		receive = moChCap - moChLen
-	// 		// 		tc.Logger.Info(fmt.Sprintf("send signal receive '%d'.", uint(moChCap-moChLen)))
-	// 		// 	}
-	// 		// }
-	// 	}
-	// }
 }
