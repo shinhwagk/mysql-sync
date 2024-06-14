@@ -44,19 +44,11 @@ func NewTCPClient(logLevel int, serverAddress string, metricCh chan<- MetricUnit
 	}
 }
 
-func (tc *TCPClient) Close() {
-
-}
-
 func (tc *TCPClient) sendServer(encoder *gob.Encoder, controlSignal string) error {
 	if err := encoder.Encode(&controlSignal); err != nil {
 		return err
 	}
 	return nil
-}
-
-func (tc *TCPClient) Stop() {
-
 }
 
 func (tc *TCPClient) SendSignalReceive(encoder *gob.Encoder, reciveCount int) error {
@@ -71,12 +63,12 @@ func (tc *TCPClient) SendSignalReceive(encoder *gob.Encoder, reciveCount int) er
 	return nil
 }
 
-func (tc *TCPClient) handleConnection(conn net.Conn, moCh chan<- MysqlOperation, gtidset string) {
+func (tc *TCPClient) handleConnection(ctx context.Context, conn net.Conn, moCh chan<- MysqlOperation, gtidset string) {
 	rcCh := make(chan int)
 	defer close(rcCh)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// ctx, cancel := context.WithCancel(context.Background())
+	// defer cancel()
 
 	go func() {
 		rcCh <- cap(moCh)
@@ -90,7 +82,7 @@ func (tc *TCPClient) handleConnection(conn net.Conn, moCh chan<- MysqlOperation,
 		defer wg.Done()
 		tc.handleToServer(ctx, conn, rcCh, gtidset)
 		tc.Logger.Info(fmt.Sprintf("tcp to server(%s) handler close.", conn.RemoteAddr().String()))
-		cancel()
+		// cancel()
 
 	}()
 	wg.Add(1)
@@ -98,10 +90,10 @@ func (tc *TCPClient) handleConnection(conn net.Conn, moCh chan<- MysqlOperation,
 		defer wg.Done()
 		tc.handleFromServer(ctx, conn, rcCh, moCh)
 		tc.Logger.Info(fmt.Sprintf("tcp from server(%s) handler close.", conn.RemoteAddr().String()))
-		cancel()
+		// cancel()
+
 	}()
 	wg.Wait()
-
 }
 
 func (tc *TCPClient) handleToServer(ctx context.Context, conn net.Conn, rcCh <-chan int, gtidset string) {
@@ -133,6 +125,8 @@ func (tc *TCPClient) handleToServer(ctx context.Context, conn net.Conn, rcCh <-c
 }
 
 func (tc *TCPClient) handleFromServer(ctx context.Context, conn net.Conn, rcCh chan<- int, moCh chan<- MysqlOperation) {
+	// conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+
 	zstdReader, err := zstd.NewReader(conn)
 	if err != nil {
 		tc.Logger.Error("Error creating zstd reader:" + err.Error())
@@ -146,30 +140,36 @@ func (tc *TCPClient) handleFromServer(ctx context.Context, conn net.Conn, rcCh c
 	var rcCnt = cap(moCh)
 
 	for {
-		var operations []MysqlOperation
-		if err := decoder.Decode(&operations); err != nil {
-			if err == io.ErrUnexpectedEOF {
-				tc.Logger.Info("tcp server close, unexpected eof.")
-			} else if err == io.EOF {
-				tc.Logger.Info("tcp server close, eof.")
-			} else {
-				tc.Logger.Error("Error decoding message:" + err.Error())
-			}
+		select {
+		case <-ctx.Done(): // 检查 context 是否被取消或超时
+			tc.Logger.Info("Context cancelled, stopping handleFromServer loop.")
 			return
-		}
+		default:
+			var operations []MysqlOperation
+			if err := decoder.Decode(&operations); err != nil {
+				if err == io.ErrUnexpectedEOF {
+					tc.Logger.Info("tcp server close, unexpected eof.")
+				} else if err == io.EOF {
+					tc.Logger.Info("tcp server close, eof.")
+				} else {
+					tc.Logger.Error("Error decoding message:" + err.Error())
+				}
+				return
+			}
 
-		for _, oper := range operations {
-			moCh <- oper
-			count += 1
-			rcCnt -= 1
+			for _, oper := range operations {
+				moCh <- oper
+				count += 1
+				rcCnt -= 1
 
-			tc.metricCh <- MetricUnit{Name: MetricTCPClientOperations, Value: 1}
-		}
+				tc.metricCh <- MetricUnit{Name: MetricTCPClientOperations, Value: 1}
+			}
 
-		if rcCnt == 0 {
-			rcCnt += 100
-			rcCh <- 100
-			time.Sleep(time.Second * 1)
+			if rcCnt == 0 {
+				rcCnt += 100
+				rcCh <- 100
+				// time.Sleep(time.Second * 1)
+			}
 		}
 	}
 
@@ -183,5 +183,5 @@ func (tc *TCPClient) Start(ctx context.Context, moCh chan<- MysqlOperation, gtid
 	}
 	defer conn.Close()
 
-	tc.handleConnection(conn, moCh, gtidset)
+	tc.handleConnection(ctx, conn, moCh, gtidset)
 }

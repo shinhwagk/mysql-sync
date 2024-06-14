@@ -7,14 +7,14 @@ import (
 	"time"
 )
 
-func NewMysqlApplier(logLevel int, hjdb *HJDB, mysqlClient *MysqlClient, metricCh chan<- MetricUnit) *MysqlApplier {
+func NewMysqlApplier(logLevel int, hjdb *HJDB, gtidSets map[string]uint, mysqlClient *MysqlClient, metricCh chan<- MetricUnit) *MysqlApplier {
 	return &MysqlApplier{
 		Logger: NewLogger(logLevel, "mysql applier"),
 
 		mysqlClient: mysqlClient,
 		hjdb:        hjdb,
 
-		GtidSets:            make(map[string]uint),
+		GtidSets:            gtidSets,
 		LastGtidSets:        make(map[string]uint),
 		LastServerUUID:      "",
 		LastCommitted:       0,
@@ -184,7 +184,8 @@ func (ma *MysqlApplier) OnDDLTable(op MysqlOperationDDLTable) error {
 	ma.Logger.Debug(fmt.Sprintf("OnDDLTable -- schema: %s  query: %s", op.Schema, op.Query))
 
 	if err := ma.mysqlClient.ExecuteOnTable(op.Schema, op.Query); err != nil {
-		ma.Logger.Error(fmt.Sprintf("OnDDLTable -- %s", err))
+		ma.Logger.Error(fmt.Sprintf("Gtid: '%s:%d'", ma.LastServerUUID, ma.LastGtidSets[ma.LastServerUUID]))
+		ma.Logger.Error(fmt.Sprintf("OnDDLTable -- gtid: '%s:%d' %s", ma.LastServerUUID, ma.LastGtidSets[ma.LastServerUUID], err))
 		return err
 	}
 	if err := ma.Checkpoint(op.Timestamp); err != nil {
@@ -216,11 +217,12 @@ func (ma *MysqlApplier) OnGTID(op MysqlOperationGTID) error {
 		ma.LastCommitted = op.LastCommitted
 	}
 
-	lastTrxID := ma.LastGtidSets[op.ServerUUID]
-
-	if lastTrxID+1 != uint(op.TrxID) {
-		return fmt.Errorf("gtid trxid order error: uuid:'%s' last:'%d', next'%d'.", op.ServerUUID, lastTrxID, op.TrxID)
+	if lastTrxID, ok := ma.LastGtidSets[op.ServerUUID]; ok {
+		if lastTrxID+1 != uint(op.TrxID) {
+			return fmt.Errorf("gtid trxid order error: uuid:'%s' last:'%d', next'%d'.", op.ServerUUID, lastTrxID, op.TrxID)
+		}
 	}
+	// lastTrxID := ma.LastGtidSets[op.ServerUUID]
 
 	ma.LastGtidSets[op.ServerUUID] = uint(op.TrxID)
 	ma.LastServerUUID = op.ServerUUID

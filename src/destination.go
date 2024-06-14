@@ -56,75 +56,93 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) e
 		dest.Logger.Error("NewMysqlClient error: " + err.Error())
 		cancel()
 	}
-	mysqlApplier := NewMysqlApplier(dest.dc.LogLevel, hjdb, mysqlClient, metricCh)
 
-	if gtidset, err := GetGtidSet(hjdb); err != nil {
+	gtidSetMap, err := GetGtidSetMapFromHJDB(hjdb)
+	if err != nil {
 		return err
-	} else {
-		dest.Logger.Info("Destination start from gtidset '" + gtidset + "'")
-
-		mdCtx, mdCancel := context.WithCancel(context.Background())
-		defer mdCancel()
-
-		var wg0 sync.WaitGroup
-		wg0.Add(1)
-		go func() {
-			defer wg0.Done()
-			metricDirector.Logger.Info("started.")
-			metricDirector.Start(mdCtx, "0.0.0.0:9092")
-			metricDirector.Logger.Info("stopped.")
-		}()
-
-		var wg sync.WaitGroup
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			mysqlApplier.Logger.Info("started.")
-			mysqlApplier.Start(ctx, moCh)
-			mysqlApplier.Logger.Info("stopped.")
-			cancel()
-		}()
-
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			tcpClient.Logger.Info("started.")
-			tcpClient.Start(ctx, moCh, gtidset)
-			tcpClient.Logger.Info("stopped.")
-			cancel()
-		}()
-		wg.Wait()
-
-		mdCancel()
-		wg0.Wait()
-
-		dest.Logger.Info("stopped")
 	}
+
+	var gtidSetRangeStr = ""
+
+	if gtidSetMap == nil {
+		gtidSetRangeStr = dest.dc.GtidSet
+	} else {
+		gtidSetRangeStr = GetGtidSetRangeStrFromSetMap(gtidSetMap)
+	}
+
+	mysqlApplier := NewMysqlApplier(dest.dc.LogLevel, hjdb, gtidSetMap, mysqlClient, metricCh)
+
+	dest.Logger.Info("Destination start from gtidset '" + gtidSetRangeStr + "'")
+
+	mdCtx, mdCancel := context.WithCancel(context.Background())
+	defer mdCancel()
+
+	var wg0 sync.WaitGroup
+	wg0.Add(1)
+	go func() {
+		defer wg0.Done()
+		metricDirector.Logger.Info("started.")
+		metricDirector.Start(mdCtx, "0.0.0.0:9092")
+		metricDirector.Logger.Info("stopped.")
+	}()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		mysqlApplier.Logger.Info("started.")
+		mysqlApplier.Start(ctx, moCh)
+		mysqlApplier.Logger.Info("stopped.")
+		cancel()
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		tcpClient.Logger.Info("started.")
+		tcpClient.Start(ctx, moCh, gtidSetRangeStr)
+		tcpClient.Logger.Info("stopped.")
+		cancel()
+	}()
+	wg.Wait()
+
+	mdCancel()
+	wg0.Wait()
+
+	dest.Logger.Info("stopped")
+
 	return nil
 }
 
-func GetGtidSet(hjdb *HJDB) (map[string]uint, error) {
-	resp, err := hjdb.query("file", "gtidset")
+func GetGtidSetMapFromHJDB(hjdb *HJDB) (map[string]uint, error) {
+	gtidSetMap := make(map[string]uint)
+	resp, err := hjdb.query("gtidset")
 
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	if resp.Data == nil {
-		return "", nil
-	}
-
-	if keyValueMap, ok := (*resp.Data).(map[string]interface{}); ok {
-		var pairs []string
-		for key, value := range keyValueMap {
-			if floatValue, ok := value.(float64); ok {
-				intValue := int(floatValue)
-				pair := fmt.Sprintf("%s:1-%d", key, intValue)
-				pairs = append(pairs, pair)
+	if resp.Data != nil {
+		if keyValueMap, ok := (*resp.Data).(map[string]interface{}); ok {
+			for key, value := range keyValueMap {
+				if floatValue, ok := value.(float64); ok {
+					if _, ok := gtidSetMap[key]; ok {
+						gtidSetMap[key] = uint(floatValue)
+					}
+				}
 			}
+		} else {
+			return nil, fmt.Errorf("unexpected type for Data field: %T", *resp.Data)
 		}
-		return strings.Join(pairs, ","), nil
-	} else {
-		return "", fmt.Errorf("unexpected type for Data field: %T", *resp.Data)
 	}
+	return nil, nil
+}
+
+func GetGtidSetRangeStrFromSetMap(gtidSetMap map[string]uint) string {
+	var parts []string
+	for key, value := range gtidSetMap {
+		part := fmt.Sprintf("%s:1-%d", key, value)
+		parts = append(parts, part)
+	}
+	return strings.Join(parts, ",")
 }

@@ -225,6 +225,7 @@ func (s *TCPServer) handleToClient(ctx context.Context, tsc *TcpServerClient, rc
 						fmt.Println("ccount ccount", ccount, rc)
 						s.Logger.Debug(fmt.Sprintf("Compressed data sent: %d bytes\n", buf.Len()))
 						s.metricCh <- MetricUnit{Name: MetricTCPServerOperations, Value: uint(len(sendMO))}
+						buf.Reset()
 					}
 
 				case <-time.After((time.Millisecond * 100)):
@@ -243,6 +244,7 @@ func (s *TCPServer) handleToClient(ctx context.Context, tsc *TcpServerClient, rc
 						fmt.Println("ccount ccount", ccount, rc)
 						s.Logger.Debug(fmt.Sprintf("Compressed data sent: %d bytes\n", buf.Len()))
 						s.metricCh <- MetricUnit{Name: MetricTCPServerOperations, Value: uint(len(sendMO))}
+						buf.Reset()
 					}
 				}
 			}

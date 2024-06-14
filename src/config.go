@@ -32,7 +32,7 @@ type DestinationConfig struct {
 	User     string `yaml:"user"`
 	Password string `yaml:"password"`
 	Params   string `yaml:"params"`
-	GTID     string `yaml:"gtid"`
+	GtidSet  string `yaml:"gtidset"`
 	LogLevel int    `yaml:"loglevel"`
 }
 

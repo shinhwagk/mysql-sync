@@ -65,8 +65,8 @@ func (hjdb HJDB) Update(tab string, data interface{}) {
 	// hjdb.Logger.Debug(fmt.Sprintf("Update -- db: '%s' tab: '%s' %s %s", hjdb.DB, tab, string(jsonData), string(responseBody)))
 }
 
-func (hjdb HJDB) query(store string, tab string) (*HJDBResponseData, error) {
-	resp, err := http.Get(fmt.Sprintf("http://%s/db/%s/tab/%s/store/%s", hjdb.Addr, hjdb.DB, tab, store))
+func (hjdb HJDB) query(tab string) (*HJDBResponseData, error) {
+	resp, err := http.Get(fmt.Sprintf("http://%s/db/%s/tab/%s/store/file", hjdb.Addr, hjdb.DB, tab))
 	if err != nil {
 		return nil, err
 	}
