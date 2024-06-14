@@ -76,8 +76,6 @@ func (s *TCPServer) Start(ctx context.Context) error {
 	}()
 
 	go func() {
-		timer := time.NewTimer(time.Second * 1)
-		defer timer.Stop()
 		for {
 			select {
 			case <-ctx.Done():
@@ -87,14 +85,15 @@ func (s *TCPServer) Start(ctx context.Context) error {
 					s.Logger.Info("mysql operation channal close.")
 					return
 				}
+				fmt.Println("sdfsdfsd")
+
 				s.Clients.Range(func(key, value interface{}) bool {
 					client := value.(*TcpServerClient)
 					client.channel <- mo
+					fmt.Println("sdfsdfsd")
 					return true
 				})
-				timer.Reset(time.Second * 1)
-			case <-timer.C:
-				timer.Reset(time.Second * 1)
+			case <-time.After(time.Second * 1):
 			}
 		}
 	}()
@@ -174,12 +173,6 @@ func (s *TCPServer) handleToClient(ctx context.Context, tsc *TcpServerClient, rc
 
 	encoder := gob.NewEncoder(zstdWriter)
 
-	timer := time.NewTimer(time.Second * 1)
-	defer timer.Stop()
-
-	resumeTimer := time.NewTimer(100 * time.Millisecond)
-	defer resumeTimer.Stop()
-
 	var mysqlOperations []MysqlOperation
 
 	var count = 0
@@ -192,8 +185,7 @@ func (s *TCPServer) handleToClient(ctx context.Context, tsc *TcpServerClient, rc
 		case <-ctx.Done():
 			s.Logger.Info("ctx done signal received.")
 			return
-		case <-timer.C:
-			timer.Reset(time.Second * 1)
+		case <-time.After(time.Second * 1):
 		case rc, ok := <-rcCh:
 			fmt.Println("Rc", rc)
 			if !ok {
@@ -236,8 +228,7 @@ func (s *TCPServer) handleToClient(ctx context.Context, tsc *TcpServerClient, rc
 						s.metricCh <- MetricUnit{Name: MetricTCPServerOperations, Value: uint(len(sendMO))}
 					}
 
-					resumeTimer.Reset(time.Millisecond * 100)
-				case <-resumeTimer.C:
+				case <-time.After((time.Millisecond * 100)):
 					fmt.Println("rc sendcnt,", rc, rcCnt)
 
 					if len(mysqlOperations) >= rcCnt {
@@ -254,26 +245,8 @@ func (s *TCPServer) handleToClient(ctx context.Context, tsc *TcpServerClient, rc
 						s.Logger.Debug(fmt.Sprintf("Compressed data sent: %d bytes\n", buf.Len()))
 						s.metricCh <- MetricUnit{Name: MetricTCPServerOperations, Value: uint(len(sendMO))}
 					}
-
-					// if len(mysqlOperations) > 0 {
-					// 	ccount += len(mysqlOperations)
-
-					// 	fmt.Println("send operations1", len(mysqlOperations), ccount)
-
-					// 	if err := s.sendClient(encoder, zstdWriter, mysqlOperations); err != nil {
-					// 		s.Logger.Error("sendClient error: " + err.Error())
-					// 		return
-					// 	}
-					// 	// s.logger.Debug(fmt.Sprintf("Compressed data sent: %d bytes\n", buf.Len()))
-					// 	s.Logger.Debug(fmt.Sprintf("timeout 100 millisecond send operation %d", len(mysqlOperations)))
-					// 	mysqlOperations = mysqlOperations[:0]
-					// 	s.metricCh <- MetricUnit{Name: MetricTCPServerOperations, Value: uint(len(mysqlOperations))}
-
-					// }
-					resumeTimer.Reset(time.Millisecond * 100)
 				}
 			}
-			timer.Reset(time.Second * 1)
 		}
 	}
 }

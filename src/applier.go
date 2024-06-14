@@ -47,13 +47,9 @@ type MysqlApplier struct {
 }
 
 func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
-	timer := time.NewTimer(100 * time.Millisecond)
-	defer timer.Stop()
-
 	for {
 		select {
-		case <-timer.C:
-			timer.Reset(100 * time.Millisecond)
+		case <-time.After(time.Millisecond * 100):
 		case <-ctx.Done():
 			ma.Logger.Info("ctx done signal received.")
 			if err := ma.mysqlClient.Rollback(); err != nil {
@@ -127,7 +123,6 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 			default:
 				fmt.Println("xxxx")
 			}
-			timer.Reset(100 * time.Millisecond)
 		}
 	}
 }

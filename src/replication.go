@@ -21,7 +21,7 @@ func main() {
 
 	// metricDirector = NewMetricDirector(config.Replication.LogLevel, hjdb)
 
-	metricCh := make(chan interface{}, 100)
+	metricCh := make(chan interface{})
 	moCh := make(chan MysqlOperation, 1000)
 	gsCh := make(chan string)
 
@@ -70,6 +70,7 @@ type Replication struct {
 }
 
 func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) error {
+	metricCh := make(chan MetricUnit)
 
 	var childCtx context.Context
 	var childCancel context.CancelFunc = func() {}

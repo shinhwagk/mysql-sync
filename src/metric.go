@@ -132,11 +132,9 @@ func (md *MetricDirector) push() {
 }
 
 func (md *MetricDirector) Start(ctx context.Context) {
-	timer := time.NewTimer(100 * time.Millisecond)
 	for {
 		select {
-		case <-timer.C:
-			timer.Reset(100 * time.Millisecond)
+		case <-time.After(time.Millisecond * 100):
 		case <-ctx.Done():
 			md.Logger.Info("ctx done signal received.")
 			return
@@ -177,7 +175,6 @@ func (md *MetricDirector) Start(ctx context.Context) {
 				md.push()
 				md.change = false
 			}
-			timer.Reset(100 * time.Millisecond)
 		}
 	}
 }

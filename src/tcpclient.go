@@ -120,15 +120,11 @@ func (tc *TCPClient) handleToServer(ctx context.Context, conn net.Conn, rcCh <-c
 
 	fmt.Println("xxxx", fmt.Sprintf("gtidset@%s", gtidset))
 
-	timer := time.NewTimer(1 * time.Second)
-	defer timer.Stop()
-
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-timer.C:
-			timer.Reset(time.Second * 1)
+		case <-time.After(time.Second * 1):
 		case rc, ok := <-rcCh:
 			if !ok {
 				tc.Logger.Info("ReceiveCountCh")
@@ -137,7 +133,6 @@ func (tc *TCPClient) handleToServer(ctx context.Context, conn net.Conn, rcCh <-c
 			if err := tc.SendSignalReceive(encoder, rc); err != nil {
 				return
 			}
-			timer.Reset(time.Second * 1)
 		}
 	}
 
