@@ -7,8 +7,11 @@
 		"vscode": {
 			"settings": {
 				"terminal.integrated.defaultProfile.linux": "zsh"
-			}
+			},
+			"extensions": [
+				"golang.Go"
+			]
 		}
 	},
-	"postCreateCommand": "scripts/initContainer.centos.go.sh"
+	"postCreateCommand": "/workspaces/mysql-sync/scripts/initContainer.centos.go.sh"
 }

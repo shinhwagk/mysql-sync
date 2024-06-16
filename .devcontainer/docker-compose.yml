@@ -1,10 +1,10 @@
 services:
   app:
     build:
-      context: ..
-      dockerfile: .devcontainer/Dockerfile
+      context: .
+      dockerfile: Dockerfile
     volumes:
-      - ../..:/workspaces:cached
+      - ..:/workspaces:cached
     command: sleep infinity
     environment:
       ARGS_SOURCE_HOST: db1
