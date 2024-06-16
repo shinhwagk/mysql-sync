@@ -14,14 +14,12 @@ func NewMysqlApplier(logLevel int, hjdb *HJDB, gtidSetsMap map[string]uint, mysq
 		mysqlClient: mysqlClient,
 		hjdb:        hjdb,
 
-		// LastGtidSets:        make(map[string]uint),
 		LastGtidSets:        gtidSetsMap,
 		LastGtidServerUUID:  "",
 		LastCommitted:       0,
 		LastCommitTimestamp: 0,
 		AllowCommit:         false,
 
-		// metric:   &MetricDestination{0, 0, 0, 0, 0, 0, 0, 0},
 		MetricDelay: 0,
 		metricCh:    metricCh,
 	}
@@ -68,7 +66,6 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				ma.Logger.Info("mysql operation channel closed.")
 				return
 			}
-			ma.metricCh <- MetricUnit{Name: MetricApplierOperations, Value: 1}
 			switch op := oper.(type) {
 			case MysqlOperationDDLDatabase:
 				if err := ma.OnDDLDatabase(op); err != nil {
@@ -120,8 +117,9 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					return
 				}
 			default:
-				fmt.Println("xxxx")
+				ma.Logger.Error("unknow operation.")
 			}
+			ma.metricCh <- MetricUnit{Name: MetricApplierOperations, Value: 1}
 		}
 	}
 }
@@ -151,13 +149,13 @@ func (ma *MysqlApplier) OnDMLDelete(op MysqlOperationDMLDelete) error {
 
 func (ma *MysqlApplier) OnDMLUpdate(op MysqlOperationDMLUpdate) error {
 	sql, params := BuildDMLDeleteQuery(op.Database, op.Table, op.BeforeColumns, op.PrimaryKey)
-	ma.Logger.Debug(fmt.Sprintf("OnDMLUpdate -- query: '%s' params: '%s'", sql, params))
+	// ma.Logger.Debug(fmt.Sprintf("OnDMLUpdate -- query: '%s' params: '%s'", sql, params))
 	if err := ma.mysqlClient.ExecuteDML(sql, params); err != nil {
 		return err
 	}
 
 	sql, params = BuildDMLInsertQuery(op.Database, op.Table, op.AfterColumns)
-	ma.Logger.Debug(fmt.Sprintf("OnDMLUpdate -- query: '%s' params: '%s'", sql, params))
+	// ma.Logger.Debug(fmt.Sprintf("OnDMLUpdate -- query: '%s' params: '%s'", sql, params))
 	if err := ma.mysqlClient.ExecuteDML(sql, params); err != nil {
 		return err
 	}

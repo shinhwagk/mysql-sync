@@ -18,10 +18,9 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	repl := flag.Bool("destination", false, "Activate REPL mode")
-	dest := flag.Bool("replication", false, "Specify the destination")
+	repl := flag.Bool("repl", false, "Start replication.")
+	dest := flag.Bool("dest", false, "Start destination.")
 
-	// 解析命令行参数
 	flag.Parse()
 
 	if *repl && *dest {
@@ -31,12 +30,15 @@ func main() {
 
 	if *repl {
 		replication := NewReplication(config.Name, config.Replication)
-		replication.start(ctx, cancel)
+		if err := replication.start(ctx, cancel); err != nil {
+			logger.Error("Replication start error: " + err.Error())
+		}
 	} else if *dest {
 		destination := NewDestination(config.Name, config.Destination)
-		destination.Start(ctx, cancel)
+		if err := destination.Start(ctx, cancel); err != nil {
+			logger.Error("Destination start error: " + err.Error())
+		}
 	} else {
 		fmt.Println("No specific mode activated")
 	}
-
 }
