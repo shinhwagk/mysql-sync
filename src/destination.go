@@ -7,23 +7,6 @@ import (
 	"sync"
 )
 
-func main() {
-	logger := NewLogger(1, "main")
-
-	config, err := LoadConfig("/etc/mysqlsync/config.yml")
-	if err != nil {
-		logger.Error(fmt.Sprintf("Failed to LoadConfig: %v", err))
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	destination := NewDestination(config.Name, config.Destination)
-	if err := destination.Start(ctx, cancel); err != nil {
-		logger.Error("main error: " + err.Error())
-	}
-}
-
 func NewDestination(name string, dc DestinationConfig) *Destination {
 	return &Destination{
 		name:   name,

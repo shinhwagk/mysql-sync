@@ -2,35 +2,15 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"sync"
 )
 
-func main() {
-	logger := NewLogger(1, "main")
-
-	config, err := LoadConfig("/etc/mysqlsync/config.yml")
-	if err != nil {
-		logger.Error(fmt.Sprintf("Failed to load config: %v", err))
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	replication, err := NewReplication(config.Name, config.Replication)
-	if err != nil {
-		logger.Error(fmt.Sprintf("Failed to NewReplication: %v", err))
-	}
-
-	replication.start(ctx, cancel)
-}
-
-func NewReplication(name string, rc ReplicationConfig) (*Replication, error) {
+func NewReplication(name string, rc ReplicationConfig) *Replication {
 	return &Replication{
 		name:   name,
 		rc:     rc,
 		Logger: NewLogger(rc.LogLevel, "replication"),
-	}, nil
+	}
 }
 
 type Replication struct {
@@ -41,7 +21,7 @@ type Replication struct {
 
 func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) error {
 	metricCh := make(chan MetricUnit)
-	moCh := make(chan MysqlOperation, 1000)
+	moCh := make(chan MysqlOperation)
 	// gtidset
 	gsCh := make(chan string)
 	defer close(metricCh)

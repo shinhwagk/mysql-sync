@@ -126,48 +126,67 @@ func (tc *TCPClient) handleFromServer(ctx context.Context, conn net.Conn, rcCh c
 	defer zstdReader.Close()
 	decoder := gob.NewDecoder(zstdReader)
 
-	var maxRcCnt = 1000
-	var rcCnt = maxRcCnt
+	moCacheCh := make(chan MysqlOperation, 1000)
+	defer close(moCacheCh)
 
-	rcCh <- maxRcCnt
-	tc.Logger.Info(fmt.Sprintf("Frist request operations: %d from tcp server.", maxRcCnt))
-
-	for {
-		select {
-		case <-ctx.Done():
-			tc.Logger.Info("Context cancelled, stopping handleFromServer loop.")
-			return
-		default:
-			var operations []MysqlOperation
-			if err := decoder.Decode(&operations); err != nil {
-				if err == io.ErrUnexpectedEOF {
-					tc.Logger.Info("tcp server close, unexpected eof.")
-				} else if err == io.EOF {
-					tc.Logger.Info("tcp server close, eof.")
-				} else {
-					tc.Logger.Error("Error decoding message:" + err.Error())
-				}
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				tc.Logger.Info("Context cancelled, stopping handleFromServer loop.")
 				return
-			}
-
-			for _, oper := range operations {
-				moCh <- oper
-				rcCnt -= 1
-
-				tc.metricCh <- MetricUnit{Name: MetricTCPClientReceiveOperations, Value: 1}
-			}
-
-			if rcCnt == 0 {
-				rcCnt += maxRcCnt
-				rcCh <- maxRcCnt
-				// time.Sleep(time.Second * 1)
-			} else if rcCnt == 200 {
-				rcCnt += 800
-				rcCh <- 800
+			case mo, ok := <-moCacheCh:
+				if !ok {
+					tc.Logger.Info("channel 'moCacheCh' closed.")
+					return
+				}
+				moCh <- mo
 			}
 		}
-	}
+	}()
 
+	var maxRcCnt = cap(moCacheCh)
+
+	for {
+
+		remainingCapacity := maxRcCnt - len(moCacheCh)
+		rcCnt := 0
+
+		if remainingCapacity >= 100 {
+			rcCnt = 100
+		} else {
+			time.Sleep(time.Millisecond * 100)
+			continue
+		}
+
+		if rcCnt > 0 {
+			rcCh <- rcCnt
+
+			tc.Logger.Info(fmt.Sprintf("Requesting operations: %d from tcp server.", rcCnt))
+
+			for rcCnt > 0 {
+				var operations []MysqlOperation
+				if err := decoder.Decode(&operations); err != nil {
+					if err == io.ErrUnexpectedEOF {
+						tc.Logger.Info("tcp server close, unexpected eof.")
+					} else if err == io.EOF {
+						tc.Logger.Info("tcp server close, eof.")
+					} else {
+						tc.Logger.Error("Error decoding message:" + err.Error())
+					}
+					return
+				}
+
+				for _, oper := range operations {
+					moCacheCh <- oper
+					rcCnt -= 1
+					tc.metricCh <- MetricUnit{Name: MetricTCPClientReceiveOperations, Value: 1}
+				}
+			}
+
+			tc.Logger.Info(fmt.Sprintf("Receive operations: %d from tcp server.", rcCnt))
+		}
+	}
 }
 
 func (tc *TCPClient) Start(ctx context.Context, moCh chan<- MysqlOperation, gtidset string) {
