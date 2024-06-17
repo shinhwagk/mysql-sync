@@ -216,6 +216,7 @@
                     "editorMode": "code",
                     "expr": "delta(mysqlsync_destination_applier_operations[1m])",
                     "instant": false,
+                    "interval": "1m",
                     "legendFormat": "applier",
                     "range": true,
                     "refId": "A"
@@ -229,6 +230,7 @@
                     "expr": "delta(mysqlsync_replication_extract_operations[1m])",
                     "hide": false,
                     "instant": false,
+                    "interval": "1m",
                     "legendFormat": "extract",
                     "range": true,
                     "refId": "B"
@@ -434,6 +436,7 @@
                     "editorMode": "code",
                     "expr": "delta(mysqlsync_replication_tcp_server_send_operations[1m])",
                     "instant": false,
+                    "interval": "1m",
                     "legendFormat": "repl-send",
                     "range": true,
                     "refId": "A"
@@ -447,12 +450,123 @@
                     "expr": "delta(mysqlsync_destination_tcp_client_receive_operations[1m])",
                     "hide": false,
                     "instant": false,
+                    "interval": "1m",
                     "legendFormat": "dest-receive",
                     "range": true,
                     "refId": "B"
                 }
             ],
             "title": "Tcp send & receive",
+            "type": "timeseries"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "cdp1kz3veskcgc"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "custom": {
+                        "axisBorderShow": false,
+                        "axisCenteredZero": false,
+                        "axisColorMode": "text",
+                        "axisLabel": "",
+                        "axisPlacement": "auto",
+                        "barAlignment": 0,
+                        "drawStyle": "line",
+                        "fillOpacity": 0,
+                        "gradientMode": "none",
+                        "hideFrom": {
+                            "legend": false,
+                            "tooltip": false,
+                            "viz": false
+                        },
+                        "insertNulls": false,
+                        "lineInterpolation": "linear",
+                        "lineWidth": 1,
+                        "pointSize": 5,
+                        "scaleDistribution": {
+                            "type": "linear"
+                        },
+                        "showPoints": "auto",
+                        "spanNulls": false,
+                        "stacking": {
+                            "group": "A",
+                            "mode": "none"
+                        },
+                        "thresholdsStyle": {
+                            "mode": "off"
+                        }
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "red",
+                                "value": 80
+                            }
+                        ]
+                    }
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 16
+            },
+            "id": 6,
+            "options": {
+                "legend": {
+                    "calcs": [],
+                    "displayMode": "list",
+                    "placement": "bottom",
+                    "showLegend": true
+                },
+                "tooltip": {
+                    "mode": "single",
+                    "sort": "none"
+                }
+            },
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "cdp1kz3veskcgc"
+                    },
+                    "editorMode": "code",
+                    "expr": "delta(mysqlsync_destination_dml_delete_times[1m])",
+                    "instant": false,
+                    "interval": "1m",
+                    "legendFormat": "delete",
+                    "range": true,
+                    "refId": "A"
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "cdp1kz3veskcgc"
+                    },
+                    "editorMode": "code",
+                    "expr": "delta(mysqlsync_destination_dml_insert_times[1m])",
+                    "hide": false,
+                    "instant": false,
+                    "interval": "1m",
+                    "legendFormat": "insert",
+                    "range": true,
+                    "refId": "B"
+                }
+            ],
+            "title": "DML",
             "type": "timeseries"
         }
     ],
@@ -470,6 +584,6 @@
     "timezone": "browser",
     "title": "MysqlSync",
     "uid": "edp1lh3y5eupse",
-    "version": 7,
+    "version": 11,
     "weekStart": ""
 }
