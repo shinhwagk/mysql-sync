@@ -106,6 +106,7 @@ func GetGtidSetsMapFromHJDB(hjdb *HJDB) (map[string]uint, error) {
 
 	if resp.ErrMsg != nil {
 		if resp.ErrCode != nil && *resp.ErrCode == "hjdb-001" {
+			fmt.Println("hjdb error: " + *resp.ErrMsg)
 			return gtidSetMap, nil
 		}
 		return nil, fmt.Errorf(*resp.ErrMsg)

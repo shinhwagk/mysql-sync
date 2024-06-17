@@ -1,11 +1,15 @@
 services:
   repl:
+    depends_on:
+      - hjdb
     image: shinhwagk/mysql-sync:0.0.2
     command: -repl
       - 9091:9091
     volumes:
       - ./config.yml:/etc/mysql-sync/config.yml
   dest:
+    depends_on:
+      - repl
     image: shinhwagk/mysql-sync:0.0.2
     command: -dest
     ports:
