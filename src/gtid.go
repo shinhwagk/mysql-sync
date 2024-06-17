@@ -15,7 +15,7 @@ type GtidSets struct {
  Logger *Logger
 }
 
-func (g *GtidSets) Query() (map[string]uint,error) {
+func (g *GtidSets) Query(defaultGtidSetsStr string) (map[string]uint,error) {
 	url := fmt.Sprintf("http://%s/file/%s/gtidsets", g.HJDBAddr, g.HJDBDatabase)
 	hjdb.Logger.Info("query " + url)
 	resp, err := http.Get(url)
@@ -37,6 +37,9 @@ func (g *GtidSets) Query() (map[string]uint,error) {
 	} else {
 		if hjdbResp.State =="err" {
 			g.Logger.Error(fmt.Sprintf("hjdb resp err: %s",  hjdbResp.errmsg))
+			if hjdbResp.errcode != nil && hjdbResp == "hjdb-001" {
+				return make(map[string]uint),nil
+			}
 			return nil ,fmt.Errorf(hjdbResp.errmsg)
 		} else {
 			return hjdbResp.Data ,nill
