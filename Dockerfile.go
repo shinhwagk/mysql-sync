@@ -6,9 +6,9 @@ COPY go.sum .
 COPY src/ .
 
 RUN go mod download
-RUN go build -ldflags="-s -w" -o mysqlsync ./*.go
+RUN go build -ldflags="-s -w" -o mysql-sync ./*.go
 
-FROM golang:1.22.3-alpine
+FROM golang:1.22.3
 WORKDIR /app
 COPY --from=builder /build/mysqlsync .
 ENTRYPOINT ["/app/mysqlsync"]
