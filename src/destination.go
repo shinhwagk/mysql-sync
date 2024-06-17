@@ -57,7 +57,7 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) e
 			gtidSetsMap[key] = value
 		}
 	} else {
-		gtidSetRangeStr = GetGtidSetsRangeStrFromSetMap(gtidSetsMap)
+		gtidSetRangeStr = GetGtidSetsRangeStrFromGtidSetsMap(gtidSetsMap)
 	}
 
 	mysqlApplier := NewMysqlApplier(dest.dc.LogLevel, hjdb, gtidSetsMap, mysqlClient, metricCh)
@@ -136,7 +136,7 @@ func GetGtidSetsMapFromHJDB(hjdb *HJDB) (map[string]uint, error) {
 	return gtidSetMap, nil
 }
 
-func GetGtidSetsRangeStrFromSetMap(gtidSetMap map[string]uint) string {
+func GetGtidSetsRangeStrFromGtidSetsMap(gtidSetMap map[string]uint) string {
 	var parts []string
 	for key, value := range gtidSetMap {
 		part := fmt.Sprintf("%s:1-%d", key, value)
