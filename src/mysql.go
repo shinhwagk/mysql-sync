@@ -68,8 +68,6 @@ func (mc *MysqlClient) ExecuteOnTable(db string, query string) error {
 	mc.Begin()
 
 	if db != "" {
-		mc.Logger.Debug("USE " + db)
-
 		_, err := mc.tx.Exec("USE " + db)
 
 		if err != nil {

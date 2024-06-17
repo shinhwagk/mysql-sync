@@ -17,7 +17,7 @@ destination:
   user: "root"
   password: "root_password"
   params: "autocommit=false"
-  gtidset: "d185500e-225e-11ef-8161-0242ac140006:1"
+  gtidsets: ""
   loglevel: 1
   hjdb: 
     addr: hjdb:8000

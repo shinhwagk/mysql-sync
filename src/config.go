@@ -32,7 +32,7 @@ type DestinationConfig struct {
 	User     string     `yaml:"user"`
 	Password string     `yaml:"password"`
 	Params   string     `yaml:"params"`
-	GtidSet  string     `yaml:"gtidset"`
+	GtidSets string     `yaml:"gtidsets"`
 	LogLevel int        `yaml:"loglevel"`
 	HJDB     HJDBConfig `yaml:"hjdb"`
 }

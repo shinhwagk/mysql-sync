@@ -1,0 +1,15 @@
+services:
+  repl:
+    image:
+    command: -repl
+    volumes:
+      - ./config.yml:/etc/mysql-sync/config.yml
+  dest:
+    image:   
+    command: -dest
+  volumes:
+      - ./config.yml:/etc/mysql-sync/config.yml
+  hjdb:
+    image: shinhwagk/hjdb:0.0.6
+    volumes:
+      - ./hjdb:/var/lib/hjdb

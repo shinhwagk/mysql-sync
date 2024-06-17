@@ -22,7 +22,7 @@ type Replication struct {
 func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) error {
 	metricCh := make(chan MetricUnit)
 	moCh := make(chan MysqlOperation)
-	// gtidset
+	// gtidsets
 	gsCh := make(chan string)
 	defer close(metricCh)
 	defer close(moCh)
@@ -51,7 +51,7 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) e
 
 	for {
 		select {
-		case gtidset := <-gsCh:
+		case gtidsets := <-gsCh:
 			childCancel()
 			wg.Wait()
 
@@ -70,12 +70,12 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) e
 			wg.Add(1)
 			go func(gtid string) {
 				defer wg.Done()
-				if err := binlogExtract.start(childCtx, gtidset); err != nil { // 假设 RestartSync 需要 GTID 作为参数
+				if err := binlogExtract.start(childCtx, gtidsets); err != nil { // 假设 RestartSync 需要 GTID 作为参数
 					repl.Logger.Error("failed to restart sync: " + err.Error())
 				}
 
 				repl.Logger.Info("binlog extract stopped.")
-			}(gtidset)
+			}(gtidsets)
 		case <-ctx.Done():
 			childCancel()
 			wg.Wait()

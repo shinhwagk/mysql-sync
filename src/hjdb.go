@@ -9,16 +9,13 @@ import (
 )
 
 type HJDBResponseData struct {
-	State *string      `json:"state"`
-	Data  *interface{} `json:"data"`
-	DB    *string      `json:"db"`
-	Tab   *string      `json:"tab`
-	Err   *string      `json:"err"`
-	Store *string      `json.store`
-}
-
-type JsonRequestData struct {
-	GtidSet string `json:"gtidset"`
+	State   *string      `json:"state"`
+	Data    *interface{} `json:"data"`
+	DB      *string      `json:"db"`
+	Tab     *string      `json:"tab`
+	ErrMsg  *string      `json:"errmsg"`
+	ErrCode *string      `json:"errcode"`
+	Store   *string      `json.store`
 }
 
 type HJDB struct {
@@ -48,7 +45,7 @@ func (hjdb HJDB) Update(tab string, data interface{}) {
 
 	}
 
-	url := fmt.Sprintf("http://%s/db/%s/tab/%s/store/file", hjdb.Addr, hjdb.DB, tab)
+	url := fmt.Sprintf("http://%s/file/%s/%s", hjdb.Addr, hjdb.DB, tab)
 	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		hjdb.Logger.Error(fmt.Sprintf("Update -- db: '%s' tab: '%s' err: %s", hjdb.DB, tab, err.Error()))
@@ -59,14 +56,14 @@ func (hjdb HJDB) Update(tab string, data interface{}) {
 	_, err = io.ReadAll(resp.Body)
 	if err != nil {
 		hjdb.Logger.Error(fmt.Sprintf("Update -- db: '%s' tab: '%s' err: %s", hjdb.DB, tab, err))
-
 	}
 
 	// hjdb.Logger.Debug(fmt.Sprintf("Update -- db: '%s' tab: '%s' %s %s", hjdb.DB, tab, string(jsonData), string(responseBody)))
 }
 
 func (hjdb HJDB) query(tab string) (*HJDBResponseData, error) {
-	url := fmt.Sprintf("http://%s/db/%s/tab/%s/store/file", hjdb.Addr, hjdb.DB, tab)
+	url := fmt.Sprintf("http://%s/file/%s/%s", hjdb.Addr, hjdb.DB, tab)
+	hjdb.Logger.Info("query " + url)
 	resp, err := http.Get(url)
 	if err != nil {
 		return nil, err
@@ -83,10 +80,6 @@ func (hjdb HJDB) query(tab string) (*HJDBResponseData, error) {
 
 	if err != nil {
 		return nil, err
-	}
-
-	if *hjdbResp.State == "err" {
-		return nil, fmt.Errorf("hjdb error: %s", *hjdbResp.Err)
 	}
 
 	return &hjdbResp, nil

@@ -60,18 +60,18 @@ func (bext *BinlogExtract) toMoCh(mo MysqlOperation) {
 
 }
 
-func (bext *BinlogExtract) start(ctx context.Context, gtidset string) error {
+func (bext *BinlogExtract) start(ctx context.Context, gtidsets string) error {
 	if bext.binlogSyncer == nil {
 		bext.binlogSyncer = replication.NewBinlogSyncer(bext.binlogSyncerConfig)
 	}
 
-	gtidSet, err := mysql.ParseGTIDSet("mysql", gtidset)
+	gtidSet, err := mysql.ParseGTIDSet("mysql", gtidsets)
 	if err != nil {
 		bext.logger.Error("ParseGTIDSet " + err.Error())
 		return err
 	}
 
-	bext.logger.Info("start from gtidset:" + gtidSet.String())
+	bext.logger.Info("start from gtidsets:" + gtidSet.String())
 
 	streamer, err := bext.binlogSyncer.StartSyncGTID(gtidSet)
 

@@ -252,7 +252,7 @@ func (ma *MysqlApplier) Checkpoint(timestamp uint32) error {
 
 	ma.metricCh <- MetricUnit{Name: MetricDestDelay, Value: uint(time.Now().Unix() - int64(timestamp))}
 
-	ma.hjdb.Update("gtidset", ma.LastGtidSets)
+	ma.hjdb.Update("gtidsets", ma.LastGtidSets)
 
 	return nil
 }

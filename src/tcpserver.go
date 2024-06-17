@@ -178,7 +178,6 @@ func (s *TCPServer) handleToClient(ctx context.Context, tsc *TcpServerClient, rc
 			return
 		case <-time.After(time.Second * 1):
 		case rc, ok := <-rcCh:
-			fmt.Println("Rc", rc)
 			if !ok {
 				s.Logger.Info("ReceiveCountCh")
 				return
@@ -255,8 +254,8 @@ func (s *TCPServer) handleFromClient(ctx context.Context, tsc *TcpServerClient, 
 				return
 			}
 
-			if strings.HasPrefix(signal, "gtidset@") {
-				s.Logger.Info("from client resdf gtidset " + signal)
+			if strings.HasPrefix(signal, "gtidsets@") {
+				s.Logger.Info("from client resdf gtidsets " + signal)
 				parts := strings.Split(signal, "@")
 				s.gsCh <- parts[1]
 			} else if strings.HasPrefix(signal, "receive@") {

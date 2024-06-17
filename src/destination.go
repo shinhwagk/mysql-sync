@@ -46,15 +46,15 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) e
 
 	var gtidSetRangeStr = ""
 
-	if gtidSetsMap == nil {
-		gtidSetRangeStr = dest.dc.GtidSet
+	if len(gtidSetsMap) == 0 {
+		gtidSetRangeStr = dest.dc.GtidSets
 	} else {
 		gtidSetRangeStr = GetGtidSetsRangeStrFromSetMap(gtidSetsMap)
 	}
 
 	mysqlApplier := NewMysqlApplier(dest.dc.LogLevel, hjdb, gtidSetsMap, mysqlClient, metricCh)
 
-	dest.Logger.Info("Destination start from gtidset '" + gtidSetRangeStr + "'")
+	dest.Logger.Info("Destination start from gtidsets '" + gtidSetRangeStr + "'")
 
 	mdCtx, mdCancel := context.WithCancel(context.Background())
 	defer mdCancel()
@@ -98,10 +98,17 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) e
 
 func GetGtidSetsMapFromHJDB(hjdb *HJDB) (map[string]uint, error) {
 	gtidSetMap := make(map[string]uint)
-	resp, err := hjdb.query("gtidset")
+	resp, err := hjdb.query("gtidsets")
 
 	if err != nil {
 		return nil, err
+	}
+
+	if resp.ErrMsg != nil {
+		if resp.ErrCode != nil && *resp.ErrCode == "hjdb-001" {
+			return gtidSetMap, nil
+		}
+		return nil, fmt.Errorf(*resp.ErrMsg)
 	}
 
 	if resp.Data != nil {
@@ -109,6 +116,7 @@ func GetGtidSetsMapFromHJDB(hjdb *HJDB) (map[string]uint, error) {
 			for key, value := range keyValueMap {
 				if floatValue, ok := value.(float64); ok {
 					gtidSetMap[key] = uint(floatValue)
+					fmt.Println(key, floatValue)
 				}
 			}
 		} else {
@@ -116,7 +124,7 @@ func GetGtidSetsMapFromHJDB(hjdb *HJDB) (map[string]uint, error) {
 		}
 		return gtidSetMap, nil
 	}
-	return nil, nil
+	return gtidSetMap, nil
 }
 
 func GetGtidSetsRangeStrFromSetMap(gtidSetMap map[string]uint) string {
