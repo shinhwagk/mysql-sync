@@ -131,7 +131,6 @@ func GetGtidSetsMapFromHJDB(hjdb *HJDB) (map[string]uint, error) {
 		} else {
 			return nil, fmt.Errorf("unexpected type for Data field: %T", *resp.Data)
 		}
-		return gtidSetMap, nil
 	}
 	return gtidSetMap, nil
 }
