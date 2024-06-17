@@ -36,8 +36,5 @@ jobs:
           context: .
           file: ./Dockerfile.go
           push: true
-          tags: shinhwagk/mysql-sync:${{ steps.version.outputs.version }}
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/mysql-sync:${{ steps.version.outputs.version }}
           platforms: linux/amd64
-
-      - name: Done
-        run: echo "The image has been successfully built and pushed."
