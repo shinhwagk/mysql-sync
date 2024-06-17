@@ -32,11 +32,13 @@ func main() {
 		replication := NewReplication(config.Name, config.Replication)
 		if err := replication.start(ctx, cancel); err != nil {
 			logger.Error("Replication start error: " + err.Error())
+			cancel()
 		}
 	} else if *dest {
 		destination := NewDestination(config.Name, config.Destination)
 		if err := destination.Start(ctx, cancel); err != nil {
 			logger.Error("Destination start error: " + err.Error())
+			cancel()
 		}
 	} else {
 		fmt.Println("No specific mode activated")
