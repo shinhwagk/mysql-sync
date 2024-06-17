@@ -1,13 +1,16 @@
 services:
   repl:
-    image:
+    image: shinhwagk/mysql-sync:0.0.2
     command: -repl
+      - 9091:9091
     volumes:
       - ./config.yml:/etc/mysql-sync/config.yml
   dest:
-    image:   
+    image: shinhwagk/mysql-sync:0.0.2
     command: -dest
-  volumes:
+    ports:
+      - 9092:9091
+    volumes:
       - ./config.yml:/etc/mysql-sync/config.yml
   hjdb:
     image: shinhwagk/hjdb:0.0.6

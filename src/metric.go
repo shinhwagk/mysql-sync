@@ -170,7 +170,7 @@ func (md *MetricDirector) registerMetric(name string, metricType string) {
 			MetricType:    metricType,
 			PromCollector: collector,
 		}
-		md.Logger.Info(fmt.Sprintln("Metric registered: %s, Type: %s", name, metricType))
+		md.Logger.Info(fmt.Sprintf("Metric registered: %s, Type: %s", name, metricType))
 	}
 }
 
@@ -189,12 +189,12 @@ func (md *MetricDirector) StartHTTPServer(ctx context.Context, addr string) {
 	go func() {
 		<-ctx.Done()
 		if err := srv.Shutdown(context.Background()); err != nil {
-			// md.Logger.Printf("HTTP server Shutdown: %v", err)
+			md.Logger.Info(fmt.Sprintf("HTTP server Shutdown: %s", err.Error()))
 		}
 	}()
 
 	md.Logger.Info(fmt.Sprintf("Prometheus metrics are being served at %s/metrics", addr))
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-		// md.Logger.Printf("HTTP server ListenAndServe: %v", err)
+		md.Logger.Info(fmt.Sprintf("HTTP server ListenAndServe: %s", err))
 	}
 }

@@ -173,10 +173,10 @@ func (s *TCPServer) handleToClient(ctx context.Context, tsc *TcpServerClient, rc
 
 	for {
 		select {
+		case <-time.After(time.Second * 1):
 		case <-ctx.Done():
 			s.Logger.Info("ctx done signal received.")
 			return
-		case <-time.After(time.Second * 1):
 		case rc, ok := <-rcCh:
 			if !ok {
 				s.Logger.Info("ReceiveCountCh")
@@ -263,7 +263,7 @@ func (s *TCPServer) handleFromClient(ctx context.Context, tsc *TcpServerClient, 
 				if len(parts) == 2 {
 					result, err := strconv.Atoi(parts[1])
 					if err != nil {
-						s.Logger.Error(fmt.Sprintf("Converting signal '%s' error: ", signal, err.Error()))
+						s.Logger.Error(fmt.Sprintf("Converting signal '%s' error: %s", signal, err.Error()))
 					} else {
 						rcCh <- result
 					}
