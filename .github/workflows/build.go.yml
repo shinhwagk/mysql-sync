@@ -4,35 +4,39 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'version'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'version'
+
 jobs:
   build_and_release:
     runs-on: ubuntu-latest  
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2  
+        uses: actions/checkout@v4
 
-      - name: Build
-        run: cargo build --release 
-
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
         with:
-          tag_name: ${{ github.ref }}
-          release_name: Release ${{ github.ref }}
-          draft: false
-          prerelease: false
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
 
-      - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push
+        uses: docker/build-push-action@v5
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}   
-          asset_path: ./target/release/your_executable   
-          asset_name: your_executable
-          asset_content_type: application/octet-stream  
+          context: .
+          file: ./Dockerfile.go
+          push: true
+          tags: shinhwagk/mysql-sync:${{ steps.version.outputs.version }}
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
 
+      - name: Done
+        run: echo "The image has been successfully built and pushed."
+
+      - id: version
+        run: echo "::set-output name=version::$(cat version)"
