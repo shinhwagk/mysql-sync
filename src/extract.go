@@ -50,18 +50,16 @@ func NewBinlogExtract(logLevel int, config ReplicationConfig, gsCh <-chan string
 	}
 
 }
+
 func (bext *BinlogExtract) toMoCh(mo MysqlOperation) {
-	fmt.Println("deeeeeeeeeedeeeeeeeeeedeeeeeeeeeedeeeeeeeeee")
+	bext.Logger.Debug("Beginning to send mysql operation to moCh.")
 	bext.moCh <- mo
 	bext.metricCh <- MetricUnit{Name: MetricExtractOperations, Value: 1}
 	bext.metricCh <- MetricUnit{Name: MetricReplDelay, Value: uint(time.Now().Unix() - int64(mo.GetTimestamp()))}
-	fmt.Println("deeeeeeeeeedeeeeeeeeeedeeeeeeeeeedeeeeeeeeee22222")
-
+	bext.Logger.Debug("Mysql operation sent to moCh successfully.")
 }
 
 func (bext *BinlogExtract) Start(ctx context.Context, gtidsets string) error {
-	bext.Logger.Info("binlog extract Started.")
-
 	if bext.binlogSyncer == nil {
 		bext.binlogSyncer = replication.NewBinlogSyncer(bext.binlogSyncerConfig)
 	}

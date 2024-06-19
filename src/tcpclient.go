@@ -103,10 +103,10 @@ func (tc *TCPClient) handleToServer(tcc *TCPClientConn) {
 	encoder := gob.NewEncoder(tcc.conn)
 
 	if err := encoder.Encode(fmt.Sprintf("gtidsets@%s", tcc.gtidSets)); err != nil {
-		tc.Logger.Info(fmt.Sprintf("Requesting operations from server with gtidsets '%s' error: %s.", tcc.gtidSets, err.Error()))
+		tc.Logger.Info("Requesting operations from server with gtidsets '%s' error: %s.", tcc.gtidSets, err.Error())
 		return
 	}
-	tc.Logger.Info(fmt.Sprintf("Requesting operations from server with gtidsets '%s'.", tcc.gtidSets))
+	tc.Logger.Info("Requesting operations from server with gtidsets '%s'.", tcc.gtidSets)
 
 	for {
 		select {
@@ -122,7 +122,7 @@ func (tc *TCPClient) handleToServer(tcc *TCPClientConn) {
 
 			signal := fmt.Sprintf("receive@%d", reciveCount)
 			if err := encoder.Encode(signal); err != nil {
-				tc.Logger.Error(fmt.Sprintf("Request operations count: %d from tcp server, error: %s.", reciveCount, err.Error()))
+				tc.Logger.Error("Request operations count: %d from tcp server, error: %s.", reciveCount, err.Error())
 				return
 			}
 			tc.metricCh <- MetricUnit{Name: MetricTCPClientRequestOperations, Value: uint(reciveCount)}
@@ -195,7 +195,7 @@ func (tc *TCPClient) handleFromServer(ctx context.Context, conn net.Conn, rcCh c
 					tc.metricCh <- MetricUnit{Name: MetricTCPClientReceiveOperations, Value: 1}
 				}
 			}
-			tc.Logger.Info(fmt.Sprintf("Receive operations: %d from tcp server.", 100))
+			tc.Logger.Info("Receive operations: %d from tcp server.", 100)
 		}
 	}
 }

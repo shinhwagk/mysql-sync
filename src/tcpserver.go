@@ -6,7 +6,6 @@ import (
 	"encoding/gob"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"strconv"
 	"strings"
@@ -70,14 +69,15 @@ func (s *TCPServer) Start(ctx context.Context) error {
 
 	go func() {
 		<-ctx.Done()
-		log.Println("Shutting down server...")
+		s.Logger.Info("Shutting down server...")
 		listener.Close()
 	}()
 
 	go func() {
 		for {
-			s.Logger.Debug("distribute the mysql operation to clients.")
+			s.Logger.Debug("Distribute mysql operation to clients.")
 			select {
+			case <-time.After(time.Second * 1):
 			case <-ctx.Done():
 				return
 			case mo, ok := <-s.moCh:
@@ -113,7 +113,6 @@ func (s *TCPServer) Start(ctx context.Context) error {
 					return true
 				})
 				fmt.Println("shoudao mo1")
-			case <-time.After(time.Second * 1):
 			}
 		}
 	}()

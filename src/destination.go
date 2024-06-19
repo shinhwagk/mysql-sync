@@ -81,7 +81,7 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) e
 	mdCancel()
 	wg0.Wait()
 
-	dest.Logger.Info("stopped")
+	dest.Logger.Info("stopped。")
 
 	return nil
 }
