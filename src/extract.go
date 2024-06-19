@@ -51,9 +51,11 @@ func NewBinlogExtract(logLevel int, config ReplicationConfig, gsCh <-chan string
 
 }
 func (bext *BinlogExtract) toMoCh(mo MysqlOperation) {
+	fmt.Println("deeeeeeeeeedeeeeeeeeeedeeeeeeeeeedeeeeeeeeee")
 	bext.moCh <- mo
 	bext.metricCh <- MetricUnit{Name: MetricExtractOperations, Value: 1}
 	bext.metricCh <- MetricUnit{Name: MetricReplDelay, Value: uint(time.Now().Unix() - int64(mo.GetTimestamp()))}
+	fmt.Println("deeeeeeeeeedeeeeeeeeeedeeeeeeeeeedeeeeeeeeee22222")
 
 }
 

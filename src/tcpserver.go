@@ -76,6 +76,7 @@ func (s *TCPServer) Start(ctx context.Context) error {
 
 	go func() {
 		for {
+			s.Logger.Debug("distribute the mysql operation to clients.")
 			select {
 			case <-ctx.Done():
 				return
@@ -84,16 +85,30 @@ func (s *TCPServer) Start(ctx context.Context) error {
 					s.Logger.Info("mysql operation channal close.")
 					return
 				}
+				fmt.Println("shoudao mo")
 				s.Clients.Range(func(key, value interface{}) bool {
 					client := value.(*TcpServerClient)
+					fmt.Println("send cleint", client.conn.RemoteAddr().String())
+					fmt.Println("send clein", client.close)
 					if client.close {
 						s.Clients.Delete(client.conn.RemoteAddr().String())
-						close(client.channel)
+						select {
+						case <-client.channel:
+						case <-time.After(time.Second):
+						}
+						// close(client.channel)
+
 					} else {
+						fmt.Println("ssssssssss", mo, client.channel, &client.channel)
 						client.channel <- mo
+						fmt.Println("fffffffffffffff")
+
 					}
+					fmt.Println("send clein2t", client.conn.RemoteAddr().String())
+
 					return true
 				})
+				fmt.Println("shoudao mo1")
 			case <-time.After(time.Second * 1):
 			}
 		}
@@ -108,12 +123,14 @@ func (s *TCPServer) Start(ctx context.Context) error {
 			return err
 		}
 
-		clientChannel := make(chan MysqlOperation, 100)
+		clientChannel := make(chan MysqlOperation)
 		client := &TcpServerClient{
 			conn:    conn,
 			channel: clientChannel,
 			close:   false,
 		}
+
+		s.Logger.Info(fmt.Sprintf("Add client(%s) to clients.", conn.RemoteAddr().String()))
 
 		s.Clients.Store(conn.RemoteAddr().String(), client)
 
@@ -123,23 +140,22 @@ func (s *TCPServer) Start(ctx context.Context) error {
 }
 
 func (s *TCPServer) handleConnection(client *TcpServerClient) {
+	s.Logger.Info(fmt.Sprintf("Receive new client(%s) ", client.conn.RemoteAddr().String()))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	defer func() {
 		client.close = true
 		client.conn.Close()
 	}()
 
+	rcCh := make(chan int)
+	defer close(rcCh)
+
 	var wg sync.WaitGroup
 
 	wg.Add(2)
-
-	// soc := &SendOperationControl{ReceiveCountCh: make(chan uint)}
-
-	rcCh := make(chan int)
-	// go func() {
-	// 	rcCh <- 100
-	// }()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	go func() {
 		defer wg.Done()
@@ -160,10 +176,10 @@ func (s *TCPServer) handleConnection(client *TcpServerClient) {
 	s.Logger.Info(fmt.Sprintf("tcp connection '%s' close.", client.conn.RemoteAddr().String()))
 }
 
-func (s *TCPServer) handleToClient(ctx context.Context, tsc *TcpServerClient, rcCh <-chan int) {
+func (s *TCPServer) handleToClient(ctx context.Context, client *TcpServerClient, rcCh <-chan int) {
 	var buf bytes.Buffer
 
-	multiWriter := io.MultiWriter(tsc.conn, &buf)
+	multiWriter := io.MultiWriter(client.conn, &buf)
 	zstdWriter, err := zstd.NewWriter(multiWriter)
 
 	if err != nil {
@@ -199,7 +215,7 @@ func (s *TCPServer) handleToClient(ctx context.Context, tsc *TcpServerClient, rc
 				case <-ctx.Done():
 					s.Logger.Info("ctx done signal received.")
 					return
-				case oper, ok := <-tsc.channel:
+				case oper, ok := <-client.channel:
 					if !ok {
 						s.Logger.Info("mysql operation channel closed.")
 						return
@@ -216,7 +232,7 @@ func (s *TCPServer) handleToClient(ctx context.Context, tsc *TcpServerClient, rc
 						}
 						rc -= rcCnt
 
-						s.Logger.Debug(fmt.Sprintf("Compressed data sent: %d bytes\n", buf.Len()))
+						// s.Logger.Debug(fmt.Sprintf("Compressed data sent: %d bytes\n", buf.Len()))
 						s.metricCh <- MetricUnit{Name: MetricTCPServerOutgoing, Value: uint(buf.Len())}
 						s.metricCh <- MetricUnit{Name: MetricTCPServerSendOperations, Value: uint(len(sendMO))}
 						buf.Reset()
@@ -231,7 +247,7 @@ func (s *TCPServer) handleToClient(ctx context.Context, tsc *TcpServerClient, rc
 						}
 						rc -= rcCnt
 
-						s.Logger.Debug(fmt.Sprintf("Compressed data sent: %d bytes\n", buf.Len()))
+						// s.Logger.Debug(fmt.Sprintf("Compressed data sent: %d bytes\n", buf.Len()))
 						s.metricCh <- MetricUnit{Name: MetricTCPServerOutgoing, Value: uint(buf.Len())}
 						s.metricCh <- MetricUnit{Name: MetricTCPServerSendOperations, Value: uint(len(sendMO))}
 						buf.Reset()
@@ -246,39 +262,33 @@ func (s *TCPServer) handleFromClient(ctx context.Context, tsc *TcpServerClient, 
 	decoder := gob.NewDecoder(tsc.conn)
 
 	for {
-		select {
-		case <-ctx.Done():
-			s.Logger.Info("ctx done signal received.")
-			return
-		default:
-			var signal string
+		var signal string
 
-			if err := decoder.Decode(&signal); err != nil {
-				if err == io.EOF {
-					s.Logger.Info("tcp client close.")
-				} else {
-					s.Logger.Error("Error decoding message:" + err.Error())
-				}
-				return
-			}
-
-			if strings.HasPrefix(signal, "gtidsets@") {
-				s.Logger.Info("from client receive gtidsets " + signal)
-				parts := strings.Split(signal, "@")
-				s.gsCh <- parts[1]
-			} else if strings.HasPrefix(signal, "receive@") {
-				parts := strings.Split(signal, "@")
-				if len(parts) == 2 {
-					result, err := strconv.Atoi(parts[1])
-					if err != nil {
-						s.Logger.Error(fmt.Sprintf("Converting signal '%s' error: %s", signal, err.Error()))
-					} else {
-						rcCh <- result
-					}
-				}
+		if err := decoder.Decode(&signal); err != nil {
+			if err == io.EOF {
+				s.Logger.Info("tcp client close.")
 			} else {
-				s.Logger.Error(fmt.Sprintf("Unknow signal '%s'.", signal))
+				s.Logger.Error("Error decoding message:" + err.Error())
 			}
+			return
+		}
+
+		if strings.HasPrefix(signal, "gtidsets@") {
+			s.Logger.Info("from client receive gtidsets " + signal)
+			parts := strings.Split(signal, "@")
+			s.gsCh <- parts[1]
+		} else if strings.HasPrefix(signal, "receive@") {
+			parts := strings.Split(signal, "@")
+			if len(parts) == 2 {
+				result, err := strconv.Atoi(parts[1])
+				if err != nil {
+					s.Logger.Error(fmt.Sprintf("Converting signal '%s' error: %s", signal, err.Error()))
+				} else {
+					rcCh <- result
+				}
+			}
+		} else {
+			s.Logger.Error(fmt.Sprintf("Unknow signal '%s'.", signal))
 		}
 	}
 }

@@ -35,14 +35,16 @@ func main() {
 	}
 	childCtx, childCancel := context.WithCancel(context.Background())
 	go func() {
-		time.Sleep(time.Second * 4)
+		time.Sleep(time.Second * 5)
 		// binlogExtract.Stop()
 		childCancel()
 		fmt.Println("binlogext stop")
 	}()
 	fmt.Println(syncer, streamer, 2222)
 
+	cnt := 1
 	for {
+		fmt.Println("GetEvent GetEventGetEventGetEventGetEventGetEvent")
 		_, err := streamer.GetEvent(childCtx)
 		if err != nil {
 			if err == context.Canceled {
@@ -60,7 +62,8 @@ func main() {
 			}
 			fmt.Println("sdsssss", err.Error())
 		}
-		time.Sleep(time.Second)
+		cnt += 1
+		fmt.Println(cnt)
 
 		// switch e := ev.Event.(type) {
 		// case *replication.QueryEvent:

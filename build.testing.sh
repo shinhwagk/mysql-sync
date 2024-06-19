@@ -1,3 +1,14 @@
 #!/bin/bash
 
-go build -ldflags="-s -w" -o /tmp/mysqlsync ./src/*.go
+build() {
+  go build -ldflags="-s -w" -o /tmp/mysqlsync ./src/*.go
+}
+
+if [[ $1 == "-w" ]]; then
+    while true; do
+        build && date
+        sleep 1
+    done
+else
+    build
+fi
