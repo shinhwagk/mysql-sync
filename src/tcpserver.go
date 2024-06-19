@@ -133,7 +133,7 @@ func (s *TCPServer) Start(ctx context.Context) error {
 			close:   false,
 		}
 
-		s.Logger.Info(fmt.Sprintf("Add client(%s) to clients.", conn.RemoteAddr().String()))
+		s.Logger.Info("Add client(%s) to clients.", conn.RemoteAddr().String())
 
 		s.Clients.Store(conn.RemoteAddr().String(), client)
 
@@ -143,7 +143,7 @@ func (s *TCPServer) Start(ctx context.Context) error {
 }
 
 func (s *TCPServer) handleConnection(client *TcpServerClient) {
-	s.Logger.Info(fmt.Sprintf("Receive new client(%s) ", client.conn.RemoteAddr().String()))
+	s.Logger.Info("Receive new client(%s) ", client.conn.RemoteAddr().String())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -163,20 +163,20 @@ func (s *TCPServer) handleConnection(client *TcpServerClient) {
 	go func() {
 		defer wg.Done()
 		s.handleFromClient(ctx, client, rcCh)
-		s.Logger.Info(fmt.Sprintf("tcp from client(%s) handler close.", client.conn.RemoteAddr().String()))
+		s.Logger.Info("tcp from client(%s) handler close.", client.conn.RemoteAddr().String())
 		cancel()
 	}()
 
 	go func() {
 		defer wg.Done()
 		s.handleToClient(ctx, client, rcCh)
-		s.Logger.Info(fmt.Sprintf("tcp to client(%s) handler close.", client.conn.RemoteAddr().String()))
+		s.Logger.Info("tcp to client(%s) handler close.", client.conn.RemoteAddr().String())
 		cancel()
 	}()
 
 	wg.Wait()
 
-	s.Logger.Info(fmt.Sprintf("tcp connection '%s' close.", client.conn.RemoteAddr().String()))
+	s.Logger.Info("tcp connection '%s' close.", client.conn.RemoteAddr().String())
 }
 
 func (s *TCPServer) handleToClient(ctx context.Context, client *TcpServerClient, rcCh <-chan int) {
@@ -186,7 +186,7 @@ func (s *TCPServer) handleToClient(ctx context.Context, client *TcpServerClient,
 	zstdWriter, err := zstd.NewWriter(multiWriter)
 
 	if err != nil {
-		s.Logger.Error(fmt.Sprintf("Error creating zstd writer: %s", err.Error()))
+		s.Logger.Error("Error creating zstd writer: %s", err.Error())
 		return
 	}
 	defer zstdWriter.Close()
@@ -285,29 +285,28 @@ func (s *TCPServer) handleFromClient(ctx context.Context, tsc *TcpServerClient, 
 			if len(parts) == 2 {
 				result, err := strconv.Atoi(parts[1])
 				if err != nil {
-					s.Logger.Error(fmt.Sprintf("Converting signal '%s' error: %s", signal, err.Error()))
+					s.Logger.Error("Converting signal '%s' error: %s", signal, err.Error())
 				} else {
 					rcCh <- result
 				}
 			}
 		} else {
-			s.Logger.Error(fmt.Sprintf("Unknow signal '%s'.", signal))
+			s.Logger.Error("Unknow signal '%s'.", signal)
 		}
 	}
 }
 
 func (s *TCPServer) sendClient(encoder *gob.Encoder, zstdWriter *zstd.Encoder, operations []MysqlOperation) error {
 	if err := encoder.Encode(operations); err != nil {
-		s.Logger.Error(fmt.Sprintf("Error encoding message: %s", err.Error()))
-
+		s.Logger.Error("Error encoding message: %s", err.Error())
 		return err
 	}
 
 	if err := zstdWriter.Flush(); err != nil {
-		s.Logger.Error(fmt.Sprintf("Error flushing zstd writer: %s", err))
+		s.Logger.Error("Error flushing zstd writer: %s", err)
 		return err
 	}
 
-	s.Logger.Debug(fmt.Sprintf("send operations number:'%d' to client success.", len(operations)))
+	s.Logger.Debug("Mysql operations number:'%d' sent to client successfully.", len(operations))
 	return nil
 }
