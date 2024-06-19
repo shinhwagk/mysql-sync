@@ -24,8 +24,6 @@ type BinlogExtract struct {
 	gsCh <-chan string
 
 	metricCh chan<- MetricUnit
-
-	ccc int
 }
 
 func NewBinlogExtract(logLevel int, config ReplicationConfig, gsCh <-chan string, moCh chan<- MysqlOperation, metricCh chan<- MetricUnit) *BinlogExtract {
@@ -49,7 +47,6 @@ func NewBinlogExtract(logLevel int, config ReplicationConfig, gsCh <-chan string
 		gsCh:               gsCh,
 
 		metricCh: metricCh,
-		ccc:      0,
 	}
 
 }
