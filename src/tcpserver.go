@@ -79,6 +79,7 @@ func (s *TCPServer) Start(ctx context.Context) error {
 			select {
 			case <-time.After(time.Second * 1):
 			case <-ctx.Done():
+				s.Logger.Info("Context canceled, stopping distribution loop.")
 				return
 			case mo, ok := <-s.moCh:
 				if !ok {
@@ -102,6 +103,7 @@ func (s *TCPServer) Start(ctx context.Context) error {
 						fmt.Println("ssssssssss", mo, client.channel, &client.channel)
 						select {
 						case client.channel <- mo:
+							s.Logger.Debug(fmt.Sprintf("Sent MySQL operation to client %s successfully.", client.conn.RemoteAddr().String()))
 						case <-time.After(time.Second * 5):
 							fmt.Println("发送操作超时")
 						}
