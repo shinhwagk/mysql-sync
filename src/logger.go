@@ -34,3 +34,7 @@ func (l Logger) Debug(args string) {
 func (l Logger) Error(args string) {
 	log.Println(fmt.Sprintf(" -- ERROR -- %s -- %s", l.Module, args))
 }
+
+func (l Logger) Waring(args string) {
+	log.Println(fmt.Sprintf(" -- WARNING -- %s -- %s", l.Module, args))
+}

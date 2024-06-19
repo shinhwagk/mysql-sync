@@ -11,10 +11,11 @@ type MysqlOperation interface {
 }
 
 type MysqlOperationDDLTable struct {
-	Schema    string
-	Table     string
-	Query     string
-	Timestamp uint32
+	SchemaContext string
+	Schema        string
+	Table         string
+	Query         string
+	Timestamp     uint32
 }
 
 func (op MysqlOperationDDLTable) OperationType() string {

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"sync"
+	"time"
 )
 
 func NewReplication(name string, rc ReplicationConfig) *Replication {
@@ -32,10 +33,6 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) e
 	tcpServer := NewTCPServer(repl.rc.LogLevel, repl.rc.TCPAddr, gsCh, moCh, metricCh)
 	binlogExtract := NewBinlogExtract(repl.rc.LogLevel, repl.rc, gsCh, moCh, metricCh)
 
-	var childCtx context.Context
-	var childCancel context.CancelFunc = func() {}
-	var wg sync.WaitGroup
-
 	go func() {
 		if err := tcpServer.Start(ctx); err != nil {
 			repl.Logger.Error("tcp server start failed: " + err.Error())
@@ -49,13 +46,22 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) e
 		metricDirector.Logger.Info("stopped.")
 	}()
 
+	childCtx, childCancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+
 	for {
 		select {
 		case gtidsets := <-gsCh:
+			repl.Logger.Info("Got gtidsets: " + gtidsets)
 			childCancel()
+
 			wg.Wait()
 
+			wg.Add(1)
 			go func() {
+				defer wg.Done()
+				repl.Logger.Info("mysql operation channel empty.")
+				time.Sleep(time.Second * 1)
 				for {
 					select {
 					case <-moCh:
@@ -65,16 +71,14 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) e
 				}
 			}()
 
-			childCtx, childCancel = context.WithCancel(context.Background())
-
 			wg.Add(1)
-			go func(gtid string) {
+			go func(gss string) {
+				childCtx, childCancel = context.WithCancel(context.Background())
 				defer wg.Done()
-				if err := binlogExtract.start(childCtx, gtidsets); err != nil { // 假设 RestartSync 需要 GTID 作为参数
+				if err := binlogExtract.Start(childCtx, gss); err != nil { // 假设 RestartSync 需要 GTID 作为参数
 					repl.Logger.Error("failed to restart sync: " + err.Error())
 				}
-
-				repl.Logger.Info("binlog extract stopped.")
+				binlogExtract.Logger.Info("binlog extract stopped.")
 			}(gtidsets)
 		case <-ctx.Done():
 			childCancel()

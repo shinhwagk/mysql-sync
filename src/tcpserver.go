@@ -42,7 +42,7 @@ type TCPServer struct {
 type TcpServerClient struct {
 	conn    net.Conn
 	channel chan MysqlOperation
-	close   chan bool
+	close   bool
 }
 
 type SendOperationControl struct {
@@ -86,7 +86,12 @@ func (s *TCPServer) Start(ctx context.Context) error {
 				}
 				s.Clients.Range(func(key, value interface{}) bool {
 					client := value.(*TcpServerClient)
-					client.channel <- mo
+					if client.close {
+						s.Clients.Delete(client.conn.RemoteAddr().String())
+						close(client.channel)
+					} else {
+						client.channel <- mo
+					}
 					return true
 				})
 			case <-time.After(time.Second * 1):
@@ -107,6 +112,7 @@ func (s *TCPServer) Start(ctx context.Context) error {
 		client := &TcpServerClient{
 			conn:    conn,
 			channel: clientChannel,
+			close:   false,
 		}
 
 		s.Clients.Store(conn.RemoteAddr().String(), client)
@@ -118,9 +124,8 @@ func (s *TCPServer) Start(ctx context.Context) error {
 
 func (s *TCPServer) handleConnection(client *TcpServerClient) {
 	defer func() {
+		client.close = true
 		client.conn.Close()
-		close(client.channel)
-		s.Clients.Delete(client.conn.RemoteAddr().String())
 	}()
 
 	var wg sync.WaitGroup
@@ -162,7 +167,7 @@ func (s *TCPServer) handleToClient(ctx context.Context, tsc *TcpServerClient, rc
 	zstdWriter, err := zstd.NewWriter(multiWriter)
 
 	if err != nil {
-		fmt.Println("Error creating zstd writer:", err)
+		s.Logger.Error(fmt.Sprintf("Error creating zstd writer: %s", err.Error()))
 		return
 	}
 	defer zstdWriter.Close()
@@ -191,6 +196,9 @@ func (s *TCPServer) handleToClient(ctx context.Context, tsc *TcpServerClient, rc
 				}
 
 				select {
+				case <-ctx.Done():
+					s.Logger.Info("ctx done signal received.")
+					return
 				case oper, ok := <-tsc.channel:
 					if !ok {
 						s.Logger.Info("mysql operation channel closed.")
@@ -255,7 +263,7 @@ func (s *TCPServer) handleFromClient(ctx context.Context, tsc *TcpServerClient, 
 			}
 
 			if strings.HasPrefix(signal, "gtidsets@") {
-				s.Logger.Info("from client resdf gtidsets " + signal)
+				s.Logger.Info("from client receive gtidsets " + signal)
 				parts := strings.Split(signal, "@")
 				s.gsCh <- parts[1]
 			} else if strings.HasPrefix(signal, "receive@") {
@@ -277,12 +285,13 @@ func (s *TCPServer) handleFromClient(ctx context.Context, tsc *TcpServerClient, 
 
 func (s *TCPServer) sendClient(encoder *gob.Encoder, zstdWriter *zstd.Encoder, operations []MysqlOperation) error {
 	if err := encoder.Encode(operations); err != nil {
-		fmt.Println("Error encoding message:", err)
+		s.Logger.Error(fmt.Sprintf("Error encoding message: %s", err.Error()))
+
 		return err
 	}
 
 	if err := zstdWriter.Flush(); err != nil {
-		fmt.Println("Error flushing zstd writer:", err)
+		s.Logger.Error(fmt.Sprintf("Error flushing zstd writer: %s", err))
 		return err
 	}
 

@@ -107,6 +107,7 @@ func (mc *MysqlClient) Commit() error {
 	if mc.tx != nil {
 		err := mc.tx.Commit()
 		if err != nil {
+			mc.Logger.Error("Commit error: " + err.Error())
 			return err
 		}
 		mc.tx = nil

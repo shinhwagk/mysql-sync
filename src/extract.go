@@ -16,7 +16,7 @@ import (
 )
 
 type BinlogExtract struct {
-	logger             *Logger
+	Logger             *Logger
 	binlogSyncer       *replication.BinlogSyncer
 	binlogSyncerConfig replication.BinlogSyncerConfig
 
@@ -42,7 +42,7 @@ func NewBinlogExtract(logLevel int, config ReplicationConfig, gsCh <-chan string
 	}
 
 	return &BinlogExtract{
-		logger:             NewLogger(config.LogLevel, "extract"),
+		Logger:             NewLogger(config.LogLevel, "extract"),
 		binlogSyncer:       nil,
 		binlogSyncerConfig: cfg,
 		moCh:               moCh,
@@ -60,40 +60,48 @@ func (bext *BinlogExtract) toMoCh(mo MysqlOperation) {
 
 }
 
-func (bext *BinlogExtract) start(ctx context.Context, gtidsets string) error {
+func (bext *BinlogExtract) Start(ctx context.Context, gtidsets string) error {
+	bext.Logger.Info("binlog extract Started.")
+
 	if bext.binlogSyncer == nil {
 		bext.binlogSyncer = replication.NewBinlogSyncer(bext.binlogSyncerConfig)
 	}
 
 	gtidSet, err := mysql.ParseGTIDSet("mysql", gtidsets)
 	if err != nil {
-		bext.logger.Error("ParseGTIDSet " + err.Error())
+		bext.Logger.Error("ParseGTIDSet " + err.Error())
 		return err
 	}
 
-	bext.logger.Info("start from gtidsets:" + gtidSet.String())
+	bext.Logger.Info("start from gtidsets:" + gtidSet.String())
 
 	streamer, err := bext.binlogSyncer.StartSyncGTID(gtidSet)
-
 	if err != nil {
-		bext.logger.Error("start sync err:" + err.Error())
+		bext.Logger.Error("start sync err:" + err.Error())
 		return err
+	} else {
+		bext.Logger.Info("binlogSyncer ready.")
 	}
 
 	for {
+		select {
+		case <-ctx.Done():
+			fmt.Println("binlogExtract: Received context cancellation")
+		case <-time.After(time.Second * 1):
+		}
 		ev, err := streamer.GetEvent(ctx)
 
 		if err != nil {
 			if err == context.DeadlineExceeded {
-				fmt.Println("Event fetch timed out:", err)
+				bext.Logger.Error(fmt.Sprintf("Event fetch timed out: %s", err))
 				return nil
 			} else if err == context.Canceled {
 				bext.binlogSyncer.Close()
-				fmt.Println("Event handling canceled:", err)
+				bext.binlogSyncer = nil
+				bext.Logger.Error(fmt.Sprintf("Event handling canceled: %s", err))
 				return nil
 			}
-			// fmt.Println("Error getting event:", err)
-			bext.logger.Error("error event " + err.Error())
+			bext.Logger.Error("error event " + err.Error())
 			return err
 		}
 
@@ -229,7 +237,7 @@ func (bext *BinlogExtract) handleQueryEvent(e *replication.QueryEvent, eh *repli
 	parser := parser.New()
 	stmts, warns, err := parser.Parse(string(e.Query), "", "")
 	for _, warn := range warns {
-		fmt.Println(warn)
+		bext.Logger.Waring(warn.Error())
 	}
 
 	if err != nil {
@@ -239,38 +247,54 @@ func (bext *BinlogExtract) handleQueryEvent(e *replication.QueryEvent, eh *repli
 	for _, stmt := range stmts {
 		switch t := stmt.(type) {
 		case *ast.RenameTableStmt:
+			oldSchema := string(e.Schema)
+			newSchema := string(e.Schema)
+
+			for _, tab := range t.TableToTables {
+				if len(tab.OldTable.Schema.O) != 0 {
+					oldSchema = tab.OldTable.Schema.O
+				}
+
+				if len(tab.NewTable.Schema.O) != 0 {
+					newSchema = tab.NewTable.Schema.O
+				}
+
+				Query := fmt.Sprintf("RENAME TABLE `%s`.`%s` TO `%s`.`%s`", oldSchema, tab.OldTable.Name.O, newSchema, tab.NewTable.Name)
+				bext.toMoCh(MysqlOperationDDLTable{SchemaContext: string(e.Schema), Schema: oldSchema, Table: tab.OldTable.Name.O, Query: Query, Timestamp: eh.Timestamp})
+			}
 		case *ast.AlterTableStmt:
 			schema := string(e.Schema)
 			if len(schema) == 0 {
 				schema = t.Table.Schema.O
 			}
-			bext.toMoCh(MysqlOperationDDLTable{Schema: schema, Table: t.Table.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})
+			bext.toMoCh(MysqlOperationDDLTable{SchemaContext: string(e.Schema), Schema: schema, Table: t.Table.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})
 		case *ast.DropTableStmt:
 			schema := string(e.Schema)
 			for _, tab := range t.Tables {
 				if len(schema) == 0 {
 					schema = tab.Schema.O
 				}
-				bext.toMoCh(MysqlOperationDDLTable{Schema: schema, Table: tab.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})
+				Query := fmt.Sprintf("DROP TABLE `%s`.`%s`", schema, tab.Name.O)
+				bext.toMoCh(MysqlOperationDDLTable{SchemaContext: string(e.Schema), Schema: schema, Table: tab.Name.O, Query: Query, Timestamp: eh.Timestamp})
 			}
 		case *ast.CreateTableStmt:
 			schema := string(e.Schema)
 			if len(schema) == 0 {
 				schema = t.Table.Schema.O
 			}
-			bext.toMoCh(MysqlOperationDDLTable{Schema: schema, Table: t.Table.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})
+			bext.toMoCh(MysqlOperationDDLTable{SchemaContext: string(e.Schema), Schema: schema, Table: t.Table.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})
 		case *ast.TruncateTableStmt:
 			schema := string(e.Schema)
 			if len(schema) == 0 {
 				schema = t.Table.Schema.O
 			}
-			bext.toMoCh(MysqlOperationDDLTable{Schema: schema, Table: t.Table.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})
-		case *ast.CreateIndexStmt:
-			schema := string(e.Schema)
-			if len(schema) == 0 {
-				schema = t.Table.Schema.O
-			}
-			bext.toMoCh(MysqlOperationDDLTable{Schema: schema, Table: t.Table.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})
+			bext.toMoCh(MysqlOperationDDLTable{SchemaContext: string(e.Schema), Schema: schema, Table: t.Table.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})
+		// case *ast.CreateIndexStmt:
+		// 	schema := string(e.Schema)
+		// 	if len(schema) == 0 {
+		// 		schema = t.Table.Schema.O
+		// 	}
+		// 	bext.toMoCh(MysqlOperationDDLTable{SchemaContext: string(e.Schema), Schema: schema, Table: t.Table.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})
 		case *ast.DropIndexStmt:
 		case *ast.CreateDatabaseStmt:
 			bext.toMoCh(MysqlOperationDDLDatabase{Schema: t.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})

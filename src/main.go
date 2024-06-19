@@ -42,5 +42,6 @@ func main() {
 		}
 	} else {
 		fmt.Println("No specific mode activated")
+
 	}
 }
