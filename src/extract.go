@@ -81,11 +81,6 @@ func (bext *BinlogExtract) Start(ctx context.Context, gtidsets string) error {
 	}
 
 	for {
-		select {
-		case <-ctx.Done():
-			fmt.Println("binlogExtract: Received context cancellation")
-		case <-time.After(time.Second * 1):
-		}
 		ev, err := streamer.GetEvent(ctx)
 
 		if err != nil {

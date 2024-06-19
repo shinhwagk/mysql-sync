@@ -82,7 +82,8 @@ func (g *GtidSets) QueryGtidSetsMapFromHJDB() (map[string]uint, error) {
 		return nil, err
 	} else {
 		if *hjdbResp.State == "err" {
-			if hjdbResp.ErrCode != nil && (*hjdbResp.ErrCode == "hjdb-001" || *hjdbResp.ErrCode == "hjdb-002") {
+			fmt.Println(*hjdbResp.ErrCode)
+			if hjdbResp.ErrCode != nil && (*hjdbResp.ErrCode == "HJDB-001" || *hjdbResp.ErrCode == "HJDB-002") {
 				g.Logger.Error(fmt.Sprintf("hjdb-err: %s", *hjdbResp.ErrMsg))
 				return make(map[string]uint), nil
 			}
