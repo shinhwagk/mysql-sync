@@ -100,7 +100,11 @@ func (s *TCPServer) Start(ctx context.Context) error {
 
 					} else {
 						fmt.Println("ssssssssss", mo, client.channel, &client.channel)
-						client.channel <- mo
+						select {
+						case client.channel <- mo:
+						case <-time.After(time.Second * 5):
+							fmt.Println("发送操作超时")
+						}
 						fmt.Println("fffffffffffffff")
 
 					}
