@@ -89,7 +89,7 @@ func (g *GtidSets) QueryGtidSetsMapFromHJDB() (map[string]uint, error) {
 			}
 			return nil, fmt.Errorf(*hjdbResp.ErrMsg)
 		} else {
-			g.Logger.Info(fmt.Sprintf("Query gtidsets from hjdb: %v", *&hjdbResp.Data))
+			g.Logger.Info(fmt.Sprintf("Query gtidsets from hjdb: %v", *hjdbResp.Data))
 			return *hjdbResp.Data, nil
 			// g.Logger.Debug(fmt.Sprintf("Persist gtidsets map '%v' success.", gssm))
 		}

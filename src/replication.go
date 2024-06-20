@@ -49,7 +49,7 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) e
 	var wg sync.WaitGroup
 	childCtx, childCancel := context.WithCancel(context.Background())
 
-	cleanSignal := true
+	cleanMoChSignal := true
 
 	for {
 		select {
@@ -66,14 +66,14 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) e
 				defer wg.Done()
 				<-childCtx.Done()
 				repl.Logger.Info("Clean mysql operation channel.")
-				for cleanSignal {
+				for cleanMoChSignal {
 					select {
 					case <-moCh:
 						repl.Logger.Debug("Consume mysql operation.")
 					case <-time.After(time.Second):
 					}
 				}
-				cleanSignal = true
+				cleanMoChSignal = true
 			}()
 
 			wg.Add(1)
@@ -81,9 +81,9 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) e
 				defer wg.Done()
 				binlogExtract.Logger.Info("binlog extract Started.")
 				if err := binlogExtract.Start(childCtx, gss); err != nil { // 假设 RestartSync 需要 GTID 作为参数
-					repl.Logger.Error("failed to restart sync: " + err.Error())
+					binlogExtract.Logger.Error("failed to restart sync: " + err.Error())
 				}
-				cleanSignal = false
+				cleanMoChSignal = false
 				binlogExtract.Logger.Info("binlog extract stopped.")
 			}(gtidsets)
 		case <-ctx.Done():

@@ -76,20 +76,20 @@ func (bext *BinlogExtract) Start(ctx context.Context, gtidsets string) error {
 	if err != nil {
 		bext.Logger.Error("start sync err:" + err.Error())
 		return err
-	} else {
-		bext.Logger.Info("binlogSyncer ready.")
 	}
+
+	bext.Logger.Info("binlogSyncer ready.")
 
 	for {
 		ev, err := streamer.GetEvent(ctx)
 
 		if err != nil {
+			bext.binlogSyncer.Close()
+			bext.binlogSyncer = nil
 			if err == context.DeadlineExceeded {
 				bext.Logger.Error(fmt.Sprintf("Event fetch timed out: %s", err))
 				return nil
 			} else if err == context.Canceled {
-				bext.binlogSyncer.Close()
-				bext.binlogSyncer = nil
 				bext.Logger.Error(fmt.Sprintf("Event handling canceled: %s", err))
 				return nil
 			}
@@ -197,7 +197,6 @@ func (bext *BinlogExtract) handleEventUpdateRows(e *replication.RowsEvent, eh *r
 			mod.AfterColumns = append(mod.AfterColumns, MysqlOperationDMLColumn{ColumnName: string(e.Table.ColumnName[i]), ColumnType: e.Table.ColumnType[i], ColumnValue: after_value[i]})
 		}
 		bext.toMoCh(mod)
-
 		bext.metricCh <- MetricUnit{Name: MetricReplDMLUpdateTimes, Value: 1}
 	}
 	return nil
@@ -208,10 +207,7 @@ func (bext *BinlogExtract) handleEventGtid(e *replication.GTIDEvent, eh *replica
 		fmt.Println("Error retrieving GTID:", err)
 		return err
 	} else {
-		// fmt.Println("GTID:", gtidNext.String())
-
 		parts := strings.Split(gtidNext.String(), ":")
-		// repl.logger.Debug("gtid " + gtidNext.String())
 		if len(parts) == 2 {
 			xid, err := strconv.ParseInt(parts[1], 10, 64)
 			if err != nil {
