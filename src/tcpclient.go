@@ -54,6 +54,11 @@ func (tc *TCPClient) SendSignalReceive(encoder *gob.Encoder, reciveCount int) er
 func (tc *TCPClient) handleConnection(ctx context.Context, tcServer *TCPClientServer) {
 	var wg sync.WaitGroup
 
+	go func() {
+		<-ctx.Done()
+		tcServer.SetClose()
+	}()
+
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -72,16 +77,14 @@ func (tc *TCPClient) handleConnection(ctx context.Context, tcServer *TCPClientSe
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		<-ctx.Done()
-		tcServer.SetClose()
 		if err := tcServer.Cleanup(); err != nil {
 			tc.Logger.Error(fmt.Sprintf("Close connection error: " + err.Error()))
 		}
 	}()
 
-	fmt.Println("Server connected " + tcServer.conn.LocalAddr().String())
+	tc.Logger.Info("Server connected " + tcServer.conn.LocalAddr().String())
 	wg.Wait()
-	fmt.Println("Server connection close." + tcServer.conn.LocalAddr().String())
+	tc.Logger.Info("Server connection close." + tcServer.conn.LocalAddr().String())
 }
 
 func (tc *TCPClient) handleToServer(tcServer *TCPClientServer) {

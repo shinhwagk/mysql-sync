@@ -55,8 +55,8 @@ func (tcs *TCPClientServer) Cleanup() error {
 	select {
 	case <-tcs.rcCh:
 		// ts.Logger.Debug(fmt.Sprintf("moCh -> mo -> client cache(%s) ok.", client.conn.RemoteAddr().String()))
-	case <-time.After(time.Second * 5):
-		fmt.Println("发送操作超时1")
+	case <-time.After(time.Second * 1):
+		fmt.Println("channel rcCh clean.")
 	}
 
 	tcs.decoderZstdReader.Close()

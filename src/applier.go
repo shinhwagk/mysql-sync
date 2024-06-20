@@ -161,6 +161,12 @@ func (ma *MysqlApplier) OnDMLDelete(op MysqlOperationDMLDelete) error {
 	// ma.logger.Debug(fmt.Sprintf("OnDMLDelete -- query: '%s' params: '%s'", sql, params))
 	ma.Logger.Debug("OnDMLDelete -- SchemaContext: %s, Table: %s", op.Database, op.Table)
 
+	// todo
+	if len(op.PrimaryKey) == 0 {
+		ma.Logger.Warning("OnDMLDelete -- No primary key -- SchemaContext: %s, Table: %s, Query: %s, Params: %v", op.Database, op.Table, sql, params)
+		return nil
+	}
+
 	if err := ma.mysqlClient.ExecuteDML(sql, params); err != nil {
 		return err
 	}
@@ -172,6 +178,12 @@ func (ma *MysqlApplier) OnDMLUpdate(op MysqlOperationDMLUpdate) error {
 	sql, params := BuildDMLDeleteQuery(op.Database, op.Table, op.BeforeColumns, op.PrimaryKey)
 
 	ma.Logger.Debug("OnDMLUpdate -- SchemaContext: %s, Table: %s", op.Database, op.Table)
+
+	// todo
+	if len(op.PrimaryKey) == 0 {
+		ma.Logger.Warning("OnDMLUpdate -- SchemaContext: %s, Table: %s, Query: %s, Params: %v", op.Database, op.Table, sql, params)
+		return nil
+	}
 
 	// ma.Logger.Debug(fmt.Sprintf("OnDMLUpdate -- query: '%s' params: '%s'", sql, params))
 	if err := ma.mysqlClient.ExecuteDML(sql, params); err != nil {

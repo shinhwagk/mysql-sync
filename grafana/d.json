@@ -95,7 +95,7 @@
             },
             "gridPos": {
                 "h": 8,
-                "w": 12,
+                "w": 8,
                 "x": 0,
                 "y": 0
             },
@@ -190,8 +190,131 @@
             },
             "gridPos": {
                 "h": 8,
-                "w": 12,
-                "x": 12,
+                "w": 8,
+                "x": 8,
+                "y": 0
+            },
+            "id": 6,
+            "options": {
+                "legend": {
+                    "calcs": [],
+                    "displayMode": "list",
+                    "placement": "bottom",
+                    "showLegend": true
+                },
+                "tooltip": {
+                    "mode": "single",
+                    "sort": "none"
+                }
+            },
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "cdp1kz3veskcgc"
+                    },
+                    "editorMode": "code",
+                    "expr": "delta(mysqlsync_destination_dml_delete_times[1m])",
+                    "instant": false,
+                    "interval": "1m",
+                    "legendFormat": "delete",
+                    "range": true,
+                    "refId": "A"
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "cdp1kz3veskcgc"
+                    },
+                    "editorMode": "code",
+                    "expr": "delta(mysqlsync_destination_dml_insert_times[1m])",
+                    "hide": false,
+                    "instant": false,
+                    "interval": "1m",
+                    "legendFormat": "insert",
+                    "range": true,
+                    "refId": "B"
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "cdp1kz3veskcgc"
+                    },
+                    "editorMode": "code",
+                    "expr": "delta(mysqlsync_destination_dml_update_times[1m])",
+                    "hide": false,
+                    "instant": false,
+                    "legendFormat": "update",
+                    "range": true,
+                    "refId": "C"
+                }
+            ],
+            "title": "DML",
+            "type": "timeseries"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "cdp1kz3veskcgc"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "custom": {
+                        "axisBorderShow": false,
+                        "axisCenteredZero": false,
+                        "axisColorMode": "text",
+                        "axisLabel": "",
+                        "axisPlacement": "auto",
+                        "barAlignment": 0,
+                        "drawStyle": "line",
+                        "fillOpacity": 0,
+                        "gradientMode": "none",
+                        "hideFrom": {
+                            "legend": false,
+                            "tooltip": false,
+                            "viz": false
+                        },
+                        "insertNulls": false,
+                        "lineInterpolation": "linear",
+                        "lineWidth": 1,
+                        "pointSize": 5,
+                        "scaleDistribution": {
+                            "type": "linear"
+                        },
+                        "showPoints": "auto",
+                        "spanNulls": false,
+                        "stacking": {
+                            "group": "A",
+                            "mode": "none"
+                        },
+                        "thresholdsStyle": {
+                            "mode": "off"
+                        }
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "red",
+                                "value": 80
+                            }
+                        ]
+                    }
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 8,
+                "x": 16,
                 "y": 0
             },
             "id": 2,
@@ -458,116 +581,6 @@
             ],
             "title": "Tcp send & receive",
             "type": "timeseries"
-        },
-        {
-            "datasource": {
-                "type": "prometheus",
-                "uid": "cdp1kz3veskcgc"
-            },
-            "fieldConfig": {
-                "defaults": {
-                    "color": {
-                        "mode": "palette-classic"
-                    },
-                    "custom": {
-                        "axisBorderShow": false,
-                        "axisCenteredZero": false,
-                        "axisColorMode": "text",
-                        "axisLabel": "",
-                        "axisPlacement": "auto",
-                        "barAlignment": 0,
-                        "drawStyle": "line",
-                        "fillOpacity": 0,
-                        "gradientMode": "none",
-                        "hideFrom": {
-                            "legend": false,
-                            "tooltip": false,
-                            "viz": false
-                        },
-                        "insertNulls": false,
-                        "lineInterpolation": "linear",
-                        "lineWidth": 1,
-                        "pointSize": 5,
-                        "scaleDistribution": {
-                            "type": "linear"
-                        },
-                        "showPoints": "auto",
-                        "spanNulls": false,
-                        "stacking": {
-                            "group": "A",
-                            "mode": "none"
-                        },
-                        "thresholdsStyle": {
-                            "mode": "off"
-                        }
-                    },
-                    "mappings": [],
-                    "thresholds": {
-                        "mode": "absolute",
-                        "steps": [
-                            {
-                                "color": "green",
-                                "value": null
-                            },
-                            {
-                                "color": "red",
-                                "value": 80
-                            }
-                        ]
-                    }
-                },
-                "overrides": []
-            },
-            "gridPos": {
-                "h": 8,
-                "w": 12,
-                "x": 12,
-                "y": 16
-            },
-            "id": 6,
-            "options": {
-                "legend": {
-                    "calcs": [],
-                    "displayMode": "list",
-                    "placement": "bottom",
-                    "showLegend": true
-                },
-                "tooltip": {
-                    "mode": "single",
-                    "sort": "none"
-                }
-            },
-            "targets": [
-                {
-                    "datasource": {
-                        "type": "prometheus",
-                        "uid": "cdp1kz3veskcgc"
-                    },
-                    "editorMode": "code",
-                    "expr": "delta(mysqlsync_destination_dml_delete_times[1m])",
-                    "instant": false,
-                    "interval": "1m",
-                    "legendFormat": "delete",
-                    "range": true,
-                    "refId": "A"
-                },
-                {
-                    "datasource": {
-                        "type": "prometheus",
-                        "uid": "cdp1kz3veskcgc"
-                    },
-                    "editorMode": "code",
-                    "expr": "delta(mysqlsync_destination_dml_insert_times[1m])",
-                    "hide": false,
-                    "instant": false,
-                    "interval": "1m",
-                    "legendFormat": "insert",
-                    "range": true,
-                    "refId": "B"
-                }
-            ],
-            "title": "DML",
-            "type": "timeseries"
         }
     ],
     "refresh": "10s",
@@ -577,13 +590,13 @@
         "list": []
     },
     "time": {
-        "from": "now-30m",
+        "from": "now-15m",
         "to": "now"
     },
     "timepicker": {},
     "timezone": "browser",
     "title": "MysqlSync",
     "uid": "edp1lh3y5eupse",
-    "version": 11,
+    "version": 14,
     "weekStart": ""
 }

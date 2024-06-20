@@ -31,7 +31,7 @@ type TcpServerClient struct {
 	rcCh    chan int
 }
 
-func NewTcpServerClient(loglevel int, conn net.Conn) (*TcpServerClient, error) {
+func NewTcpServerClient(logLevel int, conn net.Conn) (*TcpServerClient, error) {
 	var buf bytes.Buffer
 
 	multiWriter := io.MultiWriter(conn, &buf)
@@ -43,7 +43,7 @@ func NewTcpServerClient(loglevel int, conn net.Conn) (*TcpServerClient, error) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	return &TcpServerClient{
-		Logger: NewLogger(loglevel, fmt.Sprintf("tcp server client(%s)", conn.RemoteAddr().String())),
+		Logger: NewLogger(logLevel, fmt.Sprintf("tcp server client(%s)", conn.RemoteAddr().String())),
 
 		ctx:    ctx,
 		cancel: cancel,
@@ -72,26 +72,31 @@ func (tsc *TcpServerClient) Cleanup() error {
 	case <-tsc.channel:
 		// ts.Logger.Debug(fmt.Sprintf("moCh -> mo -> client cache(%s) ok.", client.conn.RemoteAddr().String()))
 	case <-time.After(time.Second * 1):
-		fmt.Println("发送操作超时2")
+		tsc.Logger.Info("channel moCh clean.")
 	}
 
 	select {
 	case <-tsc.rcCh:
 		// ts.Logger.Debug(fmt.Sprintf("moCh -> mo -> client cache(%s) ok.", client.conn.RemoteAddr().String()))
 	case <-time.After(time.Second * 1):
-		fmt.Println("发送操作超时3")
+		tsc.Logger.Info("channel rcCh clean.")
 	}
 
 	if err := tsc.encoderZstdWriter.Close(); err != nil {
 		return fmt.Errorf("zstd writer close err" + err.Error())
 	}
+	tsc.Logger.Info("zstd write closed.")
 
 	if err := tsc.conn.Close(); err != nil {
 		return err
 	}
+	tsc.Logger.Info("conn closed.")
 
 	close(tsc.rcCh)
+	tsc.Logger.Info("channel rcCh closed.")
+
 	close(tsc.channel)
+	tsc.Logger.Info("channel moCh closed.")
 
 	return nil
 }
