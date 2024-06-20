@@ -67,11 +67,19 @@ func (tsc *TcpServerClient) SetClose() {
 
 func (tsc *TcpServerClient) Cleanup() error {
 	<-tsc.ctx.Done()
+
 	select {
 	case <-tsc.channel:
 		// ts.Logger.Debug(fmt.Sprintf("moCh -> mo -> client cache(%s) ok.", client.conn.RemoteAddr().String()))
-	case <-time.After(time.Second * 5):
-		fmt.Println("发送操作超时")
+	case <-time.After(time.Second * 1):
+		fmt.Println("发送操作超时2")
+	}
+
+	select {
+	case <-tsc.rcCh:
+		// ts.Logger.Debug(fmt.Sprintf("moCh -> mo -> client cache(%s) ok.", client.conn.RemoteAddr().String()))
+	case <-time.After(time.Second * 1):
+		fmt.Println("发送操作超时3")
 	}
 
 	if err := tsc.encoderZstdWriter.Close(); err != nil {

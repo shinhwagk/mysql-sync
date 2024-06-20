@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"encoding/gob"
+	"fmt"
 	"net"
+	"time"
 
 	"github.com/klauspost/compress/zstd"
 )
@@ -48,15 +50,22 @@ func NewTcpClientServer(conn net.Conn, moCh chan<- MysqlOperation, gtidSets stri
 }
 
 func (tcs *TCPClientServer) Cleanup() error {
-	defer close(tcs.rcCh)
-
 	<-tcs.ctx.Done()
+
+	select {
+	case <-tcs.rcCh:
+		// ts.Logger.Debug(fmt.Sprintf("moCh -> mo -> client cache(%s) ok.", client.conn.RemoteAddr().String()))
+	case <-time.After(time.Second * 5):
+		fmt.Println("发送操作超时1")
+	}
 
 	tcs.decoderZstdReader.Close()
 
 	if err := tcs.conn.Close(); err != nil {
 		return err
 	}
+
+	close(tcs.rcCh)
 
 	return nil
 }

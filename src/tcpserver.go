@@ -87,19 +87,20 @@ func (ts *TCPServer) Start(ctx context.Context) error {
 						client.cancel()
 						ts.Logger.Info("Remove client(%s) from clients.", client.conn.RemoteAddr().String())
 					} else {
-						for i := 1; i <= 5; i++ {
+						tryCnt := 5
+						for i := 0; i < tryCnt; i++ {
 							select {
 							case <-client.ctx.Done():
 								client.cancel()
-								i = 6
+								i = tryCnt
 							case client.channel <- mo:
 								ts.Logger.Debug(fmt.Sprintf("moCh -> mo -> client cache(%s) ok.", client.conn.RemoteAddr().String()))
-								i = 6
+								i = tryCnt
 							case <-time.After(time.Second * 1):
-								fmt.Println("发送操作超时")
-								if i == 4 {
+								fmt.Println("发送操作超时x")
+								if i == tryCnt-1 {
 									client.cancel()
-									i = 6
+									i = tryCnt
 								}
 							}
 						}
@@ -156,11 +157,17 @@ func (ts *TCPServer) handleConnection(tsClient *TcpServerClient) {
 		tsClient.SetClose()
 	}()
 
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := tsClient.Cleanup(); err != nil {
+			ts.Logger.Error(fmt.Sprintf("Close connection error: " + err.Error()))
+		}
+	}()
+
 	ts.Logger.Info("Receive new client(%s) ", tsClient.conn.RemoteAddr().String())
 	wg.Wait()
-	if err := tsClient.Cleanup(); err != nil {
-		ts.Logger.Error(fmt.Sprintf("Close connection error: " + err.Error()))
-	}
+
 	ts.Logger.Info("Client(%s) closed.", tsClient.conn.RemoteAddr().String())
 }
 
