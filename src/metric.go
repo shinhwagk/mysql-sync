@@ -112,7 +112,7 @@ func (md *MetricDirector) Start(ctx context.Context, addr string) {
 			case MetricDestDMLDeleteTimes:
 				md.inc("dml_delete_times", metric.Value)
 			case MetricDestDMLUpdateTimes:
-				md.inc("dml_delete_times", metric.Value)
+				md.inc("dml_update_times", metric.Value)
 			case MetricDestTrx:
 				md.inc("trx", metric.Value)
 			case MetricDestMergeTrx:
