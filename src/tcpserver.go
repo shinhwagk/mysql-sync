@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/gob"
 	"fmt"
@@ -11,8 +10,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/klauspost/compress/zstd"
 )
 
 func init() {
@@ -38,12 +35,6 @@ type TCPServer struct {
 	Clients sync.Map
 }
 
-type TcpServerClient struct {
-	conn    net.Conn
-	channel chan MysqlOperation
-	close   bool
-}
-
 type SendOperationControl struct {
 	ReceiveCountCh chan uint
 }
@@ -59,61 +50,58 @@ func NewTCPServer(logLevel int, listenAddress string, gsCh chan<- string, moCh <
 	}
 }
 
-func (s *TCPServer) Start(ctx context.Context) error {
-	listener, err := net.Listen("tcp", s.listenAddress)
+func (ts *TCPServer) Start(ctx context.Context) error {
+	listener, err := net.Listen("tcp", ts.listenAddress)
 	if err != nil {
-		s.Logger.Error(fmt.Sprintf("Error listening: " + err.Error()))
+		ts.Logger.Error(fmt.Sprintf("Error listening: " + err.Error()))
 	}
 	defer listener.Close()
-	s.Logger.Info("listening on:" + s.listenAddress)
+	ts.Logger.Info("listening on:" + ts.listenAddress)
 
 	go func() {
 		<-ctx.Done()
-		s.Logger.Info("Shutting down server...")
+		ts.Logger.Info("Shutting down server...")
 		listener.Close()
 	}()
 
 	go func() {
 		for {
-			s.Logger.Debug("Distribute mysql operation to clients.")
 			select {
 			case <-time.After(time.Second * 1):
 			case <-ctx.Done():
-				s.Logger.Info("Context canceled, stopping distribution loop.")
+				ts.Logger.Info("Context canceled, stopping distribution loop.")
 				return
-			case mo, ok := <-s.moCh:
+			case mo, ok := <-ts.moCh:
 				if !ok {
-					s.Logger.Info("mysql operation channal close.")
+					ts.Logger.Info("mysql operation channal close.")
 					return
 				}
-				fmt.Println("shoudao mo")
-				s.Clients.Range(func(key, value interface{}) bool {
-					client := value.(*TcpServerClient)
-					fmt.Println("send cleint", client.conn.RemoteAddr().String())
-					fmt.Println("send clein", client.close)
-					if client.close {
-						s.Clients.Delete(client.conn.RemoteAddr().String())
-						select {
-						case <-client.channel:
-						case <-time.After(time.Second):
-						}
-						// close(client.channel)
 
+				var hasClients bool
+				fmt.Println("shoudao mo")
+				ts.Clients.Range(func(key, value interface{}) bool {
+					hasClients = true
+					client := value.(*TcpServerClient)
+					if client.close {
+						ts.Clients.Delete(client.conn.RemoteAddr().String())
+						ts.Logger.Info("Remove client(%s) from clients.", client.conn.RemoteAddr().String())
 					} else {
-						fmt.Println("ssssssssss", mo, client.channel, &client.channel)
 						select {
 						case client.channel <- mo:
-							s.Logger.Debug(fmt.Sprintf("Sent MySQL operation to client %s successfully.", client.conn.RemoteAddr().String()))
+							ts.Logger.Debug(fmt.Sprintf("moCh -> mo -> client cache(%s) ok.", client.conn.RemoteAddr().String()))
 						case <-time.After(time.Second * 5):
 							fmt.Println("发送操作超时")
 						}
-						fmt.Println("fffffffffffffff")
-
 					}
-					fmt.Println("send clein2t", client.conn.RemoteAddr().String())
 
 					return true
 				})
+				if !hasClients {
+					ts.Logger.Debug("No clients, mod discard.")
+					time.Sleep(time.Second * 1)
+					continue
+				}
+
 				fmt.Println("shoudao mo1")
 			}
 		}
@@ -121,89 +109,64 @@ func (s *TCPServer) Start(ctx context.Context) error {
 
 	for {
 		conn, err := listener.Accept()
-		s.Logger.Info("start listener...")
+		ts.Logger.Info("Listener started.")
 
 		if err != nil {
-			s.Logger.Info("Error accepting:" + err.Error())
+			ts.Logger.Info("Error accepting:" + err.Error())
 			return err
 		}
 
-		clientChannel := make(chan MysqlOperation)
-		client := &TcpServerClient{
-			conn:    conn,
-			channel: clientChannel,
-			close:   false,
+		if client, err := NewTcpServerClient(ts.Logger.Level, conn); err != nil {
+			ts.Logger.Error("Create Client(%s) error: %s", conn.RemoteAddr().String(), err.Error())
+		} else {
+			ts.Clients.Store(conn.RemoteAddr().String(), client)
+			ts.Logger.Info("Add client(%s) to clients.", conn.RemoteAddr().String())
+			go ts.handleConnection(client)
 		}
-
-		s.Logger.Info("Add client(%s) to clients.", conn.RemoteAddr().String())
-
-		s.Clients.Store(conn.RemoteAddr().String(), client)
-
-		go s.handleConnection(client)
 	}
-
 }
 
-func (s *TCPServer) handleConnection(client *TcpServerClient) {
-	s.Logger.Info("Receive new client(%s) ", client.conn.RemoteAddr().String())
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	defer func() {
-		client.close = true
-		client.conn.Close()
-	}()
-
-	rcCh := make(chan int)
-	defer close(rcCh)
+func (ts *TCPServer) handleConnection(client *TcpServerClient) {
+	ts.Logger.Info("Receive new client(%s) ", client.conn.RemoteAddr().String())
 
 	var wg sync.WaitGroup
 
-	wg.Add(2)
-
+	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		s.handleFromClient(ctx, client, rcCh)
-		s.Logger.Info("tcp from client(%s) handler close.", client.conn.RemoteAddr().String())
-		cancel()
+		ts.handleFromClient(client)
+		ts.Logger.Info("tcp from client(%s) handler close.", client.conn.RemoteAddr().String())
+		client.SetClose()
 	}()
 
+	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		s.handleToClient(ctx, client, rcCh)
-		s.Logger.Info("tcp to client(%s) handler close.", client.conn.RemoteAddr().String())
-		cancel()
+		ts.handleToClient(client)
+		ts.Logger.Info("tcp to client(%s) handler close.", client.conn.RemoteAddr().String())
+		client.SetClose()
 	}()
 
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		client.Cleanup()
+	}()
 	wg.Wait()
 
-	s.Logger.Info("tcp connection '%s' close.", client.conn.RemoteAddr().String())
+	ts.Logger.Info("Client(%s) closed.", client.conn.RemoteAddr().String())
 }
 
-func (s *TCPServer) handleToClient(ctx context.Context, client *TcpServerClient, rcCh <-chan int) {
-	var buf bytes.Buffer
-
-	multiWriter := io.MultiWriter(client.conn, &buf)
-	zstdWriter, err := zstd.NewWriter(multiWriter)
-
-	if err != nil {
-		s.Logger.Error("Error creating zstd writer: %s", err.Error())
-		return
-	}
-	defer zstdWriter.Close()
-
-	encoder := gob.NewEncoder(zstdWriter)
-
+func (s *TCPServer) handleToClient(tsClient *TcpServerClient) {
 	var mysqlOperations []MysqlOperation
 
 	for {
 		select {
 		case <-time.After(time.Second * 1):
-		case <-ctx.Done():
+		case <-tsClient.ctx.Done():
 			s.Logger.Info("ctx done signal received.")
 			return
-		case rc, ok := <-rcCh:
+		case rc, ok := <-tsClient.rcCh:
 			if !ok {
 				s.Logger.Info("ReceiveCountCh")
 				return
@@ -217,10 +180,10 @@ func (s *TCPServer) handleToClient(ctx context.Context, client *TcpServerClient,
 				}
 
 				select {
-				case <-ctx.Done():
+				case <-tsClient.ctx.Done():
 					s.Logger.Info("ctx done signal received.")
 					return
-				case oper, ok := <-client.channel:
+				case oper, ok := <-tsClient.channel:
 					if !ok {
 						s.Logger.Info("mysql operation channel closed.")
 						return
@@ -229,33 +192,33 @@ func (s *TCPServer) handleToClient(ctx context.Context, client *TcpServerClient,
 					mysqlOperations = append(mysqlOperations, oper)
 
 					if len(mysqlOperations) >= rcCnt {
-						sendMO := mysqlOperations[:rcCnt]
+						mos := mysqlOperations[:rcCnt]
 						mysqlOperations = mysqlOperations[rcCnt:]
-						if err := s.sendClient(encoder, zstdWriter, sendMO); err != nil {
+						if err := s.sendClient(tsClient, mos); err != nil {
 							s.Logger.Error("sendClient error: " + err.Error())
 							return
 						}
 						rc -= rcCnt
 
 						// s.Logger.Debug(fmt.Sprintf("Compressed data sent: %d bytes\n", buf.Len()))
-						s.metricCh <- MetricUnit{Name: MetricTCPServerOutgoing, Value: uint(buf.Len())}
-						s.metricCh <- MetricUnit{Name: MetricTCPServerSendOperations, Value: uint(len(sendMO))}
-						buf.Reset()
+						s.metricCh <- MetricUnit{Name: MetricTCPServerOutgoing, Value: uint(tsClient.encoderBuffer.Len())}
+						s.metricCh <- MetricUnit{Name: MetricTCPServerSendOperations, Value: uint(len(mos))}
+						tsClient.encoderBuffer.Reset()
 					}
 				case <-time.After((time.Millisecond * 100)):
 					if len(mysqlOperations) >= rcCnt {
-						sendMO := mysqlOperations[:rcCnt]
+						mos := mysqlOperations[:rcCnt]
 						mysqlOperations = mysqlOperations[rcCnt:]
-						if err := s.sendClient(encoder, zstdWriter, sendMO); err != nil {
+						if err := s.sendClient(tsClient, mos); err != nil {
 							s.Logger.Error("sendClient error: " + err.Error())
 							return
 						}
 						rc -= rcCnt
 
 						// s.Logger.Debug(fmt.Sprintf("Compressed data sent: %d bytes\n", buf.Len()))
-						s.metricCh <- MetricUnit{Name: MetricTCPServerOutgoing, Value: uint(buf.Len())}
-						s.metricCh <- MetricUnit{Name: MetricTCPServerSendOperations, Value: uint(len(sendMO))}
-						buf.Reset()
+						s.metricCh <- MetricUnit{Name: MetricTCPServerOutgoing, Value: uint(tsClient.encoderBuffer.Len())}
+						s.metricCh <- MetricUnit{Name: MetricTCPServerSendOperations, Value: uint(len(mos))}
+						tsClient.encoderBuffer.Reset()
 					}
 				}
 			}
@@ -263,13 +226,11 @@ func (s *TCPServer) handleToClient(ctx context.Context, client *TcpServerClient,
 	}
 }
 
-func (s *TCPServer) handleFromClient(ctx context.Context, tsc *TcpServerClient, rcCh chan<- int) {
-	decoder := gob.NewDecoder(tsc.conn)
-
+func (s *TCPServer) handleFromClient(tsClient *TcpServerClient) {
 	for {
 		var signal string
 
-		if err := decoder.Decode(&signal); err != nil {
+		if err := tsClient.decoder.Decode(&signal); err != nil {
 			if err == io.EOF {
 				s.Logger.Info("tcp client close.")
 			} else {
@@ -289,7 +250,7 @@ func (s *TCPServer) handleFromClient(ctx context.Context, tsc *TcpServerClient, 
 				if err != nil {
 					s.Logger.Error("Converting signal '%s' error: %s", signal, err.Error())
 				} else {
-					rcCh <- result
+					tsClient.rcCh <- result
 				}
 			}
 		} else {
@@ -298,17 +259,17 @@ func (s *TCPServer) handleFromClient(ctx context.Context, tsc *TcpServerClient, 
 	}
 }
 
-func (s *TCPServer) sendClient(encoder *gob.Encoder, zstdWriter *zstd.Encoder, operations []MysqlOperation) error {
-	if err := encoder.Encode(operations); err != nil {
+func (s *TCPServer) sendClient(tsClient *TcpServerClient, mos []MysqlOperation) error {
+	if err := tsClient.encoder.Encode(mos); err != nil {
 		s.Logger.Error("Error encoding message: %s", err.Error())
 		return err
 	}
 
-	if err := zstdWriter.Flush(); err != nil {
+	if err := tsClient.encoderZstdWriter.Flush(); err != nil {
 		s.Logger.Error("Error flushing zstd writer: %s", err)
 		return err
 	}
 
-	s.Logger.Debug("Mysql operations number:'%d' sent to client successfully.", len(operations))
+	s.Logger.Debug("moCh -> mo -> client cache -> mo(%d) -> client ok.", len(mos))
 	return nil
 }

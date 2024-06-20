@@ -52,11 +52,11 @@ func NewBinlogExtract(logLevel int, config ReplicationConfig, gsCh <-chan string
 }
 
 func (bext *BinlogExtract) toMoCh(mo MysqlOperation) {
-	bext.Logger.Debug("Beginning to send mysql operation to moCh.")
+	bext.Logger.Debug("mo -> moCh ...")
 	bext.moCh <- mo
+	bext.Logger.Debug("mo -> moCh ok.")
 	bext.metricCh <- MetricUnit{Name: MetricExtractOperations, Value: 1}
 	bext.metricCh <- MetricUnit{Name: MetricReplDelay, Value: uint(time.Now().Unix() - int64(mo.GetTimestamp()))}
-	bext.Logger.Debug("Mysql operation sent to moCh successfully.")
 }
 
 func (bext *BinlogExtract) Start(ctx context.Context, gtidsets string) error {
@@ -70,7 +70,7 @@ func (bext *BinlogExtract) Start(ctx context.Context, gtidsets string) error {
 		return err
 	}
 
-	bext.Logger.Info("start from gtidsets:" + gtidSet.String())
+	bext.Logger.Info("Start from gtidsets:" + gtidSet.String())
 
 	streamer, err := bext.binlogSyncer.StartSyncGTID(gtidSet)
 	if err != nil {
@@ -225,7 +225,7 @@ func (bext *BinlogExtract) handleQueryEvent(e *replication.QueryEvent, eh *repli
 	parser := parser.New()
 	stmts, warns, err := parser.Parse(string(e.Query), "", "")
 	for _, warn := range warns {
-		bext.Logger.Waring(warn.Error())
+		bext.Logger.Warning(warn.Error())
 	}
 
 	if err != nil {

@@ -1,8 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
+	"time"
 )
 
 const (
@@ -23,29 +25,37 @@ func NewLogger(level int, module string) *Logger {
 	return &Logger{
 		Level:      level,
 		Module:     module,
-		LogError:   log.New(os.Stderr, "ERROR", log.Ldate|log.Ltime|log.Llongfile),
-		LogInfo:    log.New(os.Stdout, "INFO", log.Ldate|log.Ltime),
-		LogDebug:   log.New(os.Stdout, "DEBUG", log.Ldate|log.Ltime|log.Llongfile),
-		LogWarning: log.New(os.Stdout, "WARNING", log.Ldate|log.Ltime),
+		LogError:   log.New(os.Stderr, "", 0),
+		LogInfo:    log.New(os.Stdout, "", 0),
+		LogDebug:   log.New(os.Stdout, "", 0),
+		LogWarning: log.New(os.Stdout, "", 0),
 	}
 }
 
-func (l Logger) Info(format string, a ...any) {
+func (l *Logger) Info(format string, a ...interface{}) {
 	if l.Level >= LevelInfo {
-		l.LogInfo.Printf("-- %s -- "+format+"\n", append([]any{l.Module}, a...)...)
+		l.output(l.LogInfo, "INFO", format, a...)
 	}
 }
 
-func (l Logger) Debug(format string, a ...any) {
+func (l *Logger) Debug(format string, a ...interface{}) {
 	if l.Level >= LevelDebug {
-		l.LogDebug.Printf("-- %s -- "+format+"\n", append([]any{l.Module}, a...)...)
+		l.output(l.LogDebug, "DEBUG", format, a...)
 	}
 }
 
-func (l Logger) Error(format string, a ...any) {
-	l.LogError.Printf("-- %s -- "+format+"\n", append([]any{l.Module}, a...)...)
+func (l *Logger) Error(format string, a ...interface{}) {
+	l.output(l.LogError, "ERROR", format, a...)
 }
 
-func (l Logger) Waring(format string, a ...any) {
-	l.LogWarning.Printf("-- %s -- "+format+"\n", append([]any{l.Module}, a...)...)
+func (l *Logger) Warning(format string, a ...interface{}) {
+	l.output(l.LogWarning, "WARNING", format, a...)
+}
+
+func (l *Logger) output(logger *log.Logger, level string, format string, a ...interface{}) {
+	fullFormat := "%s -- %s -- %s -- " + format
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	args := append([]interface{}{timestamp, level, l.Module}, a...)
+	msg := fmt.Sprintf(fullFormat, args...)
+	logger.Output(2, msg)
 }

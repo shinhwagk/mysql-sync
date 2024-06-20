@@ -170,9 +170,10 @@ func (ma *MysqlApplier) OnDDLDatabase(op MysqlOperationDDLDatabase) error {
 		return err
 	}
 
+	ma.metricCh <- MetricUnit{Name: MetricDestDDLDatabaseTimes, Value: 1}
+
 	ma.Checkpoint(op.Timestamp)
 
-	ma.metricCh <- MetricUnit{Name: MetricDestDDLDatabaseTimes, Value: 1}
 	return nil
 }
 
@@ -181,15 +182,16 @@ func (ma *MysqlApplier) OnDDLTable(op MysqlOperationDDLTable) error {
 
 	if err := ma.mysqlClient.ExecuteOnTable(op.SchemaContext, op.Query); err != nil {
 		if trxID, ok := ma.GtidSets.GetTrxIdOfServerUUID(ma.LastGtidServerUUID); ok {
-			ma.Logger.Waring(fmt.Sprintf("Gtid: '%s:%d'", ma.LastGtidServerUUID, trxID))
+			ma.Logger.Warning(fmt.Sprintf("Gtid: '%s:%d'", ma.LastGtidServerUUID, trxID))
 		}
 		ma.Logger.Error(fmt.Sprintf("OnDDLTable -- SchemaContext: %s Query: %s", op.SchemaContext, op.Query))
 		return err
 	}
 
+	ma.metricCh <- MetricUnit{Name: MetricDestDDLTableTimes, Value: 1}
+
 	ma.Checkpoint(op.Timestamp)
 
-	ma.metricCh <- MetricUnit{Name: MetricDestDDLTableTimes, Value: 1}
 	return nil
 }
 
