@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"time"
 
 	"github.com/klauspost/compress/zstd"
 )
@@ -24,8 +25,9 @@ type TcpServerClient struct {
 	encoderZstdWriter *zstd.Encoder
 	decoder           *gob.Decoder
 
+	close bool
+
 	channel chan MysqlOperation
-	close   bool
 	rcCh    chan int
 }
 
@@ -65,15 +67,11 @@ func (tsc *TcpServerClient) SetClose() {
 
 func (tsc *TcpServerClient) Cleanup() error {
 	<-tsc.ctx.Done()
-
-	close(tsc.channel)
-
-	for {
-		_, ok := <-tsc.channel
-		fmt.Println("sfsdfsdfsdfsdfsfsdf", ok)
-		if !ok {
-			break
-		}
+	select {
+	case <-tsc.channel:
+		// ts.Logger.Debug(fmt.Sprintf("moCh -> mo -> client cache(%s) ok.", client.conn.RemoteAddr().String()))
+	case <-time.After(time.Second * 5):
+		fmt.Println("发送操作超时")
 	}
 
 	if err := tsc.encoderZstdWriter.Close(); err != nil {
@@ -83,6 +81,9 @@ func (tsc *TcpServerClient) Cleanup() error {
 	if err := tsc.conn.Close(); err != nil {
 		return err
 	}
+
+	close(tsc.rcCh)
+	close(tsc.channel)
 
 	return nil
 }

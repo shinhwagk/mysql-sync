@@ -22,6 +22,8 @@ func NewMysqlApplier(logLevel int, gtidSets *GtidSets, mysqlClient *MysqlClient,
 
 		MetricDelay: 0,
 		metricCh:    metricCh,
+
+		excludeSchemas: []string{"mysql"},
 	}
 }
 
@@ -41,9 +43,14 @@ type MysqlApplier struct {
 	MetricDelay uint
 	metricCh    chan<- MetricUnit
 
+	excludeSchemas []string
+
 	// metric *MetricDestination
 }
 
+func (ma *MysqlApplier) FilterSchemas(SchemaContext string) bool {
+	return contains(ma.excludeSchemas, SchemaContext)
+}
 func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 	for {
 		select {
@@ -73,24 +80,36 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					return
 				}
 			case MysqlOperationDMLInsert:
+				if ma.FilterSchemas(op.Database) {
+					continue
+				}
 				if err := ma.OnDMLInsert(op); err != nil {
 					ma.Logger.Error("MysqlOperationDMLInsert " + err.Error())
 					return
 				}
 				ma.metricCh <- MetricUnit{Name: MetricDestDMLInsertTimes, Value: 1}
 			case MysqlOperationDMLDelete:
+				if ma.FilterSchemas(op.Database) {
+					continue
+				}
 				if err := ma.OnDMLDelete(op); err != nil {
 					ma.Logger.Error("MysqlOperationDMLDelete " + err.Error())
 					return
 				}
 				ma.metricCh <- MetricUnit{Name: MetricDestDMLDeleteTimes, Value: 1}
 			case MysqlOperationDMLUpdate:
+				if ma.FilterSchemas(op.Database) {
+					continue
+				}
 				if err := ma.OnDMLUpdate(op); err != nil {
 					ma.Logger.Error("MysqlOperationDMLUpdate " + err.Error())
 					return
 				}
 				ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdateTimes, Value: 1}
 			case MysqlOperationDDLTable:
+				if ma.FilterSchemas(op.SchemaContext) {
+					continue
+				}
 				if err := ma.OnDDLTable(op); err != nil {
 					ma.Logger.Error("MysqlOperationDDLTable " + err.Error())
 					return
@@ -127,7 +146,8 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 func (ma *MysqlApplier) OnDMLInsert(op MysqlOperationDMLInsert) error {
 	sql, params := BuildDMLInsertQuery(op.Database, op.Table, op.Columns)
 
-	// ma.logger.Debug(fmt.Sprintf("OnDMLInsert -- query: '%s' params: '%s'", sql, params))
+	// ma.Logger.Debug(fmt.Sprintf("OnDMLInsert -- query: '%s' params: '%s'", sql, params))
+	ma.Logger.Debug("OnDMLInsert -- SchemaContext: %s, Table: %s", op.Database, op.Table)
 
 	if err := ma.mysqlClient.ExecuteDML(sql, params); err != nil {
 		return err
@@ -139,6 +159,7 @@ func (ma *MysqlApplier) OnDMLDelete(op MysqlOperationDMLDelete) error {
 	sql, params := BuildDMLDeleteQuery(op.Database, op.Table, op.Columns, op.PrimaryKey)
 
 	// ma.logger.Debug(fmt.Sprintf("OnDMLDelete -- query: '%s' params: '%s'", sql, params))
+	ma.Logger.Debug("OnDMLDelete -- SchemaContext: %s, Table: %s", op.Database, op.Table)
 
 	if err := ma.mysqlClient.ExecuteDML(sql, params); err != nil {
 		return err
@@ -149,6 +170,9 @@ func (ma *MysqlApplier) OnDMLDelete(op MysqlOperationDMLDelete) error {
 
 func (ma *MysqlApplier) OnDMLUpdate(op MysqlOperationDMLUpdate) error {
 	sql, params := BuildDMLDeleteQuery(op.Database, op.Table, op.BeforeColumns, op.PrimaryKey)
+
+	ma.Logger.Debug("OnDMLUpdate -- SchemaContext: %s, Table: %s", op.Database, op.Table)
+
 	// ma.Logger.Debug(fmt.Sprintf("OnDMLUpdate -- query: '%s' params: '%s'", sql, params))
 	if err := ma.mysqlClient.ExecuteDML(sql, params); err != nil {
 		return err

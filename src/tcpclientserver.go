@@ -15,7 +15,7 @@ type TCPClientServer struct {
 	conn              net.Conn
 	encoder           *gob.Encoder
 	decoder           *gob.Decoder
-	decoderzstdReader *zstd.Decoder
+	decoderZstdReader *zstd.Decoder
 
 	rcCh     chan int
 	moCh     chan<- MysqlOperation
@@ -23,7 +23,6 @@ type TCPClientServer struct {
 }
 
 func NewTcpClientServer(conn net.Conn, moCh chan<- MysqlOperation, gtidSets string) (*TCPClientServer, error) {
-	ctx, cancel := context.WithCancel(context.Background())
 	encoder := gob.NewEncoder(conn)
 
 	zstdReader, err := zstd.NewReader(conn)
@@ -32,13 +31,14 @@ func NewTcpClientServer(conn net.Conn, moCh chan<- MysqlOperation, gtidSets stri
 	}
 	decoder := gob.NewDecoder(zstdReader)
 
+	ctx, cancel := context.WithCancel(context.Background())
 	return &TCPClientServer{
 		ctx:    ctx,
 		cancel: cancel,
 
 		conn:              conn,
 		encoder:           encoder,
-		decoderzstdReader: zstdReader,
+		decoderZstdReader: zstdReader,
 		decoder:           decoder,
 
 		moCh:     moCh,
@@ -48,10 +48,19 @@ func NewTcpClientServer(conn net.Conn, moCh chan<- MysqlOperation, gtidSets stri
 }
 
 func (tcs *TCPClientServer) Cleanup() error {
+	defer close(tcs.rcCh)
+
 	<-tcs.ctx.Done()
+
+	tcs.decoderZstdReader.Close()
 
 	if err := tcs.conn.Close(); err != nil {
 		return err
 	}
+
 	return nil
+}
+
+func (tcs *TCPClientServer) SetClose() {
+	tcs.cancel()
 }

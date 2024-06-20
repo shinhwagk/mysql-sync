@@ -51,7 +51,7 @@ func (tc *TCPClient) SendSignalReceive(encoder *gob.Encoder, reciveCount int) er
 	return nil
 }
 
-func (tc *TCPClient) handleConnection(tcServer *TCPClientServer) {
+func (tc *TCPClient) handleConnection(ctx context.Context, tcServer *TCPClientServer) {
 	var wg sync.WaitGroup
 
 	wg.Add(1)
@@ -59,16 +59,21 @@ func (tc *TCPClient) handleConnection(tcServer *TCPClientServer) {
 		defer wg.Done()
 		tc.handleToServer(tcServer)
 		tc.Logger.Info(fmt.Sprintf("tcp to server '%s' handler close.", tcServer.conn.RemoteAddr().String()))
+		tcServer.SetClose()
 	}()
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		tc.handleFromServer(tcServer)
 		tc.Logger.Info(fmt.Sprintf("tcp from server '%s' handler close.", tcServer.conn.RemoteAddr().String()))
+		tcServer.SetClose()
 	}()
 
 	wg.Add(1)
 	go func() {
+		defer wg.Done()
+		<-ctx.Done()
+		tcServer.SetClose()
 		if err := tcServer.Cleanup(); err != nil {
 			tc.Logger.Error(fmt.Sprintf("Close connection error: " + err.Error()))
 		}
@@ -97,7 +102,7 @@ func (tc *TCPClient) handleToServer(tcServer *TCPClientServer) {
 				tc.Logger.Info("channel 'reciveCountCh' closed.")
 				return
 			}
-			tc.Logger.Info(fmt.Sprintf("Requesting operations: %d from tcp server.", 100))
+			tc.Logger.Debug(fmt.Sprintf("Requesting operations: %d from tcp server.", 100))
 
 			signal := fmt.Sprintf("receive@%d", reciveCount)
 			if err := tcServer.encoder.Encode(signal); err != nil {
@@ -165,7 +170,7 @@ func (tc *TCPClient) handleFromServer(tcServer *TCPClientServer) {
 					tc.metricCh <- MetricUnit{Name: MetricTCPClientReceiveOperations, Value: 1}
 				}
 			}
-			tc.Logger.Info("Receive operations: %d from tcp server.", 100)
+			tc.Logger.Debug("Receive operations: %d from tcp server.", 100)
 		}
 	}
 }
@@ -181,6 +186,6 @@ func (tc *TCPClient) Start(ctx context.Context, moCh chan<- MysqlOperation, gtid
 	if tcServer, err := NewTcpClientServer(conn, moCh, gtidsets); err != nil {
 		tc.Logger.Error("Create Client(%s) error: %s", conn.LocalAddr().String(), err.Error())
 	} else {
-		tc.handleConnection(tcServer)
+		tc.handleConnection(ctx, tcServer)
 	}
 }

@@ -77,32 +77,42 @@ func (ts *TCPServer) Start(ctx context.Context) error {
 					return
 				}
 
-				var hasClients bool
-				fmt.Println("shoudao mo")
+				hasClients := false
+
 				ts.Clients.Range(func(key, value interface{}) bool {
 					hasClients = true
 					client := value.(*TcpServerClient)
 					if client.close {
 						ts.Clients.Delete(client.conn.RemoteAddr().String())
+						client.cancel()
 						ts.Logger.Info("Remove client(%s) from clients.", client.conn.RemoteAddr().String())
 					} else {
-						select {
-						case client.channel <- mo:
-							ts.Logger.Debug(fmt.Sprintf("moCh -> mo -> client cache(%s) ok.", client.conn.RemoteAddr().String()))
-						case <-time.After(time.Second * 5):
-							fmt.Println("发送操作超时")
+						for i := 1; i <= 5; i++ {
+							select {
+							case <-client.ctx.Done():
+								client.cancel()
+								i = 6
+							case client.channel <- mo:
+								ts.Logger.Debug(fmt.Sprintf("moCh -> mo -> client cache(%s) ok.", client.conn.RemoteAddr().String()))
+								i = 6
+							case <-time.After(time.Second * 1):
+								fmt.Println("发送操作超时")
+								if i == 4 {
+									client.cancel()
+									i = 6
+								}
+							}
 						}
 					}
 
 					return true
 				})
+
 				if !hasClients {
 					ts.Logger.Debug("No clients, mod discard.")
 					time.Sleep(time.Second * 1)
 					continue
 				}
-
-				fmt.Println("shoudao mo1")
 			}
 		}
 	}()
@@ -118,6 +128,7 @@ func (ts *TCPServer) Start(ctx context.Context) error {
 
 		if client, err := NewTcpServerClient(ts.Logger.Level, conn); err != nil {
 			ts.Logger.Error("Create Client(%s) error: %s", conn.RemoteAddr().String(), err.Error())
+			return err
 		} else {
 			ts.Clients.Store(conn.RemoteAddr().String(), client)
 			ts.Logger.Info("Add client(%s) to clients.", conn.RemoteAddr().String())
@@ -145,16 +156,11 @@ func (ts *TCPServer) handleConnection(tsClient *TcpServerClient) {
 		tsClient.SetClose()
 	}()
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		if err := tsClient.Cleanup(); err != nil {
-			ts.Logger.Error(fmt.Sprintf("Close connection error: " + err.Error()))
-		}
-	}()
-
 	ts.Logger.Info("Receive new client(%s) ", tsClient.conn.RemoteAddr().String())
 	wg.Wait()
+	if err := tsClient.Cleanup(); err != nil {
+		ts.Logger.Error(fmt.Sprintf("Close connection error: " + err.Error()))
+	}
 	ts.Logger.Info("Client(%s) closed.", tsClient.conn.RemoteAddr().String())
 }
 
