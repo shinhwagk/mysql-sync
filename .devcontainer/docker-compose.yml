@@ -66,7 +66,7 @@ services:
     ports:
       - 9090:9090
     volumes:
-      - ../example/prometheus.yaml:/etc/prometheus/prometheus.yml
+      - ../example/prometheus.yml:/etc/prometheus/prometheus.yml
 #     docker run --name dtle-consul -p 8500:8500 --network=dtle-net -d consul:latest
 # docker run --name dtle -p 4646:4646 --network=dtle-net -d actiontech/dtle
 
