@@ -8,8 +8,6 @@ import (
 	"net"
 	"sync"
 	"time"
-
-	"github.com/klauspost/compress/zstd"
 )
 
 func init() {
@@ -54,10 +52,7 @@ func (tc *TCPClient) SendSignalReceive(encoder *gob.Encoder, reciveCount int) er
 }
 
 func (tc *TCPClient) handleConnection(tcServer *TCPClientServer) {
-
 	var wg sync.WaitGroup
-
-	// tcc := &TCPClientServer{_ctx, conn, rcCh, moCh, gtidsets}
 
 	wg.Add(1)
 	go func() {
@@ -74,22 +69,19 @@ func (tc *TCPClient) handleConnection(tcServer *TCPClientServer) {
 
 	wg.Add(1)
 	go func() {
-		select {
-		case <-tcServer.ctx.Done():
-			if err := tcServer.conn.Close(); err != nil {
-				tc.Logger.Error(fmt.Sprintf("Close connection error: " + err.Error()))
-			}
+		if err := tcServer.Cleanup(); err != nil {
+			tc.Logger.Error(fmt.Sprintf("Close connection error: " + err.Error()))
 		}
 	}()
 
-	fmt.Println("Start conn " + tcServer.conn.LocalAddr().String())
+	fmt.Println("Server connected " + tcServer.conn.LocalAddr().String())
 	wg.Wait()
+	fmt.Println("Server connection close." + tcServer.conn.LocalAddr().String())
 }
 
 func (tc *TCPClient) handleToServer(tcServer *TCPClientServer) {
-	encoder := gob.NewEncoder(tcServer.conn)
 
-	if err := encoder.Encode(fmt.Sprintf("gtidsets@%s", tcServer.gtidSets)); err != nil {
+	if err := tcServer.encoder.Encode(fmt.Sprintf("gtidsets@%s", tcServer.gtidSets)); err != nil {
 		tc.Logger.Info("Requesting operations from server with gtidsets '%s' error: %s.", tcServer.gtidSets, err.Error())
 		return
 	}
@@ -108,7 +100,7 @@ func (tc *TCPClient) handleToServer(tcServer *TCPClientServer) {
 			tc.Logger.Info(fmt.Sprintf("Requesting operations: %d from tcp server.", 100))
 
 			signal := fmt.Sprintf("receive@%d", reciveCount)
-			if err := encoder.Encode(signal); err != nil {
+			if err := tcServer.encoder.Encode(signal); err != nil {
 				tc.Logger.Error("Request operations count: %d from tcp server, error: %s.", reciveCount, err.Error())
 				return
 			}
@@ -118,14 +110,6 @@ func (tc *TCPClient) handleToServer(tcServer *TCPClientServer) {
 }
 
 func (tc *TCPClient) handleFromServer(tcServer *TCPClientServer) {
-	zstdReader, err := zstd.NewReader(tcServer.conn)
-	if err != nil {
-		tc.Logger.Error("Error creating zstd reader:" + err.Error())
-		return
-	}
-	defer zstdReader.Close()
-	decoder := gob.NewDecoder(zstdReader)
-
 	moCacheCh := make(chan MysqlOperation, 1000)
 	defer close(moCacheCh)
 
@@ -164,7 +148,7 @@ func (tc *TCPClient) handleFromServer(tcServer *TCPClientServer) {
 
 			for rcCnt > 0 {
 				var operations []MysqlOperation
-				if err := decoder.Decode(&operations); err != nil {
+				if err := tcServer.decoder.Decode(&operations); err != nil {
 					if err == io.ErrUnexpectedEOF {
 						tc.Logger.Info("tcp server close, unexpected eof.")
 					} else if err == io.EOF {
@@ -194,7 +178,9 @@ func (tc *TCPClient) Start(ctx context.Context, moCh chan<- MysqlOperation, gtid
 	}
 	defer conn.Close()
 
-	server := NewTcpClientServer(ctx, conn, moCh, gtidsets)
-
-	tc.handleConnection(server)
+	if tcServer, err := NewTcpClientServer(conn, moCh, gtidsets); err != nil {
+		tc.Logger.Error("Create Client(%s) error: %s", conn.LocalAddr().String(), err.Error())
+	} else {
+		tc.handleConnection(tcServer)
+	}
 }

@@ -43,8 +43,9 @@ func NewTcpServerClient(loglevel int, conn net.Conn) (*TcpServerClient, error) {
 	return &TcpServerClient{
 		Logger: NewLogger(loglevel, fmt.Sprintf("tcp server client(%s)", conn.RemoteAddr().String())),
 
-		ctx:     ctx,
-		cancel:  cancel,
+		ctx:    ctx,
+		cancel: cancel,
+
 		conn:    conn,
 		channel: make(chan MysqlOperation),
 		close:   false,
@@ -62,7 +63,7 @@ func (tsc *TcpServerClient) SetClose() {
 	tsc.cancel()
 }
 
-func (tsc *TcpServerClient) Cleanup() {
+func (tsc *TcpServerClient) Cleanup() error {
 	<-tsc.ctx.Done()
 
 	close(tsc.channel)
@@ -76,10 +77,12 @@ func (tsc *TcpServerClient) Cleanup() {
 	}
 
 	if err := tsc.encoderZstdWriter.Close(); err != nil {
-		fmt.Println("zstd writer close err" + err.Error())
+		return fmt.Errorf("zstd writer close err" + err.Error())
 	}
 
 	if err := tsc.conn.Close(); err != nil {
-		fmt.Println("conn close err" + err.Error())
+		return err
 	}
+
+	return nil
 }

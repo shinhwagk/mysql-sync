@@ -126,35 +126,36 @@ func (ts *TCPServer) Start(ctx context.Context) error {
 	}
 }
 
-func (ts *TCPServer) handleConnection(client *TcpServerClient) {
-	ts.Logger.Info("Receive new client(%s) ", client.conn.RemoteAddr().String())
-
+func (ts *TCPServer) handleConnection(tsClient *TcpServerClient) {
 	var wg sync.WaitGroup
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		ts.handleFromClient(client)
-		ts.Logger.Info("tcp from client(%s) handler close.", client.conn.RemoteAddr().String())
-		client.SetClose()
+		ts.handleFromClient(tsClient)
+		ts.Logger.Info("tcp from client(%s) handler close.", tsClient.conn.RemoteAddr().String())
+		tsClient.SetClose()
 	}()
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		ts.handleToClient(client)
-		ts.Logger.Info("tcp to client(%s) handler close.", client.conn.RemoteAddr().String())
-		client.SetClose()
+		ts.handleToClient(tsClient)
+		ts.Logger.Info("tcp to client(%s) handler close.", tsClient.conn.RemoteAddr().String())
+		tsClient.SetClose()
 	}()
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		client.Cleanup()
+		if err := tsClient.Cleanup(); err != nil {
+			ts.Logger.Error(fmt.Sprintf("Close connection error: " + err.Error()))
+		}
 	}()
+
+	ts.Logger.Info("Receive new client(%s) ", tsClient.conn.RemoteAddr().String())
 	wg.Wait()
-
-	ts.Logger.Info("Client(%s) closed.", client.conn.RemoteAddr().String())
+	ts.Logger.Info("Client(%s) closed.", tsClient.conn.RemoteAddr().String())
 }
 
 func (s *TCPServer) handleToClient(tsClient *TcpServerClient) {
