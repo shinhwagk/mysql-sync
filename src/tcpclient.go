@@ -151,15 +151,16 @@ func (tc *TCPClient) handleFromServer(tcServer *TCPClientServer) {
 
 		rcCnt := minUnit
 
-		if time.Since(lastCheck) > time.Second {
+		duration := time.Since(lastCheck)
+		if duration > time.Second {
 			if oneSecondCount >= minUnit*2 {
-				rcCnt = (oneSecondCount / minUnit) * minUnit
+				rcCnt = (oneSecondCount / int(duration.Seconds()) / minUnit) * minUnit
 			}
 			oneSecondCount = 0
 			lastCheck = time.Now()
 		}
 
-		if remainingCapacity < minUnit || float64(remainingCapacity)/float64(maxRcCnt) >= 0.8 {
+		if remainingCapacity < minUnit || float64(remainingCapacity)/float64(maxRcCnt) <= 0.2 {
 			time.Sleep(time.Millisecond * 100)
 			continue
 		}
