@@ -9,24 +9,39 @@ func main() {
 	c1 := make(chan string, 100)
 
 	go func() {
-		time.Sleep(time.Second)
+		time.Sleep(time.Second * 5)
+		fmt.Println("send 2")
 
-		fmt.Println(len(c1))
+		for i := 0; i < 5; i++ {
+			select {
+			case c1 <- "asdfd":
+				fmt.Println("send 2 send ")
+			case <-time.After(time.Second * 1):
+				fmt.Println("send 2 send timeout")
+			}
+		}
 
-		c1 <- "asdfd"
-		fmt.Println(len(c1))
-
-		c1 <- "asdfd"
-		fmt.Println(len(c1))
-
-		close(c1) // 发送完毕后关闭通道
 	}()
 
-	close(c1)
-	fmt.Println(len(c1))
+	go func() {
+		time.Sleep(time.Second * 5)
+		fmt.Println("send 3")
 
-	<-c1
+		for i := 0; i < 5; i++ {
+			select {
+			case c1 <- "asdfd":
+				fmt.Println("send 3 send ")
+			case <-time.After(time.Second * 1):
+				fmt.Println("send 3 send timeout")
+			}
+		}
+	}()
+	go func() {
+		time.Sleep(time.Second * 8)
+
+	}()
+
 	fmt.Println(len(c1))
-	time.Sleep(time.Second * 5)
+	time.Sleep(time.Second * 51)
 
 }
