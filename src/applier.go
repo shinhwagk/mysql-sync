@@ -255,7 +255,6 @@ func (ma *MysqlApplier) OnGTID(op MysqlOperationGTID) error {
 	}
 
 	ma.Logger.Debug("Gtid: %s:%d", op.ServerUUID, op.TrxID)
-
 	if err := ma.GtidSets.SetTrxIdOfServerUUID(op.ServerUUID, uint(op.TrxID)); err != nil {
 		return err
 	}
