@@ -159,7 +159,7 @@ func (tc *TCPClient) handleFromServer(tcServer *TCPClientServer) {
 			lastCheck = time.Now()
 		}
 
-		if remainingCapacity < minUnit {
+		if remainingCapacity < minUnit || float64(remainingCapacity)/float64(maxRcCnt) >= 0.8 {
 			time.Sleep(time.Millisecond * 100)
 			continue
 		}
