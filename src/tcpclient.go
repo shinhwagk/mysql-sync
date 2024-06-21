@@ -142,6 +142,8 @@ func (tc *TCPClient) handleFromServer(tcServer *TCPClientServer) {
 
 	for {
 		remainingCapacity := maxRcCnt - len(moCacheCh)
+		tc.Logger.Debug("MoCh remaining capacity: %d.", remainingCapacity)
+
 		rcCnt := 0
 
 		if remainingCapacity >= 100 {

@@ -4,8 +4,9 @@ WORKDIR /build
 COPY go.mod .
 COPY go.sum .
 COPY src/ .
+COPY vendor vendor
 
-RUN go mod download
+# RUN go mod download
 RUN go build -ldflags="-s -w" -o mysqlsync ./*.go
 
 FROM golang:1.22.3
