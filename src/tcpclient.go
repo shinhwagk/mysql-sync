@@ -118,13 +118,21 @@ func (tc *TCPClient) handleToServer(tcServer *TCPClientServer) {
 }
 
 func (tc *TCPClient) handleFromServer(tcServer *TCPClientServer) {
-	moCacheCh := make(chan MysqlOperation, 1000000)
+	moCacheCh := make(chan MysqlOperation, 100000)
 	defer close(moCacheCh)
 
+	var lastSecondCount int = 0
+
 	go func() {
+		var count int = 0
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
 		for {
 			select {
-			case <-time.After(time.Second * 1):
+			case <-ticker.C:
+				lastSecondCount = count
+				count = 0
+				fmt.Println("yyyyyyyyy", lastSecondCount)
 			case <-tcServer.ctx.Done():
 				tc.Logger.Info("Context cancelled, stopping handleFromServer loop.")
 				return
@@ -134,27 +142,36 @@ func (tc *TCPClient) handleFromServer(tcServer *TCPClientServer) {
 					return
 				}
 				tcServer.moCh <- mo
+				count += 1
 			}
 		}
 	}()
 
 	var maxRcCnt = cap(moCacheCh)
 
+	const minRcCnt int = 100
+
 	for {
 		remainingCapacity := maxRcCnt - len(moCacheCh)
-		tc.Logger.Debug("MoCh remaining capacity: %d.", remainingCapacity)
+		tc.Logger.Debug("MoCh remaining capacity: %d/%d.", remainingCapacity, maxRcCnt)
 
-		rcCnt := 0
+		rcCnt := 100
 
-		if remainingCapacity >= 1000 {
-			rcCnt = 1000
-		} else {
+		evalRcCnt := (lastSecondCount / minRcCnt) * minRcCnt
+		if evalRcCnt > rcCnt {
+			rcCnt = evalRcCnt
+		}
+
+		if remainingCapacity < minRcCnt || float64(remainingCapacity)/float64(maxRcCnt) <= 0.2 {
 			time.Sleep(time.Millisecond * 100)
 			continue
 		}
 
 		if rcCnt > 0 {
 			tcServer.rcCh <- rcCnt
+			tc.Logger.Debug("Requesting a batch mo: %d from tcp server.", rcCnt)
+
+			receiveCnt := 0
 
 			for rcCnt > 0 {
 				var operations []MysqlOperation
@@ -172,10 +189,12 @@ func (tc *TCPClient) handleFromServer(tcServer *TCPClientServer) {
 				for _, oper := range operations {
 					moCacheCh <- oper
 					rcCnt -= 1
+					receiveCnt += 1
 					tc.metricCh <- MetricUnit{Name: MetricTCPClientReceiveOperations, Value: 1}
 				}
+				tc.Logger.Debug("Receive mo: %d from tcp server.", len(operations))
 			}
-			tc.Logger.Debug("Receive operations: %d from tcp server.", 1000)
+			tc.Logger.Debug("Receive a batch mo: %d from tcp server.", receiveCnt)
 		}
 	}
 }

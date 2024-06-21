@@ -84,28 +84,26 @@ func (ts *TCPServer) Start(ctx context.Context) error {
 					client := value.(*TcpServerClient)
 					if client.close {
 						ts.Clients.Delete(client.conn.RemoteAddr().String())
-						client.cancel()
+						client.SetClose()
 						ts.Logger.Info("Remove client(%s) from clients.", client.conn.RemoteAddr().String())
 					} else {
 						tryCnt := 5
 						for i := 0; i < tryCnt; i++ {
 							select {
 							case <-client.ctx.Done():
-								client.cancel()
 								i = tryCnt
 							case client.channel <- mo:
 								ts.Logger.Debug(fmt.Sprintf("moCh -> mo -> client cache(%s) ok.", client.conn.RemoteAddr().String()))
 								i = tryCnt
 							case <-time.After(time.Second * 1):
-								fmt.Println("发送操作超时x")
-								if i == tryCnt-1 {
-									client.cancel()
-									i = tryCnt
-								}
+								fmt.Println("mo -> client mo timeout.", len(client.channel))
+								// if i == tryCnt-1 {
+								// 	client.cancel()
+								// 	i = tryCnt
+								// }
 							}
 						}
 					}
-
 					return true
 				})
 
@@ -179,7 +177,7 @@ func (s *TCPServer) handleToClient(tsClient *TcpServerClient) {
 		case <-time.After(time.Second * 1):
 			s.Logger.Debug("wait receive singnal")
 		case <-tsClient.ctx.Done():
-			s.Logger.Info("ctx done signal received.")
+			s.Logger.Info("client ctx done signal received.")
 			return
 		case rc, ok := <-tsClient.rcCh:
 			if !ok {
@@ -190,7 +188,9 @@ func (s *TCPServer) handleToClient(tsClient *TcpServerClient) {
 			for rc >= 1 {
 				rcCnt := rc
 
-				if rc >= 10 {
+				if rc >= 1000 {
+					rcCnt = 100
+				} else if rc >= 100 {
 					rcCnt = 10
 				}
 
@@ -215,7 +215,6 @@ func (s *TCPServer) handleToClient(tsClient *TcpServerClient) {
 						}
 						rc -= rcCnt
 
-						// s.Logger.Debug(fmt.Sprintf("Compressed data sent: %d bytes\n", buf.Len()))
 						s.metricCh <- MetricUnit{Name: MetricTCPServerOutgoing, Value: uint(tsClient.encoderBuffer.Len())}
 						s.metricCh <- MetricUnit{Name: MetricTCPServerSendOperations, Value: uint(len(mos))}
 						tsClient.encoderBuffer.Reset()
