@@ -177,6 +177,7 @@ func (s *TCPServer) handleToClient(tsClient *TcpServerClient) {
 	for {
 		select {
 		case <-time.After(time.Second * 1):
+			s.Logger.Debug("wait receive singnal")
 		case <-tsClient.ctx.Done():
 			s.Logger.Info("ctx done signal received.")
 			return
