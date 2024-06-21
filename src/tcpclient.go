@@ -118,7 +118,7 @@ func (tc *TCPClient) handleToServer(tcServer *TCPClientServer) {
 }
 
 func (tc *TCPClient) handleFromServer(tcServer *TCPClientServer) {
-	moCacheCh := make(chan MysqlOperation, 1000)
+	moCacheCh := make(chan MysqlOperation, 1000000)
 	defer close(moCacheCh)
 
 	go func() {
