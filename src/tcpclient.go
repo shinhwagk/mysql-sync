@@ -88,7 +88,6 @@ func (tc *TCPClient) handleConnection(ctx context.Context, tcServer *TCPClientSe
 }
 
 func (tc *TCPClient) handleToServer(tcServer *TCPClientServer) {
-
 	if err := tcServer.encoder.Encode(fmt.Sprintf("gtidsets@%s", tcServer.gtidSets)); err != nil {
 		tc.Logger.Info("Requesting operations from server with gtidsets '%s' error: %s.", tcServer.gtidSets, err.Error())
 		return
@@ -166,6 +165,8 @@ func (tc *TCPClient) handleFromServer(tcServer *TCPClientServer) {
 			tcServer.rcCh <- rcCnt
 			tc.Logger.Debug("Requesting a batch mo: %d from tcp server.", rcCnt)
 
+			receiveCnt := 0
+
 			for rcCnt > 0 {
 				var operations []MysqlOperation
 				if err := tcServer.decoder.Decode(&operations); err != nil {
@@ -183,11 +184,12 @@ func (tc *TCPClient) handleFromServer(tcServer *TCPClientServer) {
 					moCacheCh <- oper
 					rcCnt -= 1
 					oneSecondCount += 1
+					receiveCnt += 1
 					tc.metricCh <- MetricUnit{Name: MetricTCPClientReceiveOperations, Value: 1}
 				}
-				tc.Logger.Debug("Receive mo: %d from tcp server.", rcCnt)
+				tc.Logger.Debug("Receive mo: %d from tcp server.", len(operations))
 			}
-			tc.Logger.Debug("Receive a batch mo: %d from tcp server.", rcCnt)
+			tc.Logger.Debug("Receive a batch mo: %d from tcp server.", receiveCnt)
 		}
 	}
 }
