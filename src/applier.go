@@ -76,7 +76,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 			switch op := oper.(type) {
 			case MysqlOperationDDLDatabase:
 				if err := ma.OnDDLDatabase(op); err != nil {
-					ma.Logger.Error(fmt.Sprintf("OnDDLDatabase -- %s", err))
+					ma.Logger.Error("OnDDLDatabase -- %s", err)
 					return
 				}
 			case MysqlOperationDMLInsert:
@@ -200,7 +200,7 @@ func (ma *MysqlApplier) OnDMLUpdate(op MysqlOperationDMLUpdate) error {
 }
 
 func (ma *MysqlApplier) OnDDLDatabase(op MysqlOperationDDLDatabase) error {
-	ma.Logger.Debug(fmt.Sprintf("OnDDLDatabase -- query: '%s'", op.Query))
+	ma.Logger.Debug("OnDDLDatabase -- query: '%s'", op.Query)
 
 	if err := ma.mysqlClient.ExecuteOnDatabase(op.Query); err != nil {
 		return err
@@ -214,13 +214,13 @@ func (ma *MysqlApplier) OnDDLDatabase(op MysqlOperationDDLDatabase) error {
 }
 
 func (ma *MysqlApplier) OnDDLTable(op MysqlOperationDDLTable) error {
-	ma.Logger.Debug(fmt.Sprintf("OnDDLTable -- schema: %s  query: %s", op.Schema, op.Query))
+	ma.Logger.Debug("OnDDLTable -- SchemaContext: %s Query: %s", op.Schema, op.Query)
 
 	if err := ma.mysqlClient.ExecuteOnTable(op.SchemaContext, op.Query); err != nil {
 		if trxID, ok := ma.GtidSets.GetTrxIdOfServerUUID(ma.LastGtidServerUUID); ok {
-			ma.Logger.Warning(fmt.Sprintf("Gtid: '%s:%d'", ma.LastGtidServerUUID, trxID))
+			ma.Logger.Error("Gtid: '%s:%d'", ma.LastGtidServerUUID, trxID)
 		}
-		ma.Logger.Error(fmt.Sprintf("OnDDLTable -- SchemaContext: %s Query: %s", op.SchemaContext, op.Query))
+		ma.Logger.Error("OnDDLTable -- SchemaContext: %s Query: %s", op.SchemaContext, op.Query)
 		return err
 	}
 
@@ -254,7 +254,7 @@ func (ma *MysqlApplier) OnGTID(op MysqlOperationGTID) error {
 		ma.LastCommitted = op.LastCommitted
 	}
 
-	ma.Logger.Debug(fmt.Sprintf("Gtid: %s:%d", op.ServerUUID, op.TrxID))
+	ma.Logger.Debug("Gtid: %s:%d", op.ServerUUID, op.TrxID)
 
 	if err := ma.GtidSets.SetTrxIdOfServerUUID(op.ServerUUID, uint(op.TrxID)); err != nil {
 		return err

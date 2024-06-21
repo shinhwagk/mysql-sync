@@ -262,7 +262,7 @@ func (bext *BinlogExtract) handleQueryEvent(e *replication.QueryEvent, eh *repli
 				if len(schema) == 0 {
 					schema = tab.Schema.O
 				}
-				Query := fmt.Sprintf("DROP TABLE `%s`.`%s`", schema, tab.Name.O)
+				Query := fmt.Sprintf("DROP TABLE IF EXISTS `%s`.`%s`", schema, tab.Name.O)
 				bext.toMoCh(MysqlOperationDDLTable{SchemaContext: string(e.Schema), Schema: schema, Table: tab.Name.O, Query: Query, Timestamp: eh.Timestamp})
 			}
 		case *ast.CreateTableStmt:
