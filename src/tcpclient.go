@@ -104,13 +104,14 @@ func (tc *TCPClient) handleToServer(tcServer *TCPClientServer) {
 				tc.Logger.Info("channel 'reciveCountCh' closed.")
 				return
 			}
-			tc.Logger.Debug(fmt.Sprintf("Requesting operations: %d from tcp server.", 100))
 
 			signal := fmt.Sprintf("receive@%d", reciveCount)
 			if err := tcServer.encoder.Encode(signal); err != nil {
 				tc.Logger.Error("Request operations count: %d from tcp server, error: %s.", reciveCount, err.Error())
 				return
 			}
+			tc.Logger.Debug("Signal '%s' has been sent to the server", signal)
+
 			tc.metricCh <- MetricUnit{Name: MetricTCPClientRequestOperations, Value: uint(reciveCount)}
 		}
 	}
@@ -142,21 +143,23 @@ func (tc *TCPClient) handleFromServer(tcServer *TCPClientServer) {
 	var lastCheck time.Time = time.Now()
 	var oneSecondCount int = 0
 
+	const minUnit int = 100
+
 	for {
 		remainingCapacity := maxRcCnt - len(moCacheCh)
 		tc.Logger.Debug("MoCh remaining capacity: %d.", remainingCapacity)
 
-		rcCnt := 100
+		rcCnt := minUnit
 
 		if time.Since(lastCheck) > time.Second {
-			if oneSecondCount > 0 {
-				rcCnt = (oneSecondCount / 100) * 100
+			if oneSecondCount >= minUnit*2 {
+				rcCnt = (oneSecondCount / minUnit) * minUnit
 			}
 			oneSecondCount = 0
 			lastCheck = time.Now()
 		}
 
-		if remainingCapacity < rcCnt {
+		if remainingCapacity < minUnit {
 			time.Sleep(time.Millisecond * 100)
 			continue
 		}
