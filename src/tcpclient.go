@@ -121,18 +121,19 @@ func (tc *TCPClient) handleFromServer(tcServer *TCPClientServer) {
 	moCacheCh := make(chan MysqlOperation, 100000)
 	defer close(moCacheCh)
 
-	var lastSecondCount int = 0
+	lastSecondCount := 0
 
 	go func() {
-		var count int = 0
 		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
+
+		count := 0
+
 		for {
 			select {
 			case <-ticker.C:
 				lastSecondCount = count
 				count = 0
-				fmt.Println("yyyyyyyyy", lastSecondCount)
 			case <-tcServer.ctx.Done():
 				tc.Logger.Info("Context cancelled, stopping handleFromServer loop.")
 				return
@@ -147,20 +148,14 @@ func (tc *TCPClient) handleFromServer(tcServer *TCPClientServer) {
 		}
 	}()
 
-	var maxRcCnt = cap(moCacheCh)
-
+	const maxRcCnt = cap(moCacheCh)
 	const minRcCnt int = 100
 
 	for {
 		remainingCapacity := maxRcCnt - len(moCacheCh)
 		tc.Logger.Debug("MoCh remaining capacity: %d/%d.", remainingCapacity, maxRcCnt)
 
-		rcCnt := 100
-
-		evalRcCnt := (lastSecondCount / minRcCnt) * minRcCnt
-		if evalRcCnt > rcCnt {
-			rcCnt = evalRcCnt
-		}
+		rcCnt := max(minRcCnt, (lastSecondCount / minRcCnt) * minRcCnt)
 
 		if remainingCapacity < minRcCnt || float64(remainingCapacity)/float64(maxRcCnt) <= 0.2 {
 			time.Sleep(time.Millisecond * 100)
