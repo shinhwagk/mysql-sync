@@ -1,4 +1,4 @@
-FROM golang:1.22.3 as builder
+FROM golang:1.22.4 as builder
 
 WORKDIR /build
 COPY go.mod .
@@ -9,7 +9,7 @@ COPY vendor vendor
 # RUN go mod download
 RUN go build -ldflags="-s -w" -o mysqlsync ./*.go
 
-FROM golang:1.22.3
+FROM golang:1.22.4
 WORKDIR /app
 COPY --from=builder /build/mysqlsync .
 ENTRYPOINT ["/app/mysqlsync"]

@@ -1,6 +1,6 @@
 module shinhwagk/mysql-sync
 
-go 1.22.3
+go 1.22.4
 
 require (
 	github.com/go-mysql-org/go-mysql v1.8.0
