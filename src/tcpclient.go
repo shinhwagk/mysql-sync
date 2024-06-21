@@ -140,36 +140,21 @@ func (tc *TCPClient) handleFromServer(tcServer *TCPClientServer) {
 
 	var maxRcCnt = cap(moCacheCh)
 
-	var lastCheck time.Time = time.Now()
-	var oneSecondCount int = 0
-
-	const minUnit int = 100
-
 	for {
 		remainingCapacity := maxRcCnt - len(moCacheCh)
 		tc.Logger.Debug("MoCh remaining capacity: %d.", remainingCapacity)
 
-		rcCnt := minUnit
+		rcCnt := 0
 
-		duration := time.Since(lastCheck)
-		if duration > time.Second {
-			if oneSecondCount >= minUnit*2 {
-				rcCnt = (oneSecondCount / int(duration.Seconds()) / minUnit) * minUnit
-			}
-			oneSecondCount = 0
-			lastCheck = time.Now()
-		}
-
-		if remainingCapacity < minUnit || float64(remainingCapacity)/float64(maxRcCnt) <= 0.2 {
+		if remainingCapacity >= 1000 {
+			rcCnt = 1000
+		} else {
 			time.Sleep(time.Millisecond * 100)
 			continue
 		}
 
 		if rcCnt > 0 {
 			tcServer.rcCh <- rcCnt
-			tc.Logger.Debug("Requesting a batch mo: %d from tcp server.", rcCnt)
-
-			receiveCnt := 0
 
 			for rcCnt > 0 {
 				var operations []MysqlOperation
@@ -187,13 +172,10 @@ func (tc *TCPClient) handleFromServer(tcServer *TCPClientServer) {
 				for _, oper := range operations {
 					moCacheCh <- oper
 					rcCnt -= 1
-					oneSecondCount += 1
-					receiveCnt += 1
 					tc.metricCh <- MetricUnit{Name: MetricTCPClientReceiveOperations, Value: 1}
 				}
-				tc.Logger.Debug("Receive mo: %d from tcp server.", len(operations))
 			}
-			tc.Logger.Debug("Receive a batch mo: %d from tcp server.", receiveCnt)
+			tc.Logger.Debug("Receive operations: %d from tcp server.", 1000)
 		}
 	}
 }
