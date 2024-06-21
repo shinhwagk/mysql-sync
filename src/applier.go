@@ -274,7 +274,7 @@ func (ma *MysqlApplier) OnHeartbeat(op MysqlOperationHeartbeat) error {
 
 func (ma *MysqlApplier) TryMergeCommit() error {
 	if ma.AllowCommit {
-		ma.Logger.Debug("Last Committed switch merge commit.")
+		ma.Logger.Debug("The last commited was switched with merge commit.")
 		if err := ma.mysqlClient.Commit(); err != nil {
 			return err
 		}
