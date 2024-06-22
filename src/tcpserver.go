@@ -150,14 +150,6 @@ func (ts *TCPServer) handleConnection(tsClient *TcpServerClient) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		ts.handleToClient(tsClient)
-		ts.Logger.Info("tcp to client(%s) handler close.", tsClient.conn.RemoteAddr().String())
-		tsClient.SetClose()
-	}()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
 		if err := tsClient.Cleanup(); err != nil {
 			ts.Logger.Error(fmt.Sprintf("Close connection error: " + err.Error()))
 		}
@@ -169,74 +161,88 @@ func (ts *TCPServer) handleConnection(tsClient *TcpServerClient) {
 	ts.Logger.Info("Client(%s) closed.", tsClient.conn.RemoteAddr().String())
 }
 
-func (s *TCPServer) handleToClient(tsClient *TcpServerClient) {
-	var mysqlOperations []MysqlOperation
+// func (s *TCPServer) handleToClient1(tsClient *TcpServerClient) {
+// 	for {
+// 		select {
+// 		case <-tsClient.ctx.Done():
+// 			s.Logger.Info("ctx done signal received.")
+// 			return
+// 		case rc, ok := <-tsClient.rcCh:
+// 			if !ok {
+// 				s.Logger.Info("ReceiveCountCh")
+// 				return
+// 			}
 
-	for {
-		select {
-		case <-time.After(time.Second * 1):
-			s.Logger.Debug("wait receive singnal")
-		case <-tsClient.ctx.Done():
-			s.Logger.Info("client ctx done signal received.")
-			return
-		case rc, ok := <-tsClient.rcCh:
-			if !ok {
-				s.Logger.Info("ReceiveCountCh")
+// 			var mysqlOperations []MysqlOperation
+// 			for len(mysqlOperations) != rc {
+// 				select {
+// 				case <-tsClient.ctx.Done():
+// 					s.Logger.Info("ctx done signal received.")
+// 					return
+// 				case oper, ok := <-tsClient.channel:
+// 					if !ok {
+// 						s.Logger.Info("mysql operation channel closed.")
+// 						return
+// 					}
+// 					mysqlOperations = append(mysqlOperations, oper)
+// 				}
+// 				if err := s.sendClient(tsClient, mysqlOperations); err != nil {
+// 					s.Logger.Error("sendClient error: " + err.Error())
+// 					return
+// 				}
+// 			case <-time.After(time.Second * 1):
+// 			}
+// 		case <-time.After(time.Second * 1):
+// 		}
+// 	}
+// }
+
+func (s *TCPServer) sendMosToClient(tsClient *TcpServerClient, rc int) {
+	sendCnt := 0
+
+	for !(rc == sendCnt) {
+		rcCnt := rc - sendCnt
+
+		if rcCnt >= 10000 {
+			rcCnt = 1000
+		} else if rcCnt >= 1000 {
+			rcCnt = 100
+		} else if rcCnt >= 100 {
+			rcCnt = 10
+		}
+
+		var mysqlOperations []MysqlOperation
+
+		for rcCnt > 0 {
+			select {
+			case <-tsClient.ctx.Done():
+				s.Logger.Info("ctx done signal received.")
 				return
-			}
-
-			for rc >= 1 {
-				rcCnt := rc
-
-				if rc >= 1000 {
-					rcCnt = 100
-				} else if rc >= 100 {
-					rcCnt = 10
-				}
-
-				select {
-				case <-tsClient.ctx.Done():
-					s.Logger.Info("ctx done signal received.")
+			case oper, ok := <-tsClient.channel:
+				if !ok {
+					s.Logger.Info("mysql operation channel closed.")
 					return
-				case oper, ok := <-tsClient.channel:
-					if !ok {
-						s.Logger.Info("mysql operation channel closed.")
-						return
-					}
-
-					mysqlOperations = append(mysqlOperations, oper)
-
-					if len(mysqlOperations) >= rcCnt {
-						mos := mysqlOperations[:rcCnt]
-						mysqlOperations = mysqlOperations[rcCnt:]
-						if err := s.sendClient(tsClient, mos); err != nil {
-							s.Logger.Error("sendClient error: " + err.Error())
-							return
-						}
-						rc -= rcCnt
-
-						s.metricCh <- MetricUnit{Name: MetricTCPServerOutgoing, Value: uint(tsClient.encoderBuffer.Len())}
-						s.metricCh <- MetricUnit{Name: MetricTCPServerSendOperations, Value: uint(len(mos))}
-						tsClient.encoderBuffer.Reset()
-					}
-				case <-time.After((time.Millisecond * 100)):
-					if len(mysqlOperations) >= rcCnt {
-						mos := mysqlOperations[:rcCnt]
-						mysqlOperations = mysqlOperations[rcCnt:]
-						if err := s.sendClient(tsClient, mos); err != nil {
-							s.Logger.Error("sendClient error: " + err.Error())
-							return
-						}
-						rc -= rcCnt
-
-						// s.Logger.Debug(fmt.Sprintf("Compressed data sent: %d bytes\n", buf.Len()))
-						s.metricCh <- MetricUnit{Name: MetricTCPServerOutgoing, Value: uint(tsClient.encoderBuffer.Len())}
-						s.metricCh <- MetricUnit{Name: MetricTCPServerSendOperations, Value: uint(len(mos))}
-						tsClient.encoderBuffer.Reset()
-					}
 				}
+
+				mysqlOperations = append(mysqlOperations, oper)
+				rcCnt -= 1
+				fmt.Println("mysqloperation ", len(mysqlOperations))
+			case <-time.After(time.Millisecond * 100):
+
 			}
 		}
+		if err := s.sendClient(tsClient, mysqlOperations); err != nil {
+			s.Logger.Error("sendClient error: " + err.Error())
+			return
+		} else {
+			s.Logger.Debug("sendClient mo: %d", rcCnt)
+
+		}
+		sendCnt += rcCnt
+
+		s.metricCh <- MetricUnit{Name: MetricTCPServerOutgoing, Value: uint(tsClient.encoderBuffer.Len())}
+		s.metricCh <- MetricUnit{Name: MetricTCPServerSendOperations, Value: uint(rcCnt)}
+		tsClient.encoderBuffer.Reset()
 	}
 }
 
@@ -264,11 +270,12 @@ func (s *TCPServer) handleFromClient(tsClient *TcpServerClient) {
 				if err != nil {
 					s.Logger.Error("Converting signal '%s' error: %s", signal, err.Error())
 				} else {
-					tsClient.rcCh <- result
+					s.sendMosToClient(tsClient, result)
 				}
 			}
 		} else {
 			s.Logger.Error("Unknow signal '%s'.", signal)
+			return
 		}
 	}
 }

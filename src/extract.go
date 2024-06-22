@@ -35,7 +35,7 @@ func NewBinlogExtract(logLevel int, config ReplicationConfig, gsCh <-chan string
 		User:            config.User,
 		Password:        config.Password,
 		Charset:         "utf8mb4",
-		HeartbeatPeriod: time.Millisecond * 500,
+		HeartbeatPeriod: time.Millisecond * 100,
 		ReadTimeout:     time.Minute * 10,
 	}
 

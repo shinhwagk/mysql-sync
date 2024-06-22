@@ -22,6 +22,8 @@ type TCPClientServer struct {
 	rcCh     chan int
 	moCh     chan<- MysqlOperation
 	gtidSets string
+
+	moCacheCh chan MysqlOperation
 }
 
 func NewTcpClientServer(conn net.Conn, moCh chan<- MysqlOperation, gtidSets string) (*TCPClientServer, error) {
@@ -46,6 +48,8 @@ func NewTcpClientServer(conn net.Conn, moCh chan<- MysqlOperation, gtidSets stri
 		moCh:     moCh,
 		rcCh:     make(chan int),
 		gtidSets: gtidSets,
+
+		moCacheCh: make(chan MysqlOperation, 100000),
 	}, nil
 }
 
@@ -59,6 +63,13 @@ func (tcs *TCPClientServer) Cleanup() error {
 		fmt.Println("channel rcCh clean.")
 	}
 
+	select {
+	case <-tcs.moCacheCh:
+		// ts.Logger.Debug(fmt.Sprintf("moCh -> mo -> client cache(%s) ok.", client.conn.RemoteAddr().String()))
+	case <-time.After(time.Second * 1):
+		fmt.Println("channel moCacheCh clean.")
+	}
+
 	tcs.decoderZstdReader.Close()
 
 	if err := tcs.conn.Close(); err != nil {
@@ -66,10 +77,15 @@ func (tcs *TCPClientServer) Cleanup() error {
 	}
 
 	close(tcs.rcCh)
+	close(tcs.moCacheCh)
 
 	return nil
 }
 
 func (tcs *TCPClientServer) SetClose() {
 	tcs.cancel()
+}
+
+func (tcs *TCPClientServer) SendSignal(signal string) error {
+	return tcs.encoder.Encode(signal)
 }
