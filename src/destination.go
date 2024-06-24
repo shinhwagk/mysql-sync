@@ -34,10 +34,15 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) e
 	}
 
 	metricDirector := NewMetricDirector(dest.dc.LogLevel, "destination", metricCh)
-	tcpClient := NewTCPClient(dest.dc.LogLevel, dest.dc.TCPAddr, metricCh)
+	tcpClient, err := NewTCPClient(dest.dc.LogLevel, dest.dc.TCPAddr, moCh, gtidSets.GtidSetsRangeStr, metricCh)
+	if err != nil {
+		tcpClient.Logger.Error("NewTCPClient error: " + err.Error())
+		return err
+	}
+
 	mysqlClient, err := NewMysqlClient(dest.dc.LogLevel, dns)
 	if err != nil {
-		dest.Logger.Error("NewMysqlClient error: " + err.Error())
+		mysqlClient.Logger.Error("NewMysqlClient error: " + err.Error())
 		return err
 	}
 	defer mysqlClient.Close()
@@ -72,7 +77,7 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) e
 	go func() {
 		defer wg.Done()
 		tcpClient.Logger.Info("started.")
-		tcpClient.Start(ctx, moCh, gtidSets.GtidSetsRangeStr)
+		tcpClient.Start(ctx)
 		tcpClient.Logger.Info("stopped.")
 		cancel()
 	}()

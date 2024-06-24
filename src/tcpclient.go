@@ -8,6 +8,8 @@ import (
 	"net"
 	"sync"
 	"time"
+
+	"github.com/klauspost/compress/zstd"
 )
 
 func init() {
@@ -20,168 +22,131 @@ func init() {
 	gob.Register(MysqlOperationDMLDelete{})
 	gob.Register(MysqlOperationBegin{})
 	gob.Register(MysqlOperationXid{})
-
-	// gob.Register(&DTOPause{})
-	// gob.Register(&DTOResume{})
-	// gob.Register(&DTOGtidSet{})
-
 }
 
 type TCPClient struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+
 	Logger        *Logger
 	ServerAddress string
 	metricCh      chan<- MetricUnit
+
+	conn              net.Conn
+	encoder           *gob.Encoder
+	decoder           *gob.Decoder
+	decoderZstdReader *zstd.Decoder
+
+	rcCh     chan int //receive count
+	moCh     chan<- MysqlOperation
+	gtidSets string
+
+	moCacheCh chan MysqlOperation
 }
 
-func NewTCPClient(logLevel int, serverAddress string, metricCh chan<- MetricUnit) *TCPClient {
-	return &TCPClient{
-		Logger:        NewLogger(logLevel, "tcp client"),
-		ServerAddress: serverAddress,
-
-		metricCh: metricCh,
+func NewTCPClient(logLevel int, serverAddress string, moCh chan<- MysqlOperation, gtidSets string, metricCh chan<- MetricUnit) (*TCPClient, error) {
+	logger := NewLogger(logLevel, "tcp client")
+	conn, err := net.Dial("tcp", serverAddress)
+	if err != nil {
+		logger.Error("connection error: " + err.Error())
+		return nil, err
 	}
+
+	encoder := gob.NewEncoder(conn)
+
+	zstdReader, err := zstd.NewReader(conn)
+	if err != nil {
+		return nil, err
+	}
+	decoder := gob.NewDecoder(zstdReader)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	return &TCPClient{
+		ctx:    ctx,
+		cancel: cancel,
+
+		Logger:            logger,
+		ServerAddress:     serverAddress,
+		conn:              conn,
+		encoder:           encoder,
+		decoder:           decoder,
+		decoderZstdReader: zstdReader,
+		metricCh:          metricCh,
+
+		moCh:     moCh,
+		rcCh:     make(chan int),
+		gtidSets: gtidSets,
+
+		moCacheCh: make(chan MysqlOperation, 100000),
+	}, nil
 }
 
-// func (tc *TCPClient) SendSignalReceive(encoder *gob.Encoder, reciveCount int) error {
-// 	signal := fmt.Sprintf("receive@%d", reciveCount)
-// 	if err := encoder.Encode(signal); err != nil {
-// 		tc.Logger.Error(fmt.Sprintf("Request operations count: %d from tcp server, error: %s.", reciveCount, err.Error()))
-// 		return err
-// 	}
-// 	return nil
-// }
+func (tc *TCPClient) flowControl() {
+	fn := func(lastSecondCount, maxRcCnt, minRcCnt int) {
+		remainingCapacity := maxRcCnt - len(tc.moCacheCh)
+		tc.Logger.Debug("MoCh remaining capacity: %d/%d.", remainingCapacity, maxRcCnt)
 
-func (tc *TCPClient) handleConnection(ctx context.Context, tcServer *TCPClientServer) {
-	go func() {
-		<-ctx.Done()
-		tcServer.SetClose()
-	}()
+		reciveCount := max(minRcCnt, (lastSecondCount/minRcCnt)*minRcCnt)
 
-	var wg sync.WaitGroup
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		if err := tcServer.SendSignal(fmt.Sprintf("gtidsets@%s", tcServer.gtidSets)); err != nil {
-			tc.Logger.Info("Requesting operations from server with gtidsets '%s' error: %s.", tcServer.gtidSets, err.Error())
-			tcServer.SetClose()
+		if remainingCapacity < minRcCnt || float64(remainingCapacity)/float64(maxRcCnt) <= 0.2 {
+			time.Sleep(time.Millisecond * 100)
+			return
 		}
-		tc.Logger.Info("Requesting operations from server with gtidsets '%s'.", tcServer.gtidSets)
-	}()
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		tc.flowControl(tcServer)
-		tc.Logger.Info(fmt.Sprintf("tcp to server '%s' handler close.", tcServer.conn.RemoteAddr().String()))
-		tcServer.SetClose()
-	}()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		tc.handleFromServer(tcServer)
-		tc.Logger.Info(fmt.Sprintf("tcp from server '%s' handler close.", tcServer.conn.RemoteAddr().String()))
-		tcServer.SetClose()
-	}()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		if err := tcServer.Cleanup(); err != nil {
-			tc.Logger.Error(fmt.Sprintf("Close connection error: " + err.Error()))
+		if reciveCount > 0 {
+			signal := fmt.Sprintf("receive@%d", reciveCount)
+			if err := tc.SendSignal(signal); err != nil {
+				tc.Logger.Error("Request operations count: %d from tcp server, error: %s.", reciveCount, err.Error())
+				return
+			} else {
+				tc.Logger.Debug("Signal '%s' has been sent to the server", signal)
+			}
+			tc.rcCh <- reciveCount
+			tc.metricCh <- MetricUnit{Name: MetricTCPClientRequestOperations, Value: uint(reciveCount)}
 		}
-	}()
+	}
 
-	tc.Logger.Info("Server connected " + tcServer.conn.LocalAddr().String())
-	wg.Wait()
-	tc.Logger.Info("Server connection close." + tcServer.conn.LocalAddr().String())
-}
-
-// func (tc *TCPClient) handleToServer(tcServer *TCPClientServer) {
-// 	if err := tcServer.encoder.Encode(fmt.Sprintf("gtidsets@%s", tcServer.gtidSets)); err != nil {
-// 		tc.Logger.Info("Requesting operations from server with gtidsets '%s' error: %s.", tcServer.gtidSets, err.Error())
-// 		return
-// 	}
-// 	tc.Logger.Info("Requesting operations from server with gtidsets '%s'.", tcServer.gtidSets)
-
-// 	for {
-// 		select {
-// 		case <-time.After(time.Second * 1):
-// 		case <-tcServer.ctx.Done():
-// 			return
-// 		case reciveCount, ok := <-tcServer.rcCh:
-// 			if !ok {
-// 				tc.Logger.Info("channel 'reciveCountCh' closed.")
-// 				return
-// 			}
-
-// 			if err :=tcServer.SendSignal(fmt.Sprintf("receive@%d", reciveCount)); err != nil {
-// 				tc.Logger.Error("Request operations count: %d from tcp server, error: %s.", reciveCount, err.Error())
-// 				return
-// 			}
-// 			tc.Logger.Debug("Signal '%s' has been sent to the server", signal)
-
-// 			tc.metricCh <- MetricUnit{Name: MetricTCPClientRequestOperations, Value: uint(reciveCount)}
-// 		}
-// 	}
-// }
-
-func (tc *TCPClient) flowControl(tcServer *TCPClientServer) {
-	var maxRcCnt int = cap(tcServer.moCacheCh)
+	maxRcCnt := cap(tc.moCacheCh)
 	const minRcCnt int = 100
 
 	lastSecondCount := 0
-	count := 0
 
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
+	ticker1 := time.NewTicker(time.Second * 1)
+	defer ticker1.Stop()
+
+	ticker2 := time.NewTicker(time.Millisecond * 100)
+	defer ticker2.Stop()
 
 	for {
 		select {
-		case <-ticker.C:
-			lastSecondCount = count
-			count = 0
-		case <-tcServer.ctx.Done():
+		case <-tc.ctx.Done():
 			tc.Logger.Info("Context cancelled, stopping handleFromServer loop.")
 			return
-		case mo, ok := <-tcServer.moCacheCh:
+		case <-ticker1.C:
+			fmt.Println("asdfsdfsdfsfsdfsdfsdfsdfsdf", lastSecondCount)
+			fn(lastSecondCount, maxRcCnt, minRcCnt)
+			lastSecondCount = 0
+		case <-ticker2.C:
+			fn(0, maxRcCnt, minRcCnt)
+		case mo, ok := <-tc.moCacheCh:
 			if !ok {
 				tc.Logger.Info("channel 'moCacheCh' closed.")
 				return
 			}
-			tcServer.moCh <- mo
-			count += 1
-		default:
-			remainingCapacity := maxRcCnt - len(tcServer.moCacheCh)
-			tc.Logger.Debug("MoCh remaining capacity: %d/%d.", remainingCapacity, maxRcCnt)
-
-			reciveCount := max(minRcCnt, (lastSecondCount/minRcCnt)*minRcCnt)
-
-			if remainingCapacity < minRcCnt || float64(remainingCapacity)/float64(maxRcCnt) <= 0.2 {
-				time.Sleep(time.Millisecond * 100)
-				continue
-			}
-
-			if reciveCount > 0 {
-				signal := fmt.Sprintf("receive@%d", reciveCount)
-				if err := tcServer.SendSignal(signal); err != nil {
-					tc.Logger.Error("Request operations count: %d from tcp server, error: %s.", reciveCount, err.Error())
-					return
-				} else {
-					tc.Logger.Debug("Signal '%s' has been sent to the server", signal)
-				}
-				tcServer.rcCh <- reciveCount
-				tc.metricCh <- MetricUnit{Name: MetricTCPClientRequestOperations, Value: uint(reciveCount)}
-			}
+			tc.moCh <- mo
+			lastSecondCount++
 		}
 	}
 }
 
-func (tc *TCPClient) handleFromServer(tcServer *TCPClientServer) {
+func (tc *TCPClient) receiveOperations() {
 	for {
 		select {
-		case rcCnt, ok := <-tcServer.rcCh:
+		case <-tc.ctx.Done():
+			tc.Logger.Info("Context cancelled, stopping handleFromServer loop.")
+			return
+		case rcCnt, ok := <-tc.rcCh:
 			if !ok {
 				tc.Logger.Info("channel 'reciveCountCh' closed.")
 				return
@@ -190,9 +155,9 @@ func (tc *TCPClient) handleFromServer(tcServer *TCPClientServer) {
 
 			receiveCnt := 0
 
-			for !(rcCnt == receiveCnt) {
+			for rcCnt != receiveCnt {
 				var operations []MysqlOperation
-				if err := tcServer.decoder.Decode(&operations); err != nil {
+				if err := tc.decoder.Decode(&operations); err != nil {
 					if err == io.ErrUnexpectedEOF {
 						tc.Logger.Info("tcp server close, unexpected eof.")
 					} else if err == io.EOF {
@@ -204,8 +169,8 @@ func (tc *TCPClient) handleFromServer(tcServer *TCPClientServer) {
 				}
 
 				for _, oper := range operations {
-					tcServer.moCacheCh <- oper
-					receiveCnt += 1
+					tc.moCacheCh <- oper
+					receiveCnt++
 					tc.metricCh <- MetricUnit{Name: MetricTCPClientReceiveOperations, Value: 1}
 				}
 				tc.Logger.Debug("Receive mo: %d from tcp server.", len(operations))
@@ -216,121 +181,87 @@ func (tc *TCPClient) handleFromServer(tcServer *TCPClientServer) {
 	}
 }
 
-// func (tc *TCPClient) handleToServer(tcServer *TCPClientServer) {
-// 	if err := tcServer.encoder.Encode(fmt.Sprintf("gtidsets@%s", tcServer.gtidSets)); err != nil {
-// 		tc.Logger.Info("Requesting operations from server with gtidsets '%s' error: %s.", tcServer.gtidSets, err.Error())
-// 		return
-// 	}
-// 	tc.Logger.Info("Requesting operations from server with gtidsets '%s'.", tcServer.gtidSets)
+func (tc *TCPClient) Start(ctx context.Context) {
+	var wg sync.WaitGroup
 
-// 	for {
-// 		select {
-// 		case <-time.After(time.Second * 1):
-// 		case <-tcServer.ctx.Done():
-// 			return
-// 		case reciveCount, ok := <-tcServer.rcCh:
-// 			if !ok {
-// 				tc.Logger.Info("channel 'reciveCountCh' closed.")
-// 				return
-// 			}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-ctx.Done()
+		tc.SetClose()
+	}()
 
-// 			signal := fmt.Sprintf("receive@%d", reciveCount)
-// 			if err := tcServer.encoder.Encode(signal); err != nil {
-// 				tc.Logger.Error("Request operations count: %d from tcp server, error: %s.", reciveCount, err.Error())
-// 				return
-// 			}
-// 			tc.Logger.Debug("Signal '%s' has been sent to the server", signal)
+	go func() {
+		defer wg.Done()
+		if err := tc.SendSignal(fmt.Sprintf("gtidsets@%s", tc.gtidSets)); err != nil {
+			tc.Logger.Info("Requesting operations from server with gtidsets '%s' error: %s.", tc.gtidSets, err.Error())
+			tc.SetClose()
+		}
+		tc.Logger.Info("Requesting operations from server with gtidsets '%s'.", tc.gtidSets)
+	}()
 
-// 			tc.metricCh <- MetricUnit{Name: MetricTCPClientRequestOperations, Value: uint(reciveCount)}
-// 		}
-// 	}
-// }
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		tc.receiveOperations()
+		tc.Logger.Info(fmt.Sprintf("tcp from server '%s' handler close.", tc.conn.RemoteAddr().String()))
+		tc.SetClose()
+	}()
 
-// func (tc *TCPClient) handleFromServer(tcServer *TCPClientServer) {
-// 	lastSecondCount := 0
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		tc.flowControl()
+		tc.Logger.Info(fmt.Sprintf("tcp to server '%s' handler close.", tc.conn.RemoteAddr().String()))
+		tc.SetClose()
+	}()
 
-// 	go func() {
-// 		ticker := time.NewTicker(time.Second)
-// 		defer ticker.Stop()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := tc.Cleanup(); err != nil {
+			tc.Logger.Error(fmt.Sprintf("Close connection error: " + err.Error()))
+		}
+	}()
 
-// 		count := 0
+	tc.Logger.Info("Server connected " + tc.conn.LocalAddr().String())
+	wg.Wait()
+	tc.Logger.Info("Server connection close." + tc.conn.LocalAddr().String())
+}
 
-// 		for {
-// 			select {
-// 			case <-ticker.C:
-// 				lastSecondCount = count
-// 				count = 0
-// 			case <-tcServer.ctx.Done():
-// 				tc.Logger.Info("Context cancelled, stopping handleFromServer loop.")
-// 				return
-// 			case mo, ok := <-moCacheCh:
-// 				if !ok {
-// 					tc.Logger.Info("channel 'moCacheCh' closed.")
-// 					return
-// 				}
-// 				tcServer.moCh <- mo
-// 				count += 1
-// 			}
-// 		}
-// 	}()
+func (tc *TCPClient) SendSignal(signal string) error {
+	return tc.encoder.Encode(signal)
+}
 
-// 	const maxRcCnt = cap(moCacheCh)
-// 	const minRcCnt int = 100
+func (tcs *TCPClient) Cleanup() error {
+	<-tcs.ctx.Done()
 
-// 	for {
-// 		remainingCapacity := maxRcCnt - len(moCacheCh)
-// 		tc.Logger.Debug("MoCh remaining capacity: %d/%d.", remainingCapacity, maxRcCnt)
-
-// 		rcCnt := max(minRcCnt, (lastSecondCount / minRcCnt) * minRcCnt)
-
-// 		if remainingCapacity < minRcCnt || float64(remainingCapacity)/float64(maxRcCnt) <= 0.2 {
-// 			time.Sleep(time.Millisecond * 100)
-// 			continue
-// 		}
-
-// 		if rcCnt > 0 {
-// 			tcServer.rcCh <- rcCnt
-// 			tc.Logger.Debug("Requesting a batch mo: %d from tcp server.", rcCnt)
-
-// 			receiveCnt := 0
-
-// 			for rcCnt > 0 {
-// 				var operations []MysqlOperation
-// 				if err := tcServer.decoder.Decode(&operations); err != nil {
-// 					if err == io.ErrUnexpectedEOF {
-// 						tc.Logger.Info("tcp server close, unexpected eof.")
-// 					} else if err == io.EOF {
-// 						tc.Logger.Info("tcp server close, eof.")
-// 					} else {
-// 						tc.Logger.Error("Error decoding message:" + err.Error())
-// 					}
-// 					return
-// 				}
-
-// 				for _, oper := range operations {
-// 					moCacheCh <- oper
-// 					rcCnt -= 1
-// 					receiveCnt += 1
-// 					tc.metricCh <- MetricUnit{Name: MetricTCPClientReceiveOperations, Value: 1}
-// 				}
-// 				tc.Logger.Debug("Receive mo: %d from tcp server.", len(operations))
-// 			}
-// 			tc.Logger.Debug("Receive a batch mo: %d from tcp server.", receiveCnt)
-// 		}
-// 	}
-// }
-
-func (tc *TCPClient) Start(ctx context.Context, moCh chan<- MysqlOperation, gtidsets string) {
-	conn, err := net.Dial("tcp", tc.ServerAddress)
-	if err != nil {
-		tc.Logger.Error("connection error: " + err.Error())
-		return
+	select {
+	case <-tcs.rcCh:
+		// ts.Logger.Debug(fmt.Sprintf("moCh -> mo -> client cache(%s) ok.", client.conn.RemoteAddr().String()))
+	case <-time.After(time.Second * 1):
+		fmt.Println("channel rcCh clean.")
 	}
-	defer conn.Close()
 
-	if tcServer, err := NewTcpClientServer(conn, moCh, gtidsets); err != nil {
-		tc.Logger.Error("Create Client(%s) error: %s", conn.LocalAddr().String(), err.Error())
-	} else {
-		tc.handleConnection(ctx, tcServer)
+	select {
+	case <-tcs.moCacheCh:
+		// ts.Logger.Debug(fmt.Sprintf("moCh -> mo -> client cache(%s) ok.", client.conn.RemoteAddr().String()))
+	case <-time.After(time.Second * 1):
+		fmt.Println("channel moCacheCh clean.")
 	}
+
+	tcs.decoderZstdReader.Close()
+
+	if err := tcs.conn.Close(); err != nil {
+		return err
+	}
+
+	close(tcs.rcCh)
+	close(tcs.moCacheCh)
+
+	return nil
+}
+
+func (tcs *TCPClient) SetClose() {
+	tcs.cancel()
 }

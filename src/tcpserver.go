@@ -197,7 +197,7 @@ func (ts *TCPServer) handleConnection(tsClient *TcpServerClient) {
 // 	}
 // }
 
-func (s *TCPServer) sendMosToClient(tsClient *TcpServerClient, rc int) {
+func (s *TCPServer) flowControl(tsClient *TcpServerClient, rc int) {
 	sendCnt := 0
 
 	for !(rc == sendCnt) {
@@ -207,7 +207,7 @@ func (s *TCPServer) sendMosToClient(tsClient *TcpServerClient, rc int) {
 			rcCnt = 1000
 		} else if rcCnt >= 1000 {
 			rcCnt = 100
-		} else if rcCnt >= 100 {
+		} else {
 			rcCnt = 10
 		}
 
@@ -231,12 +231,11 @@ func (s *TCPServer) sendMosToClient(tsClient *TcpServerClient, rc int) {
 
 			}
 		}
-		if err := s.sendClient(tsClient, mysqlOperations); err != nil {
+		if err := tsClient.sendOperations(mysqlOperations); err != nil {
 			s.Logger.Error("sendClient error: " + err.Error())
 			return
 		} else {
 			s.Logger.Debug("sendClient mo: %d", rcCnt)
-
 		}
 		sendCnt += rcCnt
 
@@ -270,7 +269,7 @@ func (s *TCPServer) handleFromClient(tsClient *TcpServerClient) {
 				if err != nil {
 					s.Logger.Error("Converting signal '%s' error: %s", signal, err.Error())
 				} else {
-					s.sendMosToClient(tsClient, result)
+					s.flowControl(tsClient, result)
 				}
 			}
 		} else {
@@ -278,19 +277,4 @@ func (s *TCPServer) handleFromClient(tsClient *TcpServerClient) {
 			return
 		}
 	}
-}
-
-func (s *TCPServer) sendClient(tsClient *TcpServerClient, mos []MysqlOperation) error {
-	if err := tsClient.encoder.Encode(mos); err != nil {
-		s.Logger.Error("Error encoding message: %s", err.Error())
-		return err
-	}
-
-	if err := tsClient.encoderZstdWriter.Flush(); err != nil {
-		s.Logger.Error("Error flushing zstd writer: %s", err)
-		return err
-	}
-
-	s.Logger.Debug("moCh -> mo -> client cache -> mo(%d) -> client ok.", len(mos))
-	return nil
 }

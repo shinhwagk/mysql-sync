@@ -100,3 +100,18 @@ func (tsc *TcpServerClient) Cleanup() error {
 
 	return nil
 }
+
+func (tsc *TcpServerClient) sendOperations(mos []MysqlOperation) error {
+	if err := tsc.encoder.Encode(mos); err != nil {
+		tsc.Logger.Error("Error encoding message: %s", err.Error())
+		return err
+	}
+
+	if err := tsc.encoderZstdWriter.Flush(); err != nil {
+		tsc.Logger.Error("Error flushing zstd writer: %s", err)
+		return err
+	}
+
+	tsc.Logger.Debug("moCh -> mo -> client cache -> mo(%d) -> client ok.", len(mos))
+	return nil
+}
