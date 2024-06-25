@@ -8,77 +8,63 @@ import (
 	"net/http"
 )
 
-type HJDBResponseData struct {
-	State   *string      `json:"state"`
-	Data    *interface{} `json:"data"`
-	DB      *string      `json:"db"`
-	Tab     *string      `json:"tab`
-	ErrMsg  *string      `json:"errmsg"`
-	ErrCode *string      `json:"errcode"`
-	Store   *string      `json.store`
+type HJDBResponse struct {
+	State   *string          `json:"state"` //ok, err
+	Data    *map[string]uint `json:"data"`
+	ErrMsg  *string          `json:"errmsg"`
+	ErrCode *string          `json:"errcode"`
 }
-
 type HJDB struct {
-	Addr string
-	DB   string
-
 	Logger *Logger
+	Addr   string
 }
 
-type CheckpointGtidSet struct {
-	server_uuid string
-	xtd         int64
-}
-
-func NewHJDB(logLevel int, addr string, db string) *HJDB {
+func NewHJDB(logLevel int, addr string) *HJDB {
 	return &HJDB{
-		addr,
-		db,
 		NewLogger(logLevel, "hjdb"),
+		addr,
 	}
 }
 
-func (hjdb HJDB) Update(tab string, data interface{}) {
+func (hjdb *HJDB) Update(db string, sch string, tab string, data interface{}) (*HJDBResponse, error) {
 	jsonData, err := json.Marshal(data)
 	if err != nil {
-		hjdb.Logger.Error(fmt.Sprintf("Update -- %s", err))
-
+		hjdb.Logger.Error("Marshal data err: %s", err.Error())
 	}
 
-	url := fmt.Sprintf("http://%s/file/%s/%s", hjdb.Addr, hjdb.DB, tab)
+	url := fmt.Sprintf("http://%s/file/%s/%s/%s", hjdb.Addr, db, sch, tab)
 	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
-		hjdb.Logger.Error(fmt.Sprintf("Update -- db: '%s' tab: '%s' err: %s", hjdb.DB, tab, err.Error()))
-
+		hjdb.Logger.Error("Post url: %s error: %s", url, err.Error())
+		return nil, err
 	}
-	defer resp.Body.Close()
-
-	_, err = io.ReadAll(resp.Body)
-	if err != nil {
-		hjdb.Logger.Error(fmt.Sprintf("Update -- db: '%s' tab: '%s' err: %s", hjdb.DB, tab, err))
-	}
-
-	// hjdb.Logger.Debug(fmt.Sprintf("Update -- db: '%s' tab: '%s' %s %s", hjdb.DB, tab, string(jsonData), string(responseBody)))
+	return hjdb.parseHJDBResponse(resp)
 }
 
-func (hjdb HJDB) query(tab string) (*HJDBResponseData, error) {
-	url := fmt.Sprintf("http://%s/file/%s/%s", hjdb.Addr, hjdb.DB, tab)
-	hjdb.Logger.Info("query " + url)
+func (hjdb *HJDB) Query(db string, sch string, tab string) (*HJDBResponse, error) {
+	url := fmt.Sprintf("http://%s/file/%s/%s/%s", hjdb.Addr, db, sch, tab)
+	hjdb.Logger.Info("Query " + url)
 	resp, err := http.Get(url)
 	if err != nil {
 		return nil, err
 	}
+	return hjdb.parseHJDBResponse(resp)
+}
+
+func (hjdb *HJDB) parseHJDBResponse(resp *http.Response) (*HJDBResponse, error) {
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
+		hjdb.Logger.Error("Read resp body err: %s", err.Error())
 		return nil, err
 	}
 
-	var hjdbResp HJDBResponseData
+	var hjdbResp HJDBResponse
 	err = json.Unmarshal(body, &hjdbResp)
 
 	if err != nil {
+		hjdb.Logger.Error("Unmarshal resp body err: %s", err.Error())
 		return nil, err
 	}
 

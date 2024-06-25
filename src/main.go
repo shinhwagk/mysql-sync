@@ -20,6 +20,7 @@ func main() {
 
 	repl := flag.Bool("repl", false, "Start replication.")
 	dest := flag.Bool("dest", false, "Start destination.")
+	destName := flag.String("name", "", "Name for the destination.")
 
 	flag.Parse()
 
@@ -29,13 +30,20 @@ func main() {
 	}
 
 	if *repl {
-		replication := NewReplication(config.Name, config.Replication)
+		replication := NewReplication(*config)
 		if err := replication.start(ctx, cancel); err != nil {
 			logger.Error("Replication start error: " + err.Error())
 			cancel()
 		}
 	} else if *dest {
-		destination := NewDestination(config.Name, config.Destination)
+		if *destName == "" {
+			fmt.Println("Error: 'name' parameter is required when 'dest' is specified.")
+			return
+		}
+		replName := config.Replication.Name
+		destConfig := config.Destinations[0]
+		hjdbAddr := config.HJDB.Addr
+		destination := NewDestination(replName, destConfig, hjdbAddr)
 		if err := destination.Start(ctx, cancel); err != nil {
 			logger.Error("Destination start error: " + err.Error())
 			cancel()

@@ -7,10 +7,10 @@ import (
 )
 
 type MysqlSyncConfig struct {
-	Name        string            `yaml:"name"`
-	Replication ReplicationConfig `yaml:"replication"`
-	Destination DestinationConfig `yaml:"destination"`
-	// HJDB        HJDBConfig        `yaml:"hjdb"`
+	// Name        string              `yaml:"name"`
+	Replication  ReplicationConfig   `yaml:"replication"`
+	Destinations []DestinationConfig `yaml:"destination"`
+	HJDB         HJDBConfig          `yaml:"hjdb"`
 }
 
 type ReplicationConfig struct {
@@ -25,21 +25,20 @@ type ReplicationConfig struct {
 }
 
 type DestinationConfig struct {
-	Name     string     `yaml:"name"`
-	TCPAddr  string     `yaml:"tcpaddr"`
-	Host     string     `yaml:"host"`
-	Port     int        `yaml:"port"`
-	User     string     `yaml:"user"`
-	Password string     `yaml:"password"`
-	Params   string     `yaml:"params"`
-	GtidSets string     `yaml:"gtidsets"`
-	LogLevel int        `yaml:"loglevel"`
-	HJDB     HJDBConfig `yaml:"hjdb"`
+	Name                 string `yaml:"name"`
+	TCPAddr              string `yaml:"tcpaddr"`
+	Host                 string `yaml:"host"`
+	Port                 int    `yaml:"port"`
+	User                 string `yaml:"user"`
+	Password             string `yaml:"password"`
+	Params               string `yaml:"params"`
+	InitGtidSetsRangeStr string `yaml:"gtidsets"`
+	LogLevel             int    `yaml:"loglevel"`
 }
 
 type HJDBConfig struct {
 	Addr string `yaml:"addr"`
-	DB   string `yaml:"db"`
+	// DB   string `yaml:"db"`
 	// LogLevel int    `yaml:"loglevel"`
 }
 

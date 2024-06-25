@@ -6,35 +6,39 @@ import (
 	"sync"
 )
 
-func NewDestination(name string, dc DestinationConfig) *Destination {
+func NewDestination(replName string, dc DestinationConfig, hjdbAddr string) *Destination {
 	return &Destination{
-		name:   name,
-		dc:     dc,
-		Logger: NewLogger(dc.LogLevel, "destination"),
+		replName: replName,
+		dc:       dc,
+		hjdbAddr: hjdbAddr,
+		Logger:   NewLogger(dc.LogLevel, "destination"),
 	}
 }
 
 type Destination struct {
-	name   string
-	dc     DestinationConfig
-	Logger *Logger
+	replName string
+	dc       DestinationConfig
+	hjdbAddr string
+	Logger   *Logger
 }
 
 func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) error {
 	metricCh := make(chan MetricUnit)
-	moCh := make(chan MysqlOperation)
+	moCh := make(chan MysqlOperation, 1000)
 	defer close(metricCh)
 	defer close(moCh)
 
 	dns := fmt.Sprintf("%s:%s@tcp(%s:%d)/?%s", dest.dc.User, dest.dc.Password, dest.dc.Host, dest.dc.Port, dest.dc.Params)
 
-	gtidSets, err := NewGtidSets(dest.dc.LogLevel, dest.dc.HJDB.Addr, dest.dc.HJDB.DB, dest.dc.GtidSets)
+	// gtidsets must first init.
+	gtidSets := NewGtidSets(dest.hjdbAddr, dest.replName, dest.dc.Name)
+	err := gtidSets.InitStartupGtidSetsMap(dest.dc.InitGtidSetsRangeStr)
 	if err != nil {
 		return err
 	}
 
 	metricDirector := NewMetricDirector(dest.dc.LogLevel, "destination", metricCh)
-	tcpClient, err := NewTCPClient(dest.dc.LogLevel, dest.dc.TCPAddr, moCh, gtidSets.GtidSetsRangeStr, metricCh)
+	tcpClient, err := NewTCPClient(dest.dc.LogLevel, dest.dc.TCPAddr, dest.dc.Name, moCh, metricCh)
 	if err != nil {
 		tcpClient.Logger.Error("NewTCPClient error: " + err.Error())
 		return err
@@ -48,8 +52,6 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) e
 	defer mysqlClient.Close()
 
 	mysqlApplier := NewMysqlApplier(dest.dc.LogLevel, gtidSets, mysqlClient, metricCh)
-
-	dest.Logger.Info("Destination start from gtidsets '" + gtidSets.GtidSetsRangeStr + "'")
 
 	mdCtx, mdCancel := context.WithCancel(context.Background())
 	defer mdCancel()

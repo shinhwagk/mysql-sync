@@ -1,7 +1,9 @@
 #!/bin/bash
 
 build() {
-  go build -ldflags="-s -w" -o /tmp/mysqlsync ./src/*.go
+  go build -o /tmp/mysqlsync ./src/*.go
+#   go build -ldflags="-s -w" -o /tmp/mysqlsync ./src/*.go
+
 }
 
 if [[ $1 == "-w" ]]; then

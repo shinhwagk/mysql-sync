@@ -24,6 +24,8 @@ func NewMysqlApplier(logLevel int, gtidSets *GtidSets, mysqlClient *MysqlClient,
 		metricCh:    metricCh,
 
 		excludeSchemas: []string{"mysql"},
+
+		skip: false,
 	}
 }
 
@@ -45,12 +47,15 @@ type MysqlApplier struct {
 
 	excludeSchemas []string
 
+	skip bool
+
 	// metric *MetricDestination
 }
 
 func (ma *MysqlApplier) FilterSchemas(SchemaContext string) bool {
 	return contains(ma.excludeSchemas, SchemaContext)
 }
+
 func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 	for {
 		select {
@@ -75,12 +80,15 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 			}
 			switch op := oper.(type) {
 			case MysqlOperationDDLDatabase:
+				if ma.skip {
+					continue
+				}
 				if err := ma.OnDDLDatabase(op); err != nil {
 					ma.Logger.Error("OnDDLDatabase -- %s", err)
 					return
 				}
 			case MysqlOperationDMLInsert:
-				if ma.FilterSchemas(op.Database) {
+				if ma.skip || ma.FilterSchemas(op.Database) {
 					continue
 				}
 				if err := ma.OnDMLInsert(op); err != nil {
@@ -89,7 +97,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				}
 				ma.metricCh <- MetricUnit{Name: MetricDestDMLInsertTimes, Value: 1}
 			case MysqlOperationDMLDelete:
-				if ma.FilterSchemas(op.Database) {
+				if ma.skip || ma.FilterSchemas(op.Database) {
 					continue
 				}
 				if err := ma.OnDMLDelete(op); err != nil {
@@ -98,7 +106,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				}
 				ma.metricCh <- MetricUnit{Name: MetricDestDMLDeleteTimes, Value: 1}
 			case MysqlOperationDMLUpdate:
-				if ma.FilterSchemas(op.Database) {
+				if ma.skip || ma.FilterSchemas(op.Database) {
 					continue
 				}
 				if err := ma.OnDMLUpdate(op); err != nil {
@@ -107,7 +115,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				}
 				ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdateTimes, Value: 1}
 			case MysqlOperationDDLTable:
-				if ma.FilterSchemas(op.SchemaContext) {
+				if ma.skip || ma.FilterSchemas(op.SchemaContext) {
 					continue
 				}
 				if err := ma.OnDDLTable(op); err != nil {
@@ -115,6 +123,9 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					return
 				}
 			case MysqlOperationXid:
+				if ma.skip {
+					continue
+				}
 				if err := ma.OnXID(op); err != nil {
 					ma.Logger.Error("MysqlOperationXid " + err.Error())
 					return
@@ -131,6 +142,9 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					return
 				}
 			case MysqlOperationBegin:
+				if ma.skip {
+					continue
+				}
 				if err := ma.OnBegin(op); err != nil {
 					ma.Logger.Error("MysqlOperationBegin " + err.Error())
 					return
@@ -247,6 +261,17 @@ func (ma *MysqlApplier) OnBegin(op MysqlOperationBegin) error {
 }
 
 func (ma *MysqlApplier) OnGTID(op MysqlOperationGTID) error {
+	ma.skip = false
+	if trx, ok := ma.GtidSets.GetTrxIdOfServerUUID(op.ServerUUID); ok {
+		if trx >= uint(op.TrxID) {
+			ma.skip = true
+			fmt.Println("skip", op.ServerUUID, op.TrxID)
+			return nil
+		} else if uint(op.TrxID) >= trx+2 {
+			return fmt.Errorf("sdfsdf op", op.TrxID, trx)
+		}
+	}
+
 	if ma.LastCommitted != op.LastCommitted {
 		if err := ma.TryMergeCommit(); err != nil {
 			return err

@@ -21,12 +21,11 @@ type BinlogExtract struct {
 	binlogSyncerConfig replication.BinlogSyncerConfig
 
 	moCh chan<- MysqlOperation
-	gsCh <-chan string
 
 	metricCh chan<- MetricUnit
 }
 
-func NewBinlogExtract(logLevel int, config ReplicationConfig, gsCh <-chan string, moCh chan<- MysqlOperation, metricCh chan<- MetricUnit) *BinlogExtract {
+func NewBinlogExtract(logLevel int, config ReplicationConfig, moCh chan<- MysqlOperation, metricCh chan<- MetricUnit) *BinlogExtract {
 	cfg := replication.BinlogSyncerConfig{
 		ServerID:        uint32(config.ServerID),
 		Flavor:          "mysql",
@@ -44,11 +43,8 @@ func NewBinlogExtract(logLevel int, config ReplicationConfig, gsCh <-chan string
 		binlogSyncer:       nil,
 		binlogSyncerConfig: cfg,
 		moCh:               moCh,
-		gsCh:               gsCh,
-
-		metricCh: metricCh,
+		metricCh:           metricCh,
 	}
-
 }
 
 func (bext *BinlogExtract) toMoCh(mo MysqlOperation) {

@@ -1,13 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/gob"
 	"fmt"
-	"io"
 	"net"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 )
@@ -22,31 +20,41 @@ func init() {
 	gob.Register(MysqlOperationDMLDelete{})
 	gob.Register(MysqlOperationBegin{})
 	gob.Register(MysqlOperationXid{})
+
+	gob.Register(Signal1{})
+	gob.Register(Signal2{})
 }
 
 type TCPServer struct {
 	Logger        *Logger
 	listenAddress string
 
-	gsCh     chan<- string
 	moCh     <-chan MysqlOperation
 	metricCh chan<- MetricUnit
 
-	Clients sync.Map
+	Clients map[string]*TCPServerClient
+
+	BatchID uint
 }
 
-type SendOperationControl struct {
-	ReceiveCountCh chan uint
-}
+func NewTCPServer(logLevel int, listenAddress string, clientNames []string, moCh <-chan MysqlOperation, metricCh chan<- MetricUnit) *TCPServer {
+	clients := make(map[string]*TCPServerClient)
 
-func NewTCPServer(logLevel int, listenAddress string, gsCh chan<- string, moCh <-chan MysqlOperation, metricCh chan<- MetricUnit) *TCPServer {
+	for _, name := range clientNames {
+		clients[name] = nil
+	}
+
+	fmt.Println("clients", len(clients))
+
 	return &TCPServer{
 		Logger:        NewLogger(logLevel, "tcp server"),
 		listenAddress: listenAddress,
 
-		gsCh:     gsCh,
 		moCh:     moCh,
 		metricCh: metricCh,
+
+		Clients: clients,
+		BatchID: 0,
 	}
 }
 
@@ -60,59 +68,18 @@ func (ts *TCPServer) Start(ctx context.Context) error {
 
 	go func() {
 		<-ctx.Done()
-		ts.Logger.Info("Shutting down server...")
 		listener.Close()
+		for _, client := range ts.Clients {
+			if client != nil {
+				client.SetClose()
+			}
+		}
 	}()
 
 	go func() {
-		for {
-			select {
-			case <-time.After(time.Second * 1):
-			case <-ctx.Done():
-				ts.Logger.Info("Context canceled, stopping distribution loop.")
-				return
-			case mo, ok := <-ts.moCh:
-				if !ok {
-					ts.Logger.Info("mysql operation channal close.")
-					return
-				}
-
-				hasClients := false
-
-				ts.Clients.Range(func(key, value interface{}) bool {
-					hasClients = true
-					client := value.(*TcpServerClient)
-					if client.close {
-						ts.Clients.Delete(client.conn.RemoteAddr().String())
-						client.SetClose()
-						ts.Logger.Info("Remove client(%s) from clients.", client.conn.RemoteAddr().String())
-					} else {
-						tryCnt := 5
-						for i := 0; i < tryCnt; i++ {
-							select {
-							case <-client.ctx.Done():
-								i = tryCnt
-							case client.channel <- mo:
-								ts.Logger.Debug(fmt.Sprintf("moCh -> mo -> client cache(%s) ok.", client.conn.RemoteAddr().String()))
-								i = tryCnt
-							case <-time.After(time.Second * 1):
-								fmt.Println("mo -> client mo timeout.", len(client.channel))
-								// if i == tryCnt-1 {
-								// 	client.cancel()
-								// 	i = tryCnt
-								// }
-							}
-						}
-					}
-					return true
-				})
-
-				if !hasClients {
-					ts.Logger.Debug("No clients, mod discard.")
-					time.Sleep(time.Second * 1)
-					continue
-				}
-			}
+		if err := ts.distributor(); err != nil {
+			fmt.Println(err.Error())
+			listener.Close()
 		}
 	}()
 
@@ -125,156 +92,131 @@ func (ts *TCPServer) Start(ctx context.Context) error {
 			return err
 		}
 
-		if client, err := NewTcpServerClient(ts.Logger.Level, conn); err != nil {
-			ts.Logger.Error("Create Client(%s) error: %s", conn.RemoteAddr().String(), err.Error())
-			return err
+		go ts.handleClient(conn)
+	}
+}
+
+func (ts *TCPServer) clientsReady() bool {
+	for _, client := range ts.Clients {
+		if client == nil {
+			return false
+		}
+		if client.State == ClientBusy {
+			return false
+		}
+	}
+	return true
+}
+
+func (ts *TCPServer) distributor() error {
+	maxRcCnt := cap(ts.moCh)
+	const minRcCnt int = 100
+
+	lastSecondCount := 0
+
+	ticker := time.NewTicker(time.Second * 1)
+	defer ticker.Stop()
+
+	noReadyMs := 100
+
+	for {
+		if ts.clientsReady() && len(ts.moCh) >= 10 {
+			fmt.Println("11115")
+			sendCount := 10
+
+			select {
+			// case <-ts.ctx.Done():
+			// 	ts.Logger.Info("Context cancelled, stopping handleFromServer loop.")
+			// 	return
+			case <-ticker.C:
+				remainingCapacity := maxRcCnt - len(ts.moCh)
+				ts.Logger.Debug("MoCh remaining capacity: %d/%d.", remainingCapacity, maxRcCnt)
+				hundredSendCount := max(minRcCnt, (lastSecondCount/minRcCnt)*minRcCnt)
+				if hundredSendCount >= 10000 {
+					sendCount = 1000
+				} else if hundredSendCount >= 1000 {
+					sendCount = 100
+				} else {
+					sendCount = 10
+				}
+			default:
+				sendCount = 10
+			}
+			fmt.Println("pushpushpushpushpushpushpush", sendCount)
+
+			if mos, err := ts.fetchMos(sendCount); err != nil {
+				fmt.Println(11112, err.Error())
+				return err
+			} else {
+				fmt.Println("push", len(mos))
+				if err := ts.pushClients(mos); err != nil {
+					fmt.Println(11112, err.Error())
+					return err
+				} else {
+					lastSecondCount = 0
+				}
+			}
+
+			noReadyMs = 100
 		} else {
-			ts.Clients.Store(conn.RemoteAddr().String(), client)
-			ts.Logger.Info("Add client(%s) to clients.", conn.RemoteAddr().String())
-			go ts.handleConnection(client)
+			time.Sleep(time.Millisecond * time.Duration(noReadyMs))
+			noReadyMs += 10
 		}
 	}
 }
 
-func (ts *TCPServer) handleConnection(tsClient *TcpServerClient) {
+func (ts *TCPServer) pushClients(mos []MysqlOperation) error {
+	ts.BatchID += 1
+
 	var wg sync.WaitGroup
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		ts.handleFromClient(tsClient)
-		ts.Logger.Info("tcp from client(%s) handler close.", tsClient.conn.RemoteAddr().String())
-		tsClient.SetClose()
-	}()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		if err := tsClient.Cleanup(); err != nil {
-			ts.Logger.Error(fmt.Sprintf("Close connection error: " + err.Error()))
-		}
-	}()
-
-	ts.Logger.Info("Receive new client(%s) ", tsClient.conn.RemoteAddr().String())
-	wg.Wait()
-
-	ts.Logger.Info("Client(%s) closed.", tsClient.conn.RemoteAddr().String())
-}
-
-// func (s *TCPServer) handleToClient1(tsClient *TcpServerClient) {
-// 	for {
-// 		select {
-// 		case <-tsClient.ctx.Done():
-// 			s.Logger.Info("ctx done signal received.")
-// 			return
-// 		case rc, ok := <-tsClient.rcCh:
-// 			if !ok {
-// 				s.Logger.Info("ReceiveCountCh")
-// 				return
-// 			}
-
-// 			var mysqlOperations []MysqlOperation
-// 			for len(mysqlOperations) != rc {
-// 				select {
-// 				case <-tsClient.ctx.Done():
-// 					s.Logger.Info("ctx done signal received.")
-// 					return
-// 				case oper, ok := <-tsClient.channel:
-// 					if !ok {
-// 						s.Logger.Info("mysql operation channel closed.")
-// 						return
-// 					}
-// 					mysqlOperations = append(mysqlOperations, oper)
-// 				}
-// 				if err := s.sendClient(tsClient, mysqlOperations); err != nil {
-// 					s.Logger.Error("sendClient error: " + err.Error())
-// 					return
-// 				}
-// 			case <-time.After(time.Second * 1):
-// 			}
-// 		case <-time.After(time.Second * 1):
-// 		}
-// 	}
-// }
-
-func (s *TCPServer) flowControl(tsClient *TcpServerClient, rc int) {
-	sendCnt := 0
-
-	for !(rc == sendCnt) {
-		rcCnt := rc - sendCnt
-
-		if rcCnt >= 10000 {
-			rcCnt = 1000
-		} else if rcCnt >= 1000 {
-			rcCnt = 100
-		} else {
-			rcCnt = 10
-		}
-
-		var mysqlOperations []MysqlOperation
-
-		for rcCnt > 0 {
-			select {
-			case <-tsClient.ctx.Done():
-				s.Logger.Info("ctx done signal received.")
-				return
-			case oper, ok := <-tsClient.channel:
-				if !ok {
-					s.Logger.Info("mysql operation channel closed.")
-					return
-				}
-
-				mysqlOperations = append(mysqlOperations, oper)
-				rcCnt -= 1
-				fmt.Println("mysqloperation ", len(mysqlOperations))
-			case <-time.After(time.Millisecond * 100):
-
-			}
-		}
-		if err := tsClient.sendOperations(mysqlOperations); err != nil {
-			s.Logger.Error("sendClient error: " + err.Error())
-			return
-		} else {
-			s.Logger.Debug("sendClient mo: %d", rcCnt)
-		}
-		sendCnt += rcCnt
-
-		s.metricCh <- MetricUnit{Name: MetricTCPServerOutgoing, Value: uint(tsClient.encoderBuffer.Len())}
-		s.metricCh <- MetricUnit{Name: MetricTCPServerSendOperations, Value: uint(rcCnt)}
-		tsClient.encoderBuffer.Reset()
+	for _, client := range ts.Clients {
+		wg.Add(1)
+		fmt.Println("clientxxxxxxx", client.Name)
+		go func(cli *TCPServerClient) {
+			defer wg.Done()
+			cli.pushClient(ts.BatchID, mos)
+		}(client)
 	}
+	wg.Wait()
+	return nil
 }
 
-func (s *TCPServer) handleFromClient(tsClient *TcpServerClient) {
-	for {
-		var signal string
-
-		if err := tsClient.decoder.Decode(&signal); err != nil {
-			if err == io.EOF {
-				s.Logger.Info("tcp client close.")
-			} else {
-				s.Logger.Error("Error decoding message:" + err.Error())
-			}
-			return
+func (ts *TCPServer) fetchMos(count int) ([]MysqlOperation, error) {
+	mos := make([]MysqlOperation, 0, count)
+	for i := 0; i < count; i++ {
+		op, ok := <-ts.moCh
+		if !ok {
+			return nil, fmt.Errorf("channel closed during reception")
 		}
+		mos = append(mos, op)
+	}
+	return mos, nil
+}
 
-		if strings.HasPrefix(signal, "gtidsets@") {
-			s.Logger.Info("from client receive gtidsets " + signal)
-			parts := strings.Split(signal, "@")
-			s.gsCh <- parts[1]
-		} else if strings.HasPrefix(signal, "receive@") {
-			parts := strings.Split(signal, "@")
-			if len(parts) == 2 {
-				result, err := strconv.Atoi(parts[1])
-				if err != nil {
-					s.Logger.Error("Converting signal '%s' error: %s", signal, err.Error())
-				} else {
-					s.flowControl(tsClient, result)
-				}
-			}
+func (ts *TCPServer) handleClient(conn net.Conn) {
+	scanner := bufio.NewScanner(conn)
+	if !scanner.Scan() {
+		if err := scanner.Err(); err != nil {
+			fmt.Printf("Failed to read from client: %v", err)
 		} else {
-			s.Logger.Error("Unknow signal '%s'.", signal)
-			return
+			fmt.Println("Client disconnected before sending a name")
 		}
+		return
+	}
+	clientName := scanner.Text()
+
+	_, ok := ts.Clients[clientName]
+	if ok {
+		fmt.Println("nononononononnono2", clientName)
+	} else {
+		fmt.Println("nononononononnono1", clientName)
+	}
+
+	if client, err := NewTcpServerClient(ts.Logger.Level, clientName, conn); err != nil {
+		fmt.Println("xxxxxx" + err.Error())
+	} else {
+		ts.Clients[clientName] = client
+		client.Running()
 	}
 }

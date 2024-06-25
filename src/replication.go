@@ -2,36 +2,45 @@ package main
 
 import (
 	"context"
-	"sync"
-	"time"
 )
 
-func NewReplication(name string, rc ReplicationConfig) *Replication {
+func NewReplication(msc MysqlSyncConfig) *Replication {
 	return &Replication{
-		name:   name,
-		rc:     rc,
-		Logger: NewLogger(rc.LogLevel, "replication"),
+		msc:    msc,
+		Logger: NewLogger(msc.Replication.LogLevel, "replication"),
 	}
 }
 
 type Replication struct {
-	name   string
-	rc     ReplicationConfig
+	msc    MysqlSyncConfig
 	Logger *Logger
 }
 
 func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) error {
 	metricCh := make(chan MetricUnit)
-	moCh := make(chan MysqlOperation)
-	// gtidsets
-	gsCh := make(chan string)
+	moCh := make(chan MysqlOperation, 1000)
+
 	defer close(metricCh)
 	defer close(moCh)
-	defer close(gsCh)
 
-	metricDirector := NewMetricDirector(repl.rc.LogLevel, "replication", metricCh)
-	tcpServer := NewTCPServer(repl.rc.LogLevel, repl.rc.TCPAddr, gsCh, moCh, metricCh)
-	binlogExtract := NewBinlogExtract(repl.rc.LogLevel, repl.rc, gsCh, moCh, metricCh)
+	destNames := []string{}
+
+	destGtidSetss := make([]map[string]uint, len(repl.msc.Destinations))
+	for _, dc := range repl.msc.Destinations {
+		gss := NewGtidSets(repl.msc.HJDB.Addr, repl.msc.Replication.Name, dc.Name)
+		gss.InitStartupGtidSetsMap(dc.InitGtidSetsRangeStr)
+		destGtidSetss = append(destGtidSetss, gss.GtidSetsMap)
+
+		destNames = append(destNames, dc.Name)
+	}
+
+	metricDirector := NewMetricDirector(repl.msc.Replication.LogLevel, "replication", metricCh)
+	tcpServer := NewTCPServer(repl.msc.Replication.LogLevel, repl.msc.Replication.TCPAddr, destNames, moCh, metricCh)
+	binlogExtract := NewBinlogExtract(repl.msc.Replication.LogLevel, repl.msc.Replication, moCh, metricCh)
+
+	initGtidSetsRangeStr := GetGtidSetsRangeStrFromGtidSetsMap(MergeGtidSets(destGtidSetss))
+
+	repl.Logger.Info("Init gtidsets range string:'%s'", initGtidSetsRangeStr)
 
 	go func() {
 		if err := tcpServer.Start(ctx); err != nil {
@@ -46,50 +55,10 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) e
 		metricDirector.Logger.Info("stopped.")
 	}()
 
-	var wg sync.WaitGroup
-	childCtx, childCancel := context.WithCancel(context.Background())
-
-	cleanMoChSignal := true
-
-	for {
-		select {
-		case gtidsets := <-gsCh:
-			repl.Logger.Info("Got gtidsets: " + gtidsets)
-			childCancel()
-			wg.Wait()
-
-			// new start
-			childCtx, childCancel = context.WithCancel(context.Background())
-
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				<-childCtx.Done()
-				repl.Logger.Info("Clean mysql operation channel.")
-				for cleanMoChSignal {
-					select {
-					case <-moCh:
-						repl.Logger.Debug("Consume mysql operation.")
-					case <-time.After(time.Second):
-					}
-				}
-				cleanMoChSignal = true
-			}()
-
-			wg.Add(1)
-			go func(gss string) {
-				defer wg.Done()
-				binlogExtract.Logger.Info("binlog extract Started.")
-				if err := binlogExtract.Start(childCtx, gss); err != nil { // 假设 RestartSync 需要 GTID 作为参数
-					binlogExtract.Logger.Error("failed to restart sync: " + err.Error())
-				}
-				cleanMoChSignal = false
-				binlogExtract.Logger.Info("binlog extract stopped.")
-			}(gtidsets)
-		case <-ctx.Done():
-			childCancel()
-			wg.Wait()
-			return ctx.Err()
-		}
+	binlogExtract.Logger.Info("binlog extract Started.")
+	if err := binlogExtract.Start(ctx, initGtidSetsRangeStr); err != nil { // 假设 RestartSync 需要 GTID 作为参数
+		binlogExtract.Logger.Error("failed to restart sync: " + err.Error())
 	}
+	binlogExtract.Logger.Info("binlog extract stopped.")
+	return nil
 }
