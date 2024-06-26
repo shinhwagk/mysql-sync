@@ -45,7 +45,7 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) e
 		destNames = append(destNames, destName)
 	}
 
-	metricDirector := NewMetricDirector(repl.msc.Replication.LogLevel, "replication", metricCh)
+	metricDirector := NewMetricReplDirector(repl.msc.Replication.LogLevel, "replication", repl.msc.Replication.Name, metricCh)
 	tcpServer := NewTCPServer(repl.msc.Replication.LogLevel, repl.msc.Replication.TCPAddr, destNames, moCh, metricCh)
 	binlogExtract := NewBinlogExtract(repl.msc.Replication.LogLevel, repl.msc.Replication, moCh, metricCh)
 

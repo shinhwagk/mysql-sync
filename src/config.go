@@ -26,17 +26,13 @@ type ReplicationConfig struct {
 }
 
 type DestinationsConfig struct {
-	TCPAddr              string          `yaml:"tcpaddr"`
+	TCPAddr      string                       `yaml:"tcpaddr"`
 	Settings     *SettingsConfig              `yaml:"settings"`
 	Destinations map[string]DestinationConfig `yaml:"destinations"`
 }
 
 type DestinationConfig struct {
-	Host                 string          `yaml:"host"`
-	Port                 int             `yaml:"port"`
-	User                 string          `yaml:"user"`
-	Password             string          `yaml:"password"`
-	Params               string          `yaml:"params"`
+	Dsn                  string          `yaml:"dsn"`
 	InitGtidSetsRangeStr string          `yaml:"gtidsets"`
 	LogLevel             int             `yaml:"loglevel"`
 	Settings             *SettingsConfig `yaml:"settings"`

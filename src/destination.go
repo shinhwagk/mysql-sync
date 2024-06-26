@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"sync"
 )
 
@@ -32,8 +31,6 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) e
 	defer close(metricCh)
 	defer close(moCh)
 
-	dns := fmt.Sprintf("%s:%s@tcp(%s:%d)/?%s", dest.dc.User, dest.dc.Password, dest.dc.Host, dest.dc.Port, dest.dc.Params)
-
 	// gtidsets must first init.
 	gtidSets := NewGtidSets(dest.hjdbAddr, dest.replName, dest.destName)
 	err := gtidSets.InitStartupGtidSetsMap(dest.dc.InitGtidSetsRangeStr)
@@ -41,14 +38,14 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) e
 		return err
 	}
 
-	metricDirector := NewMetricDirector(dest.dc.LogLevel, "destination", metricCh)
+	metricDirector := NewMetricDestDirector(dest.dc.LogLevel, "destination", dest.replName, dest.destName, metricCh)
 	tcpClient, err := NewTCPClient(dest.dc.LogLevel, dest.tcpAddr, dest.destName, moCh, metricCh)
 	if err != nil {
 		tcpClient.Logger.Error("NewTCPClient error: " + err.Error())
 		return err
 	}
 
-	mysqlClient, err := NewMysqlClient(dest.dc.LogLevel, dns)
+	mysqlClient, err := NewMysqlClient(dest.dc.LogLevel, dest.dc.Dsn)
 	if err != nil {
 		mysqlClient.Logger.Error("NewMysqlClient error: " + err.Error())
 		return err

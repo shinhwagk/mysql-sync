@@ -3,11 +3,12 @@ package main
 import (
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/go-mysql-org/go-mysql/mysql"
 )
 
-func printType(value interface{}) {
+func PrintType(value interface{}) {
 	switch v := value.(type) {
 	case int:
 		fmt.Printf("Integer: %d\n", v)
@@ -20,6 +21,33 @@ func printType(value interface{}) {
 	default:
 		fmt.Printf("Unsupported type: %T\n", v)
 	}
+}
+
+func ParseDSN(dsn string) (user, password, host, port string, err error) {
+	atSplit := strings.Split(dsn, "@tcp(")
+	if len(atSplit) != 2 {
+		err = fmt.Errorf("invalid DSN format")
+		return
+	}
+
+	userPass := strings.Split(atSplit[0], ":")
+	if len(userPass) != 2 {
+		err = fmt.Errorf("invalid user:password format")
+		return
+	}
+	user = userPass[0]
+	password = userPass[1]
+
+	hostPort := strings.TrimSuffix(atSplit[1], ")/")
+	hostPortSplit := strings.Split(hostPort, ":")
+	if len(hostPortSplit) != 2 {
+		err = fmt.Errorf("invalid host:port format")
+		return
+	}
+	host = hostPortSplit[0]
+	port = hostPortSplit[1]
+
+	return
 }
 
 // mysql.MYSQL_TYPE_BLOB longtext []uint8

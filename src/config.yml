@@ -15,21 +15,15 @@ destination:
     cache: 1000
   destinations:
     db2:
-      host: "db2"
-      port: 3306
-      user: "root"
-      password: "root_password"
-      params: "autocommit=false"
+      dsn: "root:root_password@tcp(db2:3306)/?autocommit=false"
       gtidsets: ""
       loglevel: 1
+      export: 9092
     db3:
-      host: "db3"
-      port: 3306
-      user: "root"
-      password: "root_password"
-      params: "autocommit=false"
+      dsn: "root:root_password@tcp(db3:3306)/?autocommit=false"
       gtidsets: ""
       loglevel: 1
+      export: 9093
 hjdb:
   addr: hjdb:8000
 prometheus:

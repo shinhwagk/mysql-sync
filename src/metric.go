@@ -60,9 +60,12 @@ type MetricDirector struct {
 	PromNamespace string
 	PromSubsystem string
 	PromRegistry  *prometheus.Registry
+
+	ReplName string
+	DestName string
 }
 
-func NewMetricDirector(logLevel int, subsystem string, metricCh <-chan MetricUnit) *MetricDirector {
+func NewMetricReplDirector(logLevel int, subsystem string, replName string, metricCh <-chan MetricUnit) *MetricDirector {
 	return &MetricDirector{
 		Name:     "destination",
 		Logger:   NewLogger(logLevel, "metric director"),
@@ -72,6 +75,25 @@ func NewMetricDirector(logLevel int, subsystem string, metricCh <-chan MetricUni
 		PromNamespace: "mysqlsync",
 		PromSubsystem: subsystem,
 		PromRegistry:  prometheus.NewRegistry(),
+
+		ReplName: replName,
+		DestName: "",
+	}
+}
+
+func NewMetricDestDirector(logLevel int, subsystem string, replName string, destName string, metricCh <-chan MetricUnit) *MetricDirector {
+	return &MetricDirector{
+		Name:     "destination",
+		Logger:   NewLogger(logLevel, "metric director"),
+		metrics:  make(map[string]*PrometheusMetric),
+		metricCh: metricCh,
+
+		PromNamespace: "mysqlsync",
+		PromSubsystem: subsystem,
+		PromRegistry:  prometheus.NewRegistry(),
+
+		ReplName: replName,
+		DestName: destName,
 	}
 }
 
@@ -82,7 +104,6 @@ func (md *MetricDirector) inc(name string, value uint) {
 	metric, _ := md.metrics[name]
 	counter, _ := metric.PromCollector.(prometheus.Counter)
 	counter.Add(float64(value))
-
 }
 
 func (md *MetricDirector) set(name string, value uint) {
@@ -146,21 +167,31 @@ func (md *MetricDirector) Start(ctx context.Context, addr string) {
 }
 
 func (md *MetricDirector) registerMetric(name string, metricType string) {
+	constLabels := make(map[string]string)
+
+	constLabels["repl"] = md.ReplName
+
+	if md.DestName != "" {
+		constLabels["dest"] = md.DestName
+	}
+
 	if _, exists := md.metrics[name]; !exists {
 		var collector prometheus.Collector
 		if metricType == "gauge" {
 			collector = prometheus.NewGauge(prometheus.GaugeOpts{
-				Namespace: md.PromNamespace,
-				Subsystem: md.PromSubsystem,
-				Name:      name,
-				Help:      "A dynamically created gauge",
+				Namespace:   md.PromNamespace,
+				Subsystem:   md.PromSubsystem,
+				Name:        name,
+				Help:        "A dynamically created gauge",
+				ConstLabels: constLabels,
 			})
 		} else if metricType == "counter" {
 			collector = prometheus.NewCounter(prometheus.CounterOpts{
-				Namespace: md.PromNamespace,
-				Subsystem: md.PromSubsystem,
-				Name:      name,
-				Help:      "A dynamically created counter",
+				Namespace:   md.PromNamespace,
+				Subsystem:   md.PromSubsystem,
+				Name:        name,
+				Help:        "A dynamically created counter",
+				ConstLabels: constLabels,
 			})
 		}
 
@@ -189,12 +220,12 @@ func (md *MetricDirector) StartHTTPServer(ctx context.Context, addr string) {
 	go func() {
 		<-ctx.Done()
 		if err := srv.Shutdown(context.Background()); err != nil {
-			md.Logger.Info(fmt.Sprintf("HTTP server Shutdown: %s", err.Error()))
+			md.Logger.Error(fmt.Sprintf("HTTP server Shutdown: %s", err.Error()))
 		}
 	}()
 
 	md.Logger.Info(fmt.Sprintf("Prometheus metrics are being served at %s/metrics", addr))
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-		md.Logger.Info(fmt.Sprintf("HTTP server ListenAndServe: %s", err))
+		md.Logger.Error(fmt.Sprintf("HTTP server ListenAndServe: %s", err))
 	}
 }
