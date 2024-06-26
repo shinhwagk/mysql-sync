@@ -149,7 +149,6 @@ func (ts *TCPServer) distributor() error {
 				} else {
 					fetchCount = 10
 				}
-				ts.Logger.Info("lastSecondCount %d", lastSecondCount)
 				lastSecondCount = 0
 			default:
 				fetchCount = 10
@@ -166,11 +165,8 @@ func (ts *TCPServer) distributor() error {
 				ts.pushClients(mos)
 				lastSecondCount += len(mos)
 			}
-
-			// noReadyMs = 100
 		} else {
 			time.Sleep(time.Millisecond * 10)
-			// noReadyMs += 10
 		}
 	}
 }

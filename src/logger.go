@@ -55,7 +55,9 @@ func (l *Logger) Warning(format string, a ...interface{}) {
 }
 
 func (l *Logger) Trace(format string, a ...interface{}) {
-	l.output(l.LogWarning, "TRACE", format, a...)
+	if l.Level >= LevelTrace {
+		l.output(l.LogWarning, "TRACE", format, a...)
+	}
 }
 func (l *Logger) output(logger *log.Logger, level string, format string, a ...interface{}) {
 	fullFormat := "%s -- %s -- %s -- " + format
