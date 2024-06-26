@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/klauspost/compress/zstd"
 )
@@ -47,9 +48,9 @@ type TCPServerClient struct {
 	SendBatchID uint
 	State       int // 0 free 1 busy 2 scrap
 
-	SendError error
-
-	SendMos []MysqlOperation
+	SendError     error
+	SendMos       []MysqlOperation
+	SendTimestamp time.Time
 }
 
 func NewTcpServerClient1(logLevel int, name string) *TCPServerClient {
@@ -171,7 +172,8 @@ func (tsc *TCPServerClient) receivedSignal() {
 		if tsc.SendBatchID == ack.BatchID {
 			tsc.State = ClientFree
 			tsc.SendError = nil
-			tsc.Logger.Debug("Client received batch: %d successfully.", ack.BatchID)
+			elapsed := time.Since(tsc.SendTimestamp).Milliseconds()
+			tsc.Logger.Debug("Client received batch: %d, elapsed %d successfully.", ack.BatchID, elapsed)
 		} else {
 			tsc.Logger.Error("not resc beatch id %d,%d", tsc.SendBatchID, ack.BatchID)
 		}
@@ -216,6 +218,7 @@ func (tsc *TCPServerClient) pushClient() {
 		tsc.Logger.Error("Push mos to client error: %s", err.Error())
 		tsc.SendError = err
 	} else {
+		tsc.SendTimestamp = time.Now()
 		tsc.Logger.Info("Push batch(%d) mos(%d) ok.", signal1.BatchID, len(tsc.SendMos))
 	}
 }

@@ -24,6 +24,7 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) e
 	if repl.msc.Replication.Settings != nil && repl.msc.Replication.Settings.CacheSize > cacheSize {
 		cacheSize = repl.msc.Replication.Settings.CacheSize
 	}
+	repl.Logger.Info("Settings cache size: %d", cacheSize)
 	moCh := make(chan MysqlOperation, cacheSize)
 
 	defer close(metricCh)
