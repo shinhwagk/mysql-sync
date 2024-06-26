@@ -127,7 +127,7 @@ func (ts *TCPServer) distributor() error {
 	ticker := time.NewTicker(time.Second * 1)
 	defer ticker.Stop()
 
-	noReadyMs := 10
+	// noReadyMs := 10
 
 	for {
 		if ts.clientsReady() && len(ts.moCh) >= 10 {
@@ -165,10 +165,10 @@ func (ts *TCPServer) distributor() error {
 				lastSecondCount += len(mos)
 			}
 
-			noReadyMs = 100
+			// noReadyMs = 100
 		} else {
-			time.Sleep(time.Millisecond * time.Duration(noReadyMs))
-			noReadyMs += 10
+			time.Sleep(time.Millisecond * 10)
+			// noReadyMs += 10
 		}
 	}
 }
