@@ -7,16 +7,29 @@ replication:
   user: "root"
   password: "root_password"
   loglevel: 1
+  settings:
+    cache: 1000
 destination:
-  - name: "mysql1"
-    tcpaddr: "127.0.0.1:9998"
-    host: "db2"
-    port: 3306
-    user: "root"
-    password: "root_password"
-    params: "autocommit=false"
-    gtidsets: ""
-    loglevel: 1
+  tcpaddr: "127.0.0.1:9998"
+  settings:
+    cache: 1000
+  destinations:
+    db2:
+      host: "db2"
+      port: 3306
+      user: "root"
+      password: "root_password"
+      params: "autocommit=false"
+      gtidsets: ""
+      loglevel: 1
+    db3:
+      host: "db3"
+      port: 3306
+      user: "root"
+      password: "root_password"
+      params: "autocommit=false"
+      gtidsets: ""
+      loglevel: 1
 hjdb:
   addr: hjdb:8000
 prometheus:

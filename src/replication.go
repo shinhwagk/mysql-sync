@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 )
 
 func NewReplication(msc MysqlSyncConfig) *Replication {
@@ -18,20 +19,30 @@ type Replication struct {
 
 func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) error {
 	metricCh := make(chan MetricUnit)
-	moCh := make(chan MysqlOperation, 1000)
+
+	cacheSize := 1000
+	if repl.msc.Replication.Settings != nil && repl.msc.Replication.Settings.CacheSize > cacheSize {
+		cacheSize = repl.msc.Replication.Settings.CacheSize
+	}
+	moCh := make(chan MysqlOperation, cacheSize)
 
 	defer close(metricCh)
 	defer close(moCh)
 
 	destNames := []string{}
 
-	destGtidSetss := make([]map[string]uint, len(repl.msc.Destinations))
-	for _, dc := range repl.msc.Destinations {
-		gss := NewGtidSets(repl.msc.HJDB.Addr, repl.msc.Replication.Name, dc.Name)
+	if len(repl.msc.Destination.Destinations) == 0 {
+		return fmt.Errorf("dest number 0")
+	}
+
+	destGtidSetss := make([]map[string]uint, len(repl.msc.Destination.Destinations))
+	for destName, dc := range repl.msc.Destination.Destinations {
+		gss := NewGtidSets(repl.msc.HJDB.Addr, repl.msc.Replication.Name, destName)
 		gss.InitStartupGtidSetsMap(dc.InitGtidSetsRangeStr)
 		destGtidSetss = append(destGtidSetss, gss.GtidSetsMap)
 
-		destNames = append(destNames, dc.Name)
+		fmt.Println("xxxxxxx", destName)
+		destNames = append(destNames, destName)
 	}
 
 	metricDirector := NewMetricDirector(repl.msc.Replication.LogLevel, "replication", metricCh)

@@ -23,13 +23,11 @@ type Signal2 struct {
 }
 
 const (
-	ClientFree = iota
+	ClientInit = iota
+	ClientFree
 	ClientBusy
+	ClientScrap
 )
-
-type AckMessage struct {
-	BatchID int
-}
 
 type TCPServerClient struct {
 	Logger *Logger
@@ -46,45 +44,78 @@ type TCPServerClient struct {
 	encoderZstdWriter *zstd.Encoder
 	decoder           *gob.Decoder
 
-	SendBatch uint
-	State     int // 0 free 1 busy
+	SendBatchID uint
+	State       int // 0 free 1 busy 2 scrap
 
 	SendError error
 
-	IsActive bool
+	SendMos []MysqlOperation
 }
 
-func NewTcpServerClient(logLevel int, name string, conn net.Conn) (*TCPServerClient, error) {
+func NewTcpServerClient1(logLevel int, name string) *TCPServerClient {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &TCPServerClient{
+		Logger:      NewLogger(logLevel, fmt.Sprintf("tcp client(%s)", name)),
+		Name:        name,
+		ctx:         ctx,
+		cancel:      cancel,
+		SendBatchID: 0,
+		State:       ClientScrap,
+	}
+}
+
+// func NewTcpServerClient(logLevel int, name string, conn net.Conn) (*TCPServerClient, error) {
+// 	var buf bytes.Buffer
+
+// 	multiWriter := io.MultiWriter(conn, &buf)
+// 	zstdWriter, err := zstd.NewWriter(multiWriter)
+
+// 	if err != nil {
+// 		return nil, err
+// 	}
+
+// 	ctx, cancel := context.WithCancel(context.Background())
+// 	return &TCPServerClient{
+// 		Logger: NewLogger(logLevel, fmt.Sprintf("%s -- tcp server client(%s)", name, conn.RemoteAddr().String())),
+
+// 		Name:   name,
+// 		ctx:    ctx,
+// 		cancel: cancel,
+
+// 		conn: conn,
+
+// 		encoder:           gob.NewEncoder(zstdWriter),
+// 		encoderBuffer:     &buf,
+// 		encoderZstdWriter: zstdWriter,
+// 		decoder:           gob.NewDecoder(conn),
+
+// 		SendBatch: 0,
+// 		State:     ClientFree,
+// 		SendError: nil,
+
+// 		IsAlive: false,
+// 	}, nil
+// }
+
+func (tsc *TCPServerClient) InitConn(conn net.Conn) error {
 	var buf bytes.Buffer
 
 	multiWriter := io.MultiWriter(conn, &buf)
 	zstdWriter, err := zstd.NewWriter(multiWriter)
 
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	return &TCPServerClient{
-		Logger: NewLogger(logLevel, fmt.Sprintf("%s -- tcp server client(%s)", name, conn.RemoteAddr().String())),
+	tsc.ctx, tsc.cancel = context.WithCancel(context.Background())
+	tsc.conn = conn
+	tsc.encoder = gob.NewEncoder(zstdWriter)
+	tsc.encoderBuffer = &buf
+	tsc.encoderZstdWriter = zstdWriter
+	tsc.decoder = gob.NewDecoder(conn)
 
-		Name:   name,
-		ctx:    ctx,
-		cancel: cancel,
-
-		conn: conn,
-
-		encoder:           gob.NewEncoder(zstdWriter),
-		encoderBuffer:     &buf,
-		encoderZstdWriter: zstdWriter,
-		decoder:           gob.NewDecoder(conn),
-
-		SendBatch: 0,
-		State:     ClientFree,
-		SendError: nil,
-
-		IsActive: false,
-	}, nil
+	tsc.State = ClientFree
+	return nil
 }
 
 func (tsc *TCPServerClient) SetClose() {
@@ -95,14 +126,16 @@ func (tsc *TCPServerClient) Cleanup() error {
 	<-tsc.ctx.Done()
 
 	if err := tsc.encoderZstdWriter.Close(); err != nil {
-		return fmt.Errorf("zstd writer close err" + err.Error())
+		tsc.Logger.Error("zstd writer close err: %s", err.Error())
 	}
 	tsc.Logger.Info("zstd write closed.")
 
 	if err := tsc.conn.Close(); err != nil {
-		return err
+		tsc.Logger.Error("conn close err: %s", err.Error())
 	}
 	tsc.Logger.Info("conn closed.")
+
+	tsc.State = ClientScrap
 
 	return nil
 }
@@ -135,9 +168,13 @@ func (tsc *TCPServerClient) receivedSignal() {
 			return
 		}
 
-		tsc.Logger.Debug("Client received batch: %d successfully.", ack.BatchID)
-		tsc.SendBatch = uint(ack.BatchID)
-		tsc.State = ClientFree
+		if tsc.SendBatchID == ack.BatchID {
+			tsc.State = ClientFree
+			tsc.SendError = nil
+			tsc.Logger.Debug("Client received batch: %d successfully.", ack.BatchID)
+		} else {
+			tsc.Logger.Error("not resc beatch id %d,%d", tsc.SendBatchID, ack.BatchID)
+		}
 	}
 }
 
@@ -149,6 +186,7 @@ func (tsc *TCPServerClient) Running() {
 		defer wg.Done()
 		tsc.receivedSignal()
 		tsc.Logger.Info("tcp from client(%s) handler close.", tsc.conn.RemoteAddr().String())
+		tsc.cancel()
 	}()
 
 	wg.Add(1)
@@ -164,19 +202,20 @@ func (tsc *TCPServerClient) Running() {
 	tsc.Logger.Info("Client(%s) closed.", tsc.conn.RemoteAddr().String())
 }
 
-func (tsc *TCPServerClient) pushClient(batchID uint, mos []MysqlOperation) error {
-	signal1 := Signal1{BatchID: batchID, Mos: mos, Count: len(mos)}
+func (tsc *TCPServerClient) setPush(batchID uint, mos []MysqlOperation) {
+	tsc.SendBatchID = batchID
+	tsc.SendMos = mos
+}
+
+func (tsc *TCPServerClient) pushClient() {
+	signal1 := Signal1{BatchID: tsc.SendBatchID, Mos: tsc.SendMos, Count: len(tsc.SendMos)}
 	tsc.State = ClientBusy
-	tsc.SendBatch = batchID
 	tsc.SendError = nil
-	fmt.Println("sendsendsendsendsendsendsend", batchID)
 
 	if err := tsc.sendOperations(signal1); err != nil {
-		fmt.Println("sebd", err.Error())
+		tsc.Logger.Error("Push mos to client error: %s", err.Error())
 		tsc.SendError = err
+	} else {
+		tsc.Logger.Info("Push batch(%d) mos(%d) ok.", signal1.BatchID, len(tsc.SendMos))
 	}
-
-	fmt.Println("send ok", signal1.BatchID, len(mos))
-
-	return nil
 }

@@ -49,6 +49,21 @@ services:
       - --max-connections=3000
       - --innodb-flush-log-at-trx-commit=1
       - --sync-binlog=1
+  db3:
+    image: mysql:8.0.36
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password
+    command:
+      - --server_id=3
+      - --log-bin=mysql-bin
+      - --gtid-mode=on
+      - --enforce-gtid-consistency=on
+      - --binlog-rows-query-log-events=on
+      - --binlog-format=ROW
+      - --binlog-row-image=FULL
+      - --max-connections=3000
+      - --innodb-flush-log-at-trx-commit=1
+      - --sync-binlog=1
   # dtle-consul:
   #   image: consul:1.15.4
   #   ports:
@@ -61,14 +76,14 @@ services:
     image: shinhwagk/hjdb:0.6.1
     volumes:
       - ../example/hjdb:/var/lib/hjdb
-  prometheus: 
+  prometheus:
     image: prom/prometheus:v2.52.0
     ports:
       - 9090:9090
     volumes:
       - ../example/prometheus.yml:/etc/prometheus/prometheus.yml
-#     docker run --name dtle-consul -p 8500:8500 --network=dtle-net -d consul:latest
-# docker run --name dtle -p 4646:4646 --network=dtle-net -d actiontech/dtle
+  #     docker run --name dtle-consul -p 8500:8500 --network=dtle-net -d consul:latest
+  # docker run --name dtle -p 4646:4646 --network=dtle-net -d actiontech/dtle
 
   # db3:
   #   image: mysql:8.0.36
@@ -87,48 +102,48 @@ services:
   #     - --innodb-flush-log-at-trx-commit=0
   #     - --sync-binlog=0
 
-#   redpanda-0:
-#     command:
-#       - redpanda
-#       - start
-#       - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
-#       - --advertise-kafka-addr internal://redpanda-0:9092,external://redpanda-0:19092
-#       - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:18082
-#       - --advertise-pandaproxy-addr internal://redpanda-0:8082,external://redpanda-0:18082
-#       - --schema-registry-addr internal://0.0.0.0:8081,external://0.0.0.0:18081
-#       - --rpc-addr redpanda-0:33145
-#       - --advertise-rpc-addr redpanda-0:33145
-#       - --mode dev-container
-#       - --smp 1
-#       - --default-log-level=info
-#     image: redpandadata/redpanda:v23.3.15
-#     container_name: redpanda-0
-#     volumes:
-#       - redpanda-0:/var/lib/redpanda/data
-#     ports:
-#       - 18081:18081
-#       - 18082:18082
-#       - 19092:19092
-#       - 19644:9644
-#   console:
-#     container_name: redpanda-console
-#     image: docker.redpanda.com/redpandadata/console:v2.5.2
-#     entrypoint: /bin/sh
-#     command: -c 'echo "$$CONSOLE_CONFIG_FILE" > /tmp/config.yml; /app/console'
-#     environment:
-#       CONFIG_FILEPATH: /tmp/config.yml
-#       CONSOLE_CONFIG_FILE: |
-#         kafka:
-#           brokers: ["redpanda-0:9092"]
-#           schemaRegistry:
-#             enabled: true
-#             urls: ["http://redpanda-0:8081"]
-#         redpanda:
-#           adminApi:
-#             enabled: true
-#             urls: ["http://redpanda-0:9644"]
-#     ports:
-#       - 8080:8080
+  #   redpanda-0:
+  #     command:
+  #       - redpanda
+  #       - start
+  #       - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+  #       - --advertise-kafka-addr internal://redpanda-0:9092,external://redpanda-0:19092
+  #       - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:18082
+  #       - --advertise-pandaproxy-addr internal://redpanda-0:8082,external://redpanda-0:18082
+  #       - --schema-registry-addr internal://0.0.0.0:8081,external://0.0.0.0:18081
+  #       - --rpc-addr redpanda-0:33145
+  #       - --advertise-rpc-addr redpanda-0:33145
+  #       - --mode dev-container
+  #       - --smp 1
+  #       - --default-log-level=info
+  #     image: redpandadata/redpanda:v23.3.15
+  #     container_name: redpanda-0
+  #     volumes:
+  #       - redpanda-0:/var/lib/redpanda/data
+  #     ports:
+  #       - 18081:18081
+  #       - 18082:18082
+  #       - 19092:19092
+  #       - 19644:9644
+  #   console:
+  #     container_name: redpanda-console
+  #     image: docker.redpanda.com/redpandadata/console:v2.5.2
+  #     entrypoint: /bin/sh
+  #     command: -c 'echo "$$CONSOLE_CONFIG_FILE" > /tmp/config.yml; /app/console'
+  #     environment:
+  #       CONFIG_FILEPATH: /tmp/config.yml
+  #       CONSOLE_CONFIG_FILE: |
+  #         kafka:
+  #           brokers: ["redpanda-0:9092"]
+  #           schemaRegistry:
+  #             enabled: true
+  #             urls: ["http://redpanda-0:8081"]
+  #         redpanda:
+  #           adminApi:
+  #             enabled: true
+  #             urls: ["http://redpanda-0:9644"]
+  #     ports:
+  #       - 8080:8080
 
-# volumes:
-#   redpanda-0: null
+  # volumes:
+  #   redpanda-0: null

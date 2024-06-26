@@ -41,9 +41,10 @@ func main() {
 			return
 		}
 		replName := config.Replication.Name
-		destConfig := config.Destinations[0]
+		destConfig := config.Destination.Destinations[*destName]
 		hjdbAddr := config.HJDB.Addr
-		destination := NewDestination(replName, destConfig, hjdbAddr)
+		tcpAddr := config.Destination.TCPAddr
+		destination := NewDestination(replName, *destName, tcpAddr, destConfig, hjdbAddr)
 		if err := destination.Start(ctx, cancel); err != nil {
 			logger.Error("Destination start error: " + err.Error())
 			cancel()

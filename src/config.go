@@ -8,32 +8,42 @@ import (
 
 type MysqlSyncConfig struct {
 	// Name        string              `yaml:"name"`
-	Replication  ReplicationConfig   `yaml:"replication"`
-	Destinations []DestinationConfig `yaml:"destination"`
-	HJDB         HJDBConfig          `yaml:"hjdb"`
+	Replication ReplicationConfig  `yaml:"replication"`
+	Destination DestinationsConfig `yaml:"destination"`
+	HJDB        HJDBConfig         `yaml:"hjdb"`
 }
 
 type ReplicationConfig struct {
-	Name     string `yaml:"name"`
-	TCPAddr  string `yaml:"tcpaddr"`
-	ServerID int    `yaml:"serverid"`
-	Host     string `yaml:"host"`
-	Port     int    `yaml:"port"`
-	User     string `yaml:"user"`
-	Password string `yaml:"password"`
-	LogLevel int    `yaml:"loglevel"`
+	Name     string          `yaml:"name"`
+	TCPAddr  string          `yaml:"tcpaddr"`
+	ServerID int             `yaml:"serverid"`
+	Host     string          `yaml:"host"`
+	Port     int             `yaml:"port"`
+	User     string          `yaml:"user"`
+	Password string          `yaml:"password"`
+	LogLevel int             `yaml:"loglevel"`
+	Settings *SettingsConfig `yaml:"settings"`
+}
+
+type DestinationsConfig struct {
+	TCPAddr              string          `yaml:"tcpaddr"`
+	Settings     *SettingsConfig              `yaml:"settings"`
+	Destinations map[string]DestinationConfig `yaml:"destinations"`
 }
 
 type DestinationConfig struct {
-	Name                 string `yaml:"name"`
-	TCPAddr              string `yaml:"tcpaddr"`
-	Host                 string `yaml:"host"`
-	Port                 int    `yaml:"port"`
-	User                 string `yaml:"user"`
-	Password             string `yaml:"password"`
-	Params               string `yaml:"params"`
-	InitGtidSetsRangeStr string `yaml:"gtidsets"`
-	LogLevel             int    `yaml:"loglevel"`
+	Host                 string          `yaml:"host"`
+	Port                 int             `yaml:"port"`
+	User                 string          `yaml:"user"`
+	Password             string          `yaml:"password"`
+	Params               string          `yaml:"params"`
+	InitGtidSetsRangeStr string          `yaml:"gtidsets"`
+	LogLevel             int             `yaml:"loglevel"`
+	Settings             *SettingsConfig `yaml:"settings"`
+}
+
+type SettingsConfig struct {
+	CacheSize int `yaml:"cache"`
 }
 
 type HJDBConfig struct {

@@ -41,7 +41,7 @@ func NewTCPServer(logLevel int, listenAddress string, clientNames []string, moCh
 	clients := make(map[string]*TCPServerClient)
 
 	for _, name := range clientNames {
-		clients[name] = nil
+		clients[name] = NewTcpServerClient1(logLevel, name)
 	}
 
 	fmt.Println("clients", len(clients))
@@ -97,13 +97,23 @@ func (ts *TCPServer) Start(ctx context.Context) error {
 }
 
 func (ts *TCPServer) clientsReady() bool {
-	for _, client := range ts.Clients {
+	for name, client := range ts.Clients {
 		if client == nil {
 			return false
+		} else {
+			if client.State == ClientBusy {
+				if client.SendError != nil {
+					ts.Logger.Info("Push to Client(%s) Batch(%d) again.", name, client.SendBatchID)
+					client.pushClient()
+				}
+				return false
+			}
+
+			if client.State != ClientFree {
+				return false
+			}
 		}
-		if client.State == ClientBusy {
-			return false
-		}
+
 	}
 	return true
 }
@@ -121,8 +131,7 @@ func (ts *TCPServer) distributor() error {
 
 	for {
 		if ts.clientsReady() && len(ts.moCh) >= 10 {
-			fmt.Println("11115")
-			sendCount := 10
+			fetchCount := 10
 
 			select {
 			// case <-ts.ctx.Done():
@@ -133,28 +142,25 @@ func (ts *TCPServer) distributor() error {
 				ts.Logger.Debug("MoCh remaining capacity: %d/%d.", remainingCapacity, maxRcCnt)
 				hundredSendCount := max(minRcCnt, (lastSecondCount/minRcCnt)*minRcCnt)
 				if hundredSendCount >= 10000 {
-					sendCount = 1000
+					fetchCount = 1000
 				} else if hundredSendCount >= 1000 {
-					sendCount = 100
+					fetchCount = 100
 				} else {
-					sendCount = 10
+					fetchCount = 10
 				}
 			default:
-				sendCount = 10
+				fetchCount = 10
 			}
-			fmt.Println("pushpushpushpushpushpushpush", sendCount)
 
-			if mos, err := ts.fetchMos(sendCount); err != nil {
+			if mos, err := ts.fetchMos(fetchCount); err != nil {
 				fmt.Println(11112, err.Error())
+				ts.Logger.Error("Fetch mos fetch count: %d err: %s", fetchCount, err.Error())
 				return err
 			} else {
-				fmt.Println("push", len(mos))
-				if err := ts.pushClients(mos); err != nil {
-					fmt.Println(11112, err.Error())
-					return err
-				} else {
-					lastSecondCount = 0
-				}
+				ts.BatchID += 1
+				ts.Logger.Info("Push batch(%d) mos(%d) to clients.", ts.BatchID, len(mos))
+				ts.pushClients(mos)
+				lastSecondCount = 0
 			}
 
 			noReadyMs = 100
@@ -165,21 +171,18 @@ func (ts *TCPServer) distributor() error {
 	}
 }
 
-func (ts *TCPServer) pushClients(mos []MysqlOperation) error {
-	ts.BatchID += 1
-
+func (ts *TCPServer) pushClients(mos []MysqlOperation) {
 	var wg sync.WaitGroup
-
-	for _, client := range ts.Clients {
+	for name, client := range ts.Clients {
 		wg.Add(1)
-		fmt.Println("clientxxxxxxx", client.Name)
 		go func(cli *TCPServerClient) {
 			defer wg.Done()
-			cli.pushClient(ts.BatchID, mos)
+			cli.setPush(ts.BatchID, mos)
+			ts.Logger.Info("Push to Client(%s) Batch(%d).", name, ts.BatchID)
+			cli.pushClient()
 		}(client)
 	}
 	wg.Wait()
-	return nil
 }
 
 func (ts *TCPServer) fetchMos(count int) ([]MysqlOperation, error) {
@@ -204,19 +207,21 @@ func (ts *TCPServer) handleClient(conn net.Conn) {
 		}
 		return
 	}
+
 	clientName := scanner.Text()
 
-	_, ok := ts.Clients[clientName]
-	if ok {
-		fmt.Println("nononononononnono2", clientName)
+	if client, exists := ts.Clients[clientName]; exists {
+		if client.State == ClientScrap {
+			if err := client.InitConn(conn); err != nil {
+				ts.Logger.Error("init client err: %s", err.Error())
+			} else {
+				ts.Logger.Info("Client %s Running.", clientName)
+				client.Running()
+			}
+		} else {
+			ts.Logger.Info("Client(%s) is Running.", clientName)
+		}
 	} else {
-		fmt.Println("nononononononnono1", clientName)
-	}
-
-	if client, err := NewTcpServerClient(ts.Logger.Level, clientName, conn); err != nil {
-		fmt.Println("xxxxxx" + err.Error())
-	} else {
-		ts.Clients[clientName] = client
-		client.Running()
+		ts.Logger.Error("client not exists: %s", clientName)
 	}
 }

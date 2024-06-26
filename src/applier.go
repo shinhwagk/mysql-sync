@@ -158,30 +158,23 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 }
 
 func (ma *MysqlApplier) OnDMLInsert(op MysqlOperationDMLInsert) error {
-	sql, params := BuildDMLInsertQuery(op.Database, op.Table, op.Columns)
-
-	// ma.Logger.Debug(fmt.Sprintf("OnDMLInsert -- query: '%s' params: '%s'", sql, params))
-	ma.Logger.Debug("OnDMLInsert -- SchemaContext: %s, Table: %s", op.Database, op.Table)
-
-	if err := ma.mysqlClient.ExecuteDML(sql, params); err != nil {
+	query, params := BuildDMLInsertQuery(op.Database, op.Table, op.Columns)
+	ma.Logger.Debug("OnDMLInsert -- SchemaContext: %s, Table: %s", op.Database, op.Table, query, params)
+	if err := ma.mysqlClient.ExecuteDML(query, params); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (ma *MysqlApplier) OnDMLDelete(op MysqlOperationDMLDelete) error {
-	sql, params := BuildDMLDeleteQuery(op.Database, op.Table, op.Columns, op.PrimaryKey)
-
-	// ma.logger.Debug(fmt.Sprintf("OnDMLDelete -- query: '%s' params: '%s'", sql, params))
-	ma.Logger.Debug("OnDMLDelete -- SchemaContext: %s, Table: %s", op.Database, op.Table)
-
-	// todo
 	if len(op.PrimaryKey) == 0 {
-		ma.Logger.Warning("OnDMLDelete -- No primary key -- SchemaContext: %s, Table: %s, Query: %s, Params: %v", op.Database, op.Table, sql, params)
+		ma.Logger.Warning("OnDMLUpdate -- SchemaContext: %s, Table: %s", op.Database, op.Table)
 		return nil
 	}
 
-	if err := ma.mysqlClient.ExecuteDML(sql, params); err != nil {
+	query, params := BuildDMLDeleteQuery(op.Database, op.Table, op.Columns, op.PrimaryKey)
+	ma.Logger.Debug("OnDMLDelete -- SchemaContext: %s, Table: %s, Query: %s, Params: %v", op.Database, op.Table, query, params)
+	if err := ma.mysqlClient.ExecuteDML(query, params); err != nil {
 		return err
 	}
 
@@ -189,24 +182,23 @@ func (ma *MysqlApplier) OnDMLDelete(op MysqlOperationDMLDelete) error {
 }
 
 func (ma *MysqlApplier) OnDMLUpdate(op MysqlOperationDMLUpdate) error {
-	sql, params := BuildDMLDeleteQuery(op.Database, op.Table, op.BeforeColumns, op.PrimaryKey)
-
-	ma.Logger.Debug("OnDMLUpdate -- SchemaContext: %s, Table: %s", op.Database, op.Table)
-
 	// todo
 	if len(op.PrimaryKey) == 0 {
-		ma.Logger.Warning("OnDMLUpdate -- SchemaContext: %s, Table: %s, Query: %s, Params: %v", op.Database, op.Table, sql, params)
+		ma.Logger.Warning("OnDMLUpdate -- SchemaContext: %s, Table: %s", op.Database, op.Table)
 		return nil
 	}
 
-	// ma.Logger.Debug(fmt.Sprintf("OnDMLUpdate -- query: '%s' params: '%s'", sql, params))
-	if err := ma.mysqlClient.ExecuteDML(sql, params); err != nil {
+	ma.Logger.Debug("OnDMLUpdate -- SchemaContext: %s, Table: %s", op.Database, op.Table)
+
+	query, params := BuildDMLDeleteQuery(op.Database, op.Table, op.BeforeColumns, op.PrimaryKey)
+	ma.Logger.Debug("OnDMLUpdate -- SchemaContext: %s, Table: %s, Query: %s, Params: %v", op.Database, op.Table, query, params)
+	if err := ma.mysqlClient.ExecuteDML(query, params); err != nil {
 		return err
 	}
 
-	sql, params = BuildDMLInsertQuery(op.Database, op.Table, op.AfterColumns)
-	// ma.Logger.Debug(fmt.Sprintf("OnDMLUpdate -- query: '%s' params: '%s'", sql, params))
-	if err := ma.mysqlClient.ExecuteDML(sql, params); err != nil {
+	query, params = BuildDMLInsertQuery(op.Database, op.Table, op.AfterColumns)
+	ma.Logger.Debug("OnDMLUpdate -- SchemaContext: %s, Table: %s, Query: %s, Params: %v", op.Database, op.Table, query, params)
+	if err := ma.mysqlClient.ExecuteDML(query, params); err != nil {
 		return err
 	}
 
@@ -265,7 +257,7 @@ func (ma *MysqlApplier) OnGTID(op MysqlOperationGTID) error {
 	if trx, ok := ma.GtidSets.GetTrxIdOfServerUUID(op.ServerUUID); ok {
 		if trx >= uint(op.TrxID) {
 			ma.skip = true
-			fmt.Println("skip", op.ServerUUID, op.TrxID)
+			ma.Logger.Info("skip %s %s", op.ServerUUID, op.TrxID)
 			return nil
 		} else if uint(op.TrxID) >= trx+2 {
 			return fmt.Errorf("sdfsdf op", op.TrxID, trx)

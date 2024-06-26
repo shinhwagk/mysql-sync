@@ -42,7 +42,7 @@ type TCPClient struct {
 	moCh chan<- MysqlOperation
 }
 
-func NewTCPClient(logLevel int, serverAddress string, name string, moCh chan<- MysqlOperation, metricCh chan<- MetricUnit) (*TCPClient, error) {
+func NewTCPClient(logLevel int, serverAddress string, destName string, moCh chan<- MysqlOperation, metricCh chan<- MetricUnit) (*TCPClient, error) {
 	logger := NewLogger(logLevel, "tcp client")
 	conn, err := net.Dial("tcp", serverAddress)
 	if err != nil {
@@ -50,7 +50,7 @@ func NewTCPClient(logLevel int, serverAddress string, name string, moCh chan<- M
 		return nil, err
 	}
 
-	fmt.Fprintf(conn, name+"\n")
+	fmt.Fprintln(conn, destName)
 
 	encoder := gob.NewEncoder(conn)
 

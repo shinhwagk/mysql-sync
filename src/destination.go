@@ -6,9 +6,11 @@ import (
 	"sync"
 )
 
-func NewDestination(replName string, dc DestinationConfig, hjdbAddr string) *Destination {
+func NewDestination(replName string, destName string, tcpAddr string, dc DestinationConfig, hjdbAddr string) *Destination {
 	return &Destination{
 		replName: replName,
+		destName: destName,
+		tcpAddr:  tcpAddr,
 		dc:       dc,
 		hjdbAddr: hjdbAddr,
 		Logger:   NewLogger(dc.LogLevel, "destination"),
@@ -17,6 +19,8 @@ func NewDestination(replName string, dc DestinationConfig, hjdbAddr string) *Des
 
 type Destination struct {
 	replName string
+	destName string
+	tcpAddr  string
 	dc       DestinationConfig
 	hjdbAddr string
 	Logger   *Logger
@@ -31,14 +35,14 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) e
 	dns := fmt.Sprintf("%s:%s@tcp(%s:%d)/?%s", dest.dc.User, dest.dc.Password, dest.dc.Host, dest.dc.Port, dest.dc.Params)
 
 	// gtidsets must first init.
-	gtidSets := NewGtidSets(dest.hjdbAddr, dest.replName, dest.dc.Name)
+	gtidSets := NewGtidSets(dest.hjdbAddr, dest.replName, dest.destName)
 	err := gtidSets.InitStartupGtidSetsMap(dest.dc.InitGtidSetsRangeStr)
 	if err != nil {
 		return err
 	}
 
 	metricDirector := NewMetricDirector(dest.dc.LogLevel, "destination", metricCh)
-	tcpClient, err := NewTCPClient(dest.dc.LogLevel, dest.dc.TCPAddr, dest.dc.Name, moCh, metricCh)
+	tcpClient, err := NewTCPClient(dest.dc.LogLevel, dest.tcpAddr, dest.destName, moCh, metricCh)
 	if err != nil {
 		tcpClient.Logger.Error("NewTCPClient error: " + err.Error())
 		return err
