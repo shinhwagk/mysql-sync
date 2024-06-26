@@ -132,7 +132,7 @@ func (ts *TCPServer) distributor() error {
 	for {
 		if ts.clientsReady() && len(ts.moCh) >= 10 {
 			fetchCount := 10
-			ts.Logger.Debug("MoCh remaining capacity: %d/%d.", len(ts.moCh), maxRcCnt)
+			ts.Logger.Debug("MoCh cache capacity: %d/%d.", len(ts.moCh), maxRcCnt)
 
 			select {
 			// case <-ts.ctx.Done():
@@ -149,13 +149,13 @@ func (ts *TCPServer) distributor() error {
 				} else {
 					fetchCount = 10
 				}
+				ts.Logger.Info("lastSecondCount %d", lastSecondCount)
 				lastSecondCount = 0
 			default:
 				fetchCount = 10
 			}
 
 			if mos, err := ts.fetchMos(fetchCount); err != nil {
-				fmt.Println(11112, err.Error())
 				ts.Logger.Error("Fetch mos fetch count: %d err: %s", fetchCount, err.Error())
 				return err
 			} else {
