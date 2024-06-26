@@ -132,6 +132,7 @@ func (ts *TCPServer) distributor() error {
 	for {
 		if ts.clientsReady() && len(ts.moCh) >= 10 {
 			fetchCount := 10
+			ts.Logger.Debug("MoCh remaining capacity: %d/%d.", len(ts.moCh), maxRcCnt)
 
 			select {
 			// case <-ts.ctx.Done():
@@ -148,6 +149,7 @@ func (ts *TCPServer) distributor() error {
 				} else {
 					fetchCount = 10
 				}
+				lastSecondCount = 0
 			default:
 				fetchCount = 10
 			}
@@ -160,7 +162,7 @@ func (ts *TCPServer) distributor() error {
 				ts.BatchID += 1
 				ts.Logger.Info("Push batch(%d) mos(%d) to clients.", ts.BatchID, len(mos))
 				ts.pushClients(mos)
-				lastSecondCount = 0
+				lastSecondCount += len(mos)
 			}
 
 			noReadyMs = 100
