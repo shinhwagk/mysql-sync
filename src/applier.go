@@ -159,7 +159,8 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 
 func (ma *MysqlApplier) OnDMLInsert(op MysqlOperationDMLInsert) error {
 	query, params := BuildDMLInsertQuery(op.Database, op.Table, op.Columns)
-	ma.Logger.Debug("OnDMLInsert -- SchemaContext: %s, Table: %s, Query: %s, Params: %v", op.Database, op.Table, query, params)
+	ma.Logger.Debug("OnDMLInsert -- SchemaContext: %s, Table: %s", op.Database, op.Table)
+	ma.Logger.Trace("OnDMLInsert -- SchemaContext: %s, Table: %s, Query: %s, Params: %v", op.Database, op.Table, query, params)
 	if err := ma.mysqlClient.ExecuteDML(query, params); err != nil {
 		return err
 	}
@@ -173,7 +174,8 @@ func (ma *MysqlApplier) OnDMLDelete(op MysqlOperationDMLDelete) error {
 	}
 
 	query, params := BuildDMLDeleteQuery(op.Database, op.Table, op.Columns, op.PrimaryKey)
-	ma.Logger.Debug("OnDMLDelete -- SchemaContext: %s, Table: %s, Query: %s, Params: %v", op.Database, op.Table, query, params)
+	ma.Logger.Debug("OnDMLDelete -- SchemaContext: %s, Table: %s", op.Database, op.Table)
+	ma.Logger.Trace("OnDMLDelete -- SchemaContext: %s, Table: %s, Query: %s, Params: %v", op.Database, op.Table, query, params)
 	if err := ma.mysqlClient.ExecuteDML(query, params); err != nil {
 		return err
 	}
@@ -188,14 +190,16 @@ func (ma *MysqlApplier) OnDMLUpdate(op MysqlOperationDMLUpdate) error {
 		return nil
 	}
 
+	ma.Logger.Debug("OnDMLUpdate -- SchemaContext: %s, Table: %s", op.Database, op.Table)
+
 	query, params := BuildDMLDeleteQuery(op.Database, op.Table, op.BeforeColumns, op.PrimaryKey)
-	ma.Logger.Debug("OnDMLUpdate -- SchemaContext: %s, Table: %s, Query: %s, Params: %v", op.Database, op.Table, query, params)
+	ma.Logger.Trace("OnDMLUpdate -- SchemaContext: %s, Table: %s, Query: %s, Params: %v", op.Database, op.Table, query, params)
 	if err := ma.mysqlClient.ExecuteDML(query, params); err != nil {
 		return err
 	}
 
 	query, params = BuildDMLInsertQuery(op.Database, op.Table, op.AfterColumns)
-	ma.Logger.Debug("OnDMLUpdate -- SchemaContext: %s, Table: %s, Query: %s, Params: %v", op.Database, op.Table, query, params)
+	ma.Logger.Trace("OnDMLUpdate -- SchemaContext: %s, Table: %s, Query: %s, Params: %v", op.Database, op.Table, query, params)
 	if err := ma.mysqlClient.ExecuteDML(query, params); err != nil {
 		return err
 	}

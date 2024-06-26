@@ -10,6 +10,7 @@ import (
 const (
 	LevelInfo int = iota
 	LevelDebug
+	LevelTrace
 )
 
 type Logger struct {
@@ -19,6 +20,7 @@ type Logger struct {
 	LogInfo    *log.Logger
 	LogDebug   *log.Logger
 	LogWarning *log.Logger
+	LogTrace   *log.Logger
 }
 
 func NewLogger(level int, module string) *Logger {
@@ -52,6 +54,9 @@ func (l *Logger) Warning(format string, a ...interface{}) {
 	l.output(l.LogWarning, "WARNING", format, a...)
 }
 
+func (l *Logger) Trace(format string, a ...interface{}) {
+	l.output(l.LogWarning, "TRACE", format, a...)
+}
 func (l *Logger) output(logger *log.Logger, level string, format string, a ...interface{}) {
 	fullFormat := "%s -- %s -- %s -- " + format
 	timestamp := time.Now().Format("2006-01-02 15:04:05")

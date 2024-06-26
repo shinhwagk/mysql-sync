@@ -10,5 +10,8 @@
       "source.organizeImports": "always"
     },
   },
-  "deno.enable": true
+  "deno.enable": true,
+  "search.exclude": {
+    "vendor": true
+  }
 }

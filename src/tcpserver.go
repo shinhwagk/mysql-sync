@@ -155,6 +155,8 @@ func (ts *TCPServer) distributor() error {
 				fetchCount = 10
 			}
 
+			ts.Logger.Debug("lastSecondCount %d", lastSecondCount)
+
 			if mos, err := ts.fetchMos(fetchCount); err != nil {
 				ts.Logger.Error("Fetch mos fetch count: %d err: %s", fetchCount, err.Error())
 				return err
