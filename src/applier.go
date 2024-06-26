@@ -159,7 +159,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 
 func (ma *MysqlApplier) OnDMLInsert(op MysqlOperationDMLInsert) error {
 	query, params := BuildDMLInsertQuery(op.Database, op.Table, op.Columns)
-	ma.Logger.Debug("OnDMLInsert -- SchemaContext: %s, Table: %s", op.Database, op.Table, query, params)
+	ma.Logger.Debug("OnDMLInsert -- SchemaContext: %s, Table: %s, Query: %s, Params: %v", op.Database, op.Table, query, params)
 	if err := ma.mysqlClient.ExecuteDML(query, params); err != nil {
 		return err
 	}
