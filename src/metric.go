@@ -46,7 +46,7 @@ type PrometheusMetric struct {
 	MetricName   string
 	MetricType   string // gauge, counter
 	MetricValue  uint
-	MetricLabels map[string]string
+	MetricLabels []string
 
 	PromCollector prometheus.Collector
 }
@@ -106,14 +106,14 @@ func (md *MetricDirector) inc(name string, value uint, dest *string) {
 		}
 		md.registerMetric(name, "counter", labelNames)
 	}
-	var values []string
-	values = append(values, md.ReplName)
+	var labelValues []string
+	labelValues = append(labelValues, md.ReplName)
 	if dest != nil {
-		values = append(values, *dest)
+		labelValues = append(labelValues, *dest)
 	}
 	metric, _ := md.metrics[name]
-	counter, _ := metric.PromCollector.(prometheus.CounterVec)
-	counter.WithLabelValues(values...).Add(float64(value))
+	counter, _ := metric.PromCollector.(*prometheus.CounterVec)
+	counter.WithLabelValues(labelValues...).Add(float64(value))
 }
 
 func (md *MetricDirector) set(name string, value uint, dest *string) {
@@ -125,14 +125,14 @@ func (md *MetricDirector) set(name string, value uint, dest *string) {
 		}
 		md.registerMetric(name, "gauge", labelNames)
 	}
-	var values []string
-	values = append(values, md.ReplName)
+	var labelValues []string
+	labelValues = append(labelValues, md.ReplName)
 	if dest != nil {
-		values = append(values, *dest)
+		labelValues = append(labelValues, *dest)
 	}
 	metric, _ := md.metrics[name]
-	gauge, _ := metric.PromCollector.(prometheus.GaugeVec)
-	gauge.WithLabelValues().Set(float64(value))
+	gauge, _ := metric.PromCollector.(*prometheus.GaugeVec)
+	gauge.WithLabelValues(labelValues...).Set(float64(value))
 }
 
 func (md *MetricDirector) Start(ctx context.Context, addr string) {
@@ -216,6 +216,7 @@ func (md *MetricDirector) registerMetric(name string, metricType string, labelNa
 			MetricName:    name,
 			MetricType:    metricType,
 			PromCollector: collector,
+			MetricLabels:  labelNames,
 		}
 		md.Logger.Info(fmt.Sprintf("Metric registered: %s, Type: %s", name, metricType))
 	}
