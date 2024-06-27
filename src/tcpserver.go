@@ -100,31 +100,35 @@ func (ts *TCPServer) clientsReady() bool {
 	for name, client := range ts.Clients {
 		if client == nil {
 			return false
-		} else {
-			if client.State == ClientBusy {
-				if client.SendError != nil {
-					ts.Logger.Info("Push to Client(%s) Batch(%d) again.", name, client.SendBatchID)
-					client.pushClient()
-				}
-				return false
-			}
-
-			if client.State != ClientFree {
-				return false
-			}
+		}
+		ts.Logger.Debug("Clients status client(%s), dead: %t, state: %s", client.Name, client.Dead, client.State)
+		if client.Dead {
+			return false
 		}
 
+		if client.State == ClientBusy {
+			if client.SendError != nil {
+				ts.Logger.Info("Push to Client(%s) Batch(%d) again.", name, client.SendBatchID)
+				client.pushClient()
+			}
+			return false
+		}
+
+		if client.State != ClientFree {
+			return false
+		}
 	}
 	return true
 }
 
 func (ts *TCPServer) distributor() error {
 	maxRcCnt := cap(ts.moCh)
-	const minRcCnt int = 100
+	const minRcCnt int = 10
 
 	lastSecondCount := 0
 
 	ticker := time.NewTicker(time.Second * 1)
+	tickerTimestamp := time.Now()
 	defer ticker.Stop()
 
 	noReadyMs := 0
@@ -139,9 +143,10 @@ func (ts *TCPServer) distributor() error {
 			// 	ts.Logger.Info("Context cancelled, stopping handleFromServer loop.")
 			// 	return
 			case <-ticker.C:
+				elapsed := int(time.Since(tickerTimestamp).Seconds())
 				remainingCapacity := maxRcCnt - len(ts.moCh)
 				ts.Logger.Debug("MoCh remaining capacity: %d/%d.", remainingCapacity, maxRcCnt)
-				hundredSendCount := max(minRcCnt, (lastSecondCount/minRcCnt)*minRcCnt)
+				hundredSendCount := max(minRcCnt, (lastSecondCount/minRcCnt)*minRcCnt/elapsed)
 				if hundredSendCount >= 10000 {
 					fetchCount = 1000
 				} else if hundredSendCount >= 1000 || hundredSendCount >= 100 {
@@ -149,12 +154,12 @@ func (ts *TCPServer) distributor() error {
 				} else {
 					fetchCount = 10
 				}
+				ts.Logger.Debug("lastSecondCount %d hundredSendCount %d elapsed %d", lastSecondCount, hundredSendCount, elapsed)
+
 				lastSecondCount = 0
 			default:
 				fetchCount = 10
 			}
-
-			ts.Logger.Debug("lastSecondCount %d", lastSecondCount)
 
 			if mos, err := ts.fetchMos(fetchCount); err != nil {
 				ts.Logger.Error("Fetch mos fetch count: %d err: %s", fetchCount, err.Error())
@@ -167,7 +172,8 @@ func (ts *TCPServer) distributor() error {
 			}
 			noReadyMs = 0
 		} else {
-			time.Sleep(time.Duration(time.Millisecond) * time.Duration(noReadyMs))
+			time.Sleep(time.Millisecond * time.Duration(noReadyMs))
+			ts.Logger.Debug("Client not ready sleep: %d.", noReadyMs)
 			noReadyMs += 10
 		}
 	}
@@ -213,7 +219,7 @@ func (ts *TCPServer) handleClient(conn net.Conn) {
 	clientName := scanner.Text()
 
 	if client, exists := ts.Clients[clientName]; exists {
-		if client.State == ClientScrap {
+		if client.Dead {
 			if err := client.InitConn(conn); err != nil {
 				ts.Logger.Error("init client err: %s", err.Error())
 			} else {

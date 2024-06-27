@@ -7,13 +7,14 @@ import (
 	"time"
 )
 
-func NewMysqlApplier(logLevel int, gtidSets *GtidSets, mysqlClient *MysqlClient, metricCh chan<- MetricUnit) *MysqlApplier {
+func NewMysqlApplier(logLevel int, gtidSets *GtidSets, mysqlClient *MysqlClient, replicate *Replicate, metricCh chan<- MetricUnit) *MysqlApplier {
 	return &MysqlApplier{
 		Logger: NewLogger(logLevel, "mysql applier"),
 
 		GtidSets: gtidSets,
 
 		mysqlClient: mysqlClient,
+		replicate:   replicate,
 
 		LastGtidServerUUID:  "",
 		LastCommitted:       0,
@@ -23,7 +24,7 @@ func NewMysqlApplier(logLevel int, gtidSets *GtidSets, mysqlClient *MysqlClient,
 		MetricDelay: 0,
 		metricCh:    metricCh,
 
-		excludeSchemas: []string{"mysql"},
+		// excludeSchemas: []string{"mysql"},
 
 		skip: false,
 	}
@@ -32,6 +33,7 @@ func NewMysqlApplier(logLevel int, gtidSets *GtidSets, mysqlClient *MysqlClient,
 type MysqlApplier struct {
 	Logger      *Logger
 	mysqlClient *MysqlClient
+	replicate   *Replicate
 	GtidSets    *GtidSets
 
 	// state
@@ -45,15 +47,15 @@ type MysqlApplier struct {
 	MetricDelay uint
 	metricCh    chan<- MetricUnit
 
-	excludeSchemas []string
+	// excludeSchemas []string
 
 	skip bool
 
 	// metric *MetricDestination
 }
 
-func (ma *MysqlApplier) FilterSchemas(SchemaContext string) bool {
-	return contains(ma.excludeSchemas, SchemaContext)
+func (ma *MysqlApplier) ReplicateNoExecute(schemaContext string, tableName string) bool {
+	return !ma.replicate.filter(schemaContext, tableName)
 }
 
 func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
@@ -80,15 +82,23 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 			}
 			switch op := oper.(type) {
 			case MysqlOperationDDLDatabase:
-				if ma.skip {
+				if ma.skip || ma.ReplicateNoExecute(op.Schema, "") {
 					continue
 				}
 				if err := ma.OnDDLDatabase(op); err != nil {
 					ma.Logger.Error("OnDDLDatabase -- %s", err)
 					return
 				}
+			case MysqlOperationDDLTable:
+				if ma.skip || ma.ReplicateNoExecute(op.Schema, op.Table) {
+					continue
+				}
+				if err := ma.OnDDLTable(op); err != nil {
+					ma.Logger.Error("MysqlOperationDDLTable " + err.Error())
+					return
+				}
 			case MysqlOperationDMLInsert:
-				if ma.skip || ma.FilterSchemas(op.Database) {
+				if ma.skip || ma.ReplicateNoExecute(op.Database, op.Table) {
 					continue
 				}
 				if err := ma.OnDMLInsert(op); err != nil {
@@ -97,7 +107,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				}
 				ma.metricCh <- MetricUnit{Name: MetricDestDMLInsertTimes, Value: 1}
 			case MysqlOperationDMLDelete:
-				if ma.skip || ma.FilterSchemas(op.Database) {
+				if ma.skip || ma.ReplicateNoExecute(op.Database, op.Table) {
 					continue
 				}
 				if err := ma.OnDMLDelete(op); err != nil {
@@ -106,7 +116,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				}
 				ma.metricCh <- MetricUnit{Name: MetricDestDMLDeleteTimes, Value: 1}
 			case MysqlOperationDMLUpdate:
-				if ma.skip || ma.FilterSchemas(op.Database) {
+				if ma.skip || ma.ReplicateNoExecute(op.Database, op.Table) {
 					continue
 				}
 				if err := ma.OnDMLUpdate(op); err != nil {
@@ -114,14 +124,6 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					return
 				}
 				ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdateTimes, Value: 1}
-			case MysqlOperationDDLTable:
-				if ma.skip || ma.FilterSchemas(op.SchemaContext) {
-					continue
-				}
-				if err := ma.OnDDLTable(op); err != nil {
-					ma.Logger.Error("MysqlOperationDDLTable " + err.Error())
-					return
-				}
 			case MysqlOperationXid:
 				if ma.skip {
 					continue

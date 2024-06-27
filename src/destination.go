@@ -52,7 +52,8 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) e
 	}
 	defer mysqlClient.Close()
 
-	mysqlApplier := NewMysqlApplier(dest.dc.LogLevel, gtidSets, mysqlClient, metricCh)
+	replicateFilter := NewReplicateFilter(dest.dc.Replicate)
+	mysqlApplier := NewMysqlApplier(dest.dc.LogLevel, gtidSets, mysqlClient, replicateFilter, metricCh)
 
 	mdCtx, mdCancel := context.WithCancel(context.Background())
 	defer mdCancel()

@@ -32,10 +32,20 @@ type DestinationsConfig struct {
 }
 
 type DestinationConfig struct {
-	Dsn                  string          `yaml:"dsn"`
-	InitGtidSetsRangeStr string          `yaml:"gtidsets"`
-	LogLevel             int             `yaml:"loglevel"`
-	Settings             *SettingsConfig `yaml:"settings"`
+	Dsn                  string           `yaml:"dsn"`
+	InitGtidSetsRangeStr string           `yaml:"gtidsets"`
+	LogLevel             int              `yaml:"loglevel"`
+	Settings             *SettingsConfig  `yaml:"settings"`
+	Replicate            *ReplicateConfig `yaml:"replicate"`
+}
+
+type ReplicateConfig struct {
+	DoDB        *string `yaml:"do_db"`
+	IgnoreDB    *string `yaml:"ignore_db"`
+	DoTable     *string `yaml:"do_table"`
+	IgnoreTable *string `yaml:"ignore_tab"`
+	// WildDoTable     *string
+	// WildIgnoreTable *string
 }
 
 type SettingsConfig struct {

@@ -24,10 +24,8 @@ type Signal2 struct {
 }
 
 const (
-	ClientInit = iota
-	ClientFree
-	ClientBusy
-	ClientScrap
+	ClientFree = "free"
+	ClientBusy = "busy"
 )
 
 type TCPServerClient struct {
@@ -46,13 +44,15 @@ type TCPServerClient struct {
 	decoder           *gob.Decoder
 
 	SendBatchID uint
-	State       int // 0 free 1 busy 2 scrap
+	State       string
 
 	SendError     error
 	SendMos       []MysqlOperation
 	SendTimestamp time.Time
 
 	metricCh chan<- MetricUnit
+
+	Dead bool
 }
 
 func NewTcpServerClient1(logLevel int, name string, metricCh chan<- MetricUnit) *TCPServerClient {
@@ -63,8 +63,9 @@ func NewTcpServerClient1(logLevel int, name string, metricCh chan<- MetricUnit) 
 		ctx:         ctx,
 		cancel:      cancel,
 		SendBatchID: 0,
-		State:       ClientScrap,
+		State:       ClientFree,
 		metricCh:    metricCh,
+		Dead:        true,
 	}
 }
 
@@ -119,6 +120,7 @@ func (tsc *TCPServerClient) InitConn(conn net.Conn) error {
 	tsc.decoder = gob.NewDecoder(conn)
 
 	tsc.State = ClientFree
+	tsc.Dead = false
 	return nil
 }
 
@@ -126,7 +128,7 @@ func (tsc *TCPServerClient) SetClose() {
 	tsc.cancel()
 }
 
-func (tsc *TCPServerClient) Cleanup() error {
+func (tsc *TCPServerClient) Cleanup() {
 	<-tsc.ctx.Done()
 
 	if err := tsc.encoderZstdWriter.Close(); err != nil {
@@ -139,9 +141,7 @@ func (tsc *TCPServerClient) Cleanup() error {
 	}
 	tsc.Logger.Info("conn closed.")
 
-	tsc.State = ClientScrap
-
-	return nil
+	tsc.Dead = true
 }
 
 func (tsc *TCPServerClient) sendOperations(s Signal1) error {
@@ -176,7 +176,7 @@ func (tsc *TCPServerClient) receivedSignal() {
 			tsc.State = ClientFree
 			tsc.SendError = nil
 			elapsed := time.Since(tsc.SendTimestamp).Milliseconds()
-			tsc.Logger.Debug("Client received batch: %d, elapsed %d successfully.", ack.BatchID, elapsed)
+			tsc.Logger.Debug("Client received batch: %d, elapsed ms: %d successfully.", ack.BatchID, elapsed)
 		} else {
 			tsc.Logger.Error("not resc beatch id %d,%d", tsc.SendBatchID, ack.BatchID)
 		}
@@ -197,9 +197,7 @@ func (tsc *TCPServerClient) Running() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := tsc.Cleanup(); err != nil {
-			tsc.Logger.Error(fmt.Sprintf("Close connection error: " + err.Error()))
-		}
+		tsc.Cleanup()
 	}()
 
 	tsc.Logger.Info("Receive new client(%s) ", tsc.conn.RemoteAddr().String())

@@ -114,9 +114,32 @@ func emptyChannel(ch <-chan interface{}) {
 	}
 }
 
-func contains(arr []string, str string) bool {
-	for _, item := range arr {
-		if item == str {
+func splitAndClean(s *string) []string {
+	if s == nil {
+		return nil
+	}
+	parts := strings.Split(*s, ",")
+	var results []string
+	for _, part := range parts {
+		cleaned := strings.TrimSpace(part)
+		if cleaned != "" {
+			results = append(results, cleaned)
+		}
+	}
+	return results
+}
+
+//	func contains(arr []string, str string) bool {
+//		for _, item := range arr {
+//			if item == str {
+//				return true
+//			}
+//		}
+//		return false
+//	}
+func contains(value string, list []string) bool {
+	for _, v := range list {
+		if strings.TrimSpace(v) == value {
 			return true
 		}
 	}

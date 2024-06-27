@@ -16,6 +16,9 @@ destination:
   destinations:
     db2:
       dsn: "root:root_password@tcp(db2:3306)/?autocommit=false"
+      replicate:
+        do_db: test
+        ignore_tab: test.year_table
       gtidsets: ""
       loglevel: 1
       export: 9092
