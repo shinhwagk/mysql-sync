@@ -41,7 +41,7 @@ func NewTCPServer(logLevel int, listenAddress string, clientNames []string, moCh
 	clients := make(map[string]*TCPServerClient)
 
 	for _, name := range clientNames {
-		clients[name] = NewTcpServerClient1(logLevel, name)
+		clients[name] = NewTcpServerClient1(logLevel, name, metricCh)
 	}
 
 	fmt.Println("clients", len(clients))
@@ -127,10 +127,10 @@ func (ts *TCPServer) distributor() error {
 	ticker := time.NewTicker(time.Second * 1)
 	defer ticker.Stop()
 
-	// noReadyMs := 10
+	noReadyMs := 0
 
 	for {
-		if ts.clientsReady() && len(ts.moCh) >= 10 {
+		if ts.clientsReady() {
 			fetchCount := 10
 			ts.Logger.Debug("MoCh cache capacity: %d/%d.", len(ts.moCh), maxRcCnt)
 
@@ -144,7 +144,7 @@ func (ts *TCPServer) distributor() error {
 				hundredSendCount := max(minRcCnt, (lastSecondCount/minRcCnt)*minRcCnt)
 				if hundredSendCount >= 10000 {
 					fetchCount = 1000
-				} else if hundredSendCount >= 1000 {
+				} else if hundredSendCount >= 1000 || hundredSendCount >= 100 {
 					fetchCount = 100
 				} else {
 					fetchCount = 10
@@ -165,8 +165,10 @@ func (ts *TCPServer) distributor() error {
 				ts.pushClients(mos)
 				lastSecondCount += len(mos)
 			}
+			noReadyMs = 0
 		} else {
-			time.Sleep(time.Millisecond * 10)
+			time.Sleep(time.Duration(time.Millisecond) * time.Duration(noReadyMs))
+			noReadyMs += 10
 		}
 	}
 }

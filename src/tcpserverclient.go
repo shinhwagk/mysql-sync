@@ -51,9 +51,11 @@ type TCPServerClient struct {
 	SendError     error
 	SendMos       []MysqlOperation
 	SendTimestamp time.Time
+
+	metricCh chan<- MetricUnit
 }
 
-func NewTcpServerClient1(logLevel int, name string) *TCPServerClient {
+func NewTcpServerClient1(logLevel int, name string, metricCh chan<- MetricUnit) *TCPServerClient {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &TCPServerClient{
 		Logger:      NewLogger(logLevel, fmt.Sprintf("tcp client(%s)", name)),
@@ -62,6 +64,7 @@ func NewTcpServerClient1(logLevel int, name string) *TCPServerClient {
 		cancel:      cancel,
 		SendBatchID: 0,
 		State:       ClientScrap,
+		metricCh:    metricCh,
 	}
 }
 
@@ -218,6 +221,9 @@ func (tsc *TCPServerClient) pushClient() {
 		tsc.Logger.Error("Push mos to client error: %s", err.Error())
 		tsc.SendError = err
 	} else {
+		tsc.metricCh <- MetricUnit{MetricTCPServerSendOperations, uint(len(tsc.SendMos)), &tsc.Name}
+		tsc.metricCh <- MetricUnit{MetricTCPServerOutgoing, uint(tsc.encoderBuffer.Len()), &tsc.Name}
+		tsc.encoderBuffer.Reset()
 		tsc.SendTimestamp = time.Now()
 		tsc.Logger.Info("Push batch(%d) mos(%d) ok.", signal1.BatchID, len(tsc.SendMos))
 	}

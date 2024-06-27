@@ -39,6 +39,7 @@ const (
 type MetricUnit struct {
 	Name  uint
 	Value uint
+	Dest  *string
 }
 
 type PrometheusMetric struct {
@@ -62,7 +63,7 @@ type MetricDirector struct {
 	PromRegistry  *prometheus.Registry
 
 	ReplName string
-	DestName string
+	DestName *string
 }
 
 func NewMetricReplDirector(logLevel int, subsystem string, replName string, metricCh <-chan MetricUnit) *MetricDirector {
@@ -77,7 +78,6 @@ func NewMetricReplDirector(logLevel int, subsystem string, replName string, metr
 		PromRegistry:  prometheus.NewRegistry(),
 
 		ReplName: replName,
-		DestName: "",
 	}
 }
 
@@ -93,26 +93,46 @@ func NewMetricDestDirector(logLevel int, subsystem string, replName string, dest
 		PromRegistry:  prometheus.NewRegistry(),
 
 		ReplName: replName,
-		DestName: destName,
+		DestName: &destName,
 	}
 }
 
-func (md *MetricDirector) inc(name string, value uint) {
+func (md *MetricDirector) inc(name string, value uint, dest *string) {
 	if _, exists := md.metrics[name]; !exists {
-		md.registerMetric(name, "counter")
+		labelNames := make([]string, 0, 2)
+		labelNames = append(labelNames, "repl")
+		if dest != nil {
+			labelNames = append(labelNames, "dest")
+		}
+		md.registerMetric(name, "counter", labelNames)
+	}
+	var values []string
+	values = append(values, md.ReplName)
+	if dest != nil {
+		values = append(values, *dest)
 	}
 	metric, _ := md.metrics[name]
-	counter, _ := metric.PromCollector.(prometheus.Counter)
-	counter.Add(float64(value))
+	counter, _ := metric.PromCollector.(prometheus.CounterVec)
+	counter.WithLabelValues(values...).Add(float64(value))
 }
 
-func (md *MetricDirector) set(name string, value uint) {
+func (md *MetricDirector) set(name string, value uint, dest *string) {
 	if _, exists := md.metrics[name]; !exists {
-		md.registerMetric(name, "gauge")
+		labelNames := make([]string, 0, 2)
+		labelNames = append(labelNames, "repl")
+		if dest != nil {
+			labelNames = append(labelNames, "dest")
+		}
+		md.registerMetric(name, "gauge", labelNames)
+	}
+	var values []string
+	values = append(values, md.ReplName)
+	if dest != nil {
+		values = append(values, *dest)
 	}
 	metric, _ := md.metrics[name]
-	gauge, _ := metric.PromCollector.(prometheus.Gauge)
-	gauge.Set(float64(value))
+	gauge, _ := metric.PromCollector.(prometheus.GaugeVec)
+	gauge.WithLabelValues().Set(float64(value))
 }
 
 func (md *MetricDirector) Start(ctx context.Context, addr string) {
@@ -129,70 +149,66 @@ func (md *MetricDirector) Start(ctx context.Context, addr string) {
 		case metric := <-md.metricCh:
 			switch metric.Name {
 			case MetricDestDMLInsertTimes:
-				md.inc("dml_insert_times", metric.Value)
+				md.inc("dml_insert_times", metric.Value, md.DestName)
 			case MetricDestDMLDeleteTimes:
-				md.inc("dml_delete_times", metric.Value)
+				md.inc("dml_delete_times", metric.Value, md.DestName)
 			case MetricDestDMLUpdateTimes:
-				md.inc("dml_update_times", metric.Value)
+				md.inc("dml_update_times", metric.Value, md.DestName)
 			case MetricDestTrx:
-				md.inc("trx", metric.Value)
+				md.inc("trx", metric.Value, md.DestName)
 			case MetricDestMergeTrx:
-				md.inc("merge_trx", metric.Value)
+				md.inc("merge_trx", metric.Value, md.DestName)
 			case MetricDestDDLDatabaseTimes:
-				md.inc("ddl_database_times", metric.Value)
+				md.inc("ddl_database_times", metric.Value, md.DestName)
 			case MetricDestDDLTableTimes:
-				md.inc("ddl_table_times", metric.Value)
+				md.inc("ddl_table_times", metric.Value, md.DestName)
 			case MetricDestDelay:
-				md.set("delay", metric.Value)
+				md.set("delay", metric.Value, md.DestName)
 			case MetricTCPClientReceiveOperations:
-				md.inc("tcp_client_receive_operations", metric.Value)
+				md.inc("tcp_client_receive_operations", metric.Value, md.DestName)
 			case MetricTCPClientRequestOperations:
-				md.inc("tcp_client_request_operations", metric.Value)
+				md.inc("tcp_client_request_operations", metric.Value, md.DestName)
 			case MetricApplierOperations:
-				md.inc("applier_operations", metric.Value)
+				md.inc("applier_operations", metric.Value, md.DestName)
 
 			case MetricReplDelay:
-				md.set("delay", metric.Value)
+				md.set("delay", metric.Value, nil)
 			case MetricReplTrx:
-				md.inc("trx", metric.Value)
+				md.inc("trx", metric.Value, nil)
 			case MetricExtractOperations:
-				md.inc("extract_operations", metric.Value)
+				md.inc("extract_operations", metric.Value, nil)
 			case MetricTCPServerOutgoing:
-				md.inc("tcp_server_outgoing_bytes", metric.Value)
+				md.inc("tcp_server_outgoing_bytes", metric.Value, metric.Dest)
 			case MetricTCPServerSendOperations:
-				md.inc("tcp_server_send_operations", metric.Value)
+				md.inc("tcp_server_send_operations", metric.Value, metric.Dest)
 			}
 		}
 	}
 }
 
-func (md *MetricDirector) registerMetric(name string, metricType string) {
-	constLabels := make(map[string]string)
-
-	constLabels["repl"] = md.ReplName
-
-	if md.DestName != "" {
-		constLabels["dest"] = md.DestName
-	}
-
+func (md *MetricDirector) registerMetric(name string, metricType string, labelNames []string) {
 	if _, exists := md.metrics[name]; !exists {
 		var collector prometheus.Collector
 		if metricType == "gauge" {
-			collector = prometheus.NewGauge(prometheus.GaugeOpts{
-				Namespace:   md.PromNamespace,
-				Subsystem:   md.PromSubsystem,
-				Name:        name,
-				Help:        "A dynamically created gauge",
-				ConstLabels: constLabels,
-			})
+			collector = prometheus.NewGaugeVec(
+				prometheus.GaugeOpts{
+					Namespace: md.PromNamespace,
+					Subsystem: md.PromSubsystem,
+					Name:      name,
+					Help:      "A dynamically created gauge",
+				},
+				labelNames,
+			)
 		} else if metricType == "counter" {
-			collector = prometheus.NewCounter(prometheus.CounterOpts{
-				Namespace:   md.PromNamespace,
-				Subsystem:   md.PromSubsystem,
-				Name:        name,
-				Help:        "A dynamically created counter",
-				ConstLabels: constLabels,
-			})
+			collector = prometheus.NewCounterVec(
+				prometheus.CounterOpts{
+					Namespace: md.PromNamespace,
+					Subsystem: md.PromSubsystem,
+					Name:      name,
+					Help:      "A dynamically created counter",
+				},
+				labelNames,
+			)
 		}
 
 		md.PromRegistry.MustRegister(collector)
