@@ -145,8 +145,12 @@ func (ts *TCPServer) distributor() error {
 			ts.Logger.Debug("MoCh cache capacity: %d/%d.", len(ts.moCh), maxRcCnt)
 			delay := int(time.Since(tickerTimestamp).Milliseconds())
 
-			if delay <= lastDelay && fetchDelay <= lastDelay*20/100+lastDelay {
-				fetchCount += minRcCnt
+			if delay <= lastDelay {
+				if fetchDelay <= lastDelay*20/100+lastDelay {
+					fetchCount += minRcCnt
+				} else {
+					fetchCount = ((fetchCount / ((lastDelay*20/100 + lastDelay) / fetchDelay)) / 10) * 10
+				}
 			} else {
 				fetchCount -= minRcCnt
 			}
