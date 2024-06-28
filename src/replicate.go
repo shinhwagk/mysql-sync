@@ -12,10 +12,12 @@ type Replicate struct {
 func NewReplicateFilter(config *ReplicateConfig) *Replicate {
 	var DoDBs, IgnoreDBs, DoTabs, IgnoreTabs []string
 
-	DoDBs = splitAndClean(config.DoDB)
-	IgnoreDBs = splitAndClean(config.IgnoreDB)
-	DoTabs = splitAndClean(config.DoTable)
-	IgnoreTabs = splitAndClean(config.IgnoreTable)
+	if config != nil {
+		DoDBs = splitAndClean(config.DoDB)
+		IgnoreDBs = splitAndClean(config.IgnoreDB)
+		DoTabs = splitAndClean(config.DoTable)
+		IgnoreTabs = splitAndClean(config.IgnoreTable)
+	}
 
 	IgnoreDBs = append(IgnoreDBs, "mysql")
 	return &Replicate{DoDBs, IgnoreDBs, DoTabs, IgnoreTabs}
