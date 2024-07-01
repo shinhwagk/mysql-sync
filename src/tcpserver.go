@@ -129,7 +129,7 @@ func (ts *TCPServer) distributor() error {
 
 	fetchDelayMs := 0
 	noReadyMs := 0
-	baseLineSendDelayMs := 0
+	sendDelayBaseLineMs := 0
 	fetchCount := 0
 	maxFetchCount := 0
 
@@ -142,25 +142,25 @@ func (ts *TCPServer) distributor() error {
 			sendDelayMs := int(time.Since(sendTimestamp).Milliseconds())
 
 			if fetchCount >= minRcCnt {
-				baseLineSendDelayMs = int(float64(sendDelayMs) + float64(sendDelayMs)*0.2)
-				fmt.Println("ffffffff", sendDelayMs, fetchCount, baseLineSendDelayMs)
-			}
+				sendDelayBaseLineMs = int(float64(sendDelayMs) + float64(sendDelayMs)*0.2)
+				fmt.Println("ffffffff", sendDelayMs, fetchCount, sendDelayBaseLineMs, maxFetchCount)
 
-			select {
-			case <-ticker.C:
-				fetchCount = maxFetchCount
-				fmt.Println("ggggggggggggggggggggggggggggggggggg", fetchCount)
-			default:
-				if sendDelayMs <= baseLineSendDelayMs {
-					maxFetchCount = fetchCount
-					fetchCount += minRcCnt
-				} else {
-					fetchCount -= minRcCnt
+				select {
+				case <-ticker.C:
+					fetchCount = maxFetchCount
+					fmt.Println("ggggggggggggggggggggggggggggggggggg", fetchCount)
+				default:
+					if sendDelayMs <= sendDelayBaseLineMs {
+						maxFetchCount = fetchCount
+						fetchCount += minRcCnt
+					} else {
+						fetchCount -= minRcCnt
+					}
 				}
 			}
 
 			moSize := len(ts.moCh)
-			fmt.Println("fffffff", moSize, fetchCount, baseLineSendDelayMs)
+			fmt.Println("fffffff", moSize, fetchCount, sendDelayBaseLineMs)
 			if fetchCount > moSize {
 				fetchCount = moSize
 			}
