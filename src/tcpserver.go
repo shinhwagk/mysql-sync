@@ -167,7 +167,7 @@ func (ts *TCPServer) distributor() error {
 				}
 			}
 
-			fetchCount = max(minRcCnt, min(fetchCount, len(ts.moCh))/minRcCnt*minRcCnt) // multiples of minRcCnt
+			fetchCount = max(minRcCnt, min(fetchCount, len(ts.moCh)/minRcCnt*minRcCnt)) // multiples of minRcCnt
 			fmt.Println("xxxxxxx", fetchCount, sendDelayMs, fetchDelayMs, sendBaseLineDelayMs, len(ts.moCh))
 
 			fetchTimestamp := time.Now()
