@@ -145,7 +145,7 @@ func (ts *TCPServer) distributor() error {
 
 			if fetchCount >= minRcCnt {
 				if resetBaseLine {
-					sendBaseLineDelayMs := int(float64(sendDelayMs) * 1.2)
+					sendBaseLineDelayMs = int(float64(sendDelayMs) * 1.2)
 					fetchCount = beforeFetchCount
 					resetBaseLine = false
 					fmt.Println("ffffffff", sendDelayMs, fetchCount, sendBaseLineDelayMs, fetchCount)
@@ -157,8 +157,10 @@ func (ts *TCPServer) distributor() error {
 					fetchCount = minRcCnt
 					resetBaseLine = true
 				default:
+					fmt.Println("aaaaaa", sendDelayMs, sendBaseLineDelayMs, resetBaseLine)
 					if sendDelayMs <= sendBaseLineDelayMs {
 						fetchCount += minRcCnt
+						fmt.Println("aaaaaa", fetchCount)
 					} else {
 						fetchCount -= minRcCnt
 					}
@@ -166,7 +168,7 @@ func (ts *TCPServer) distributor() error {
 			}
 
 			fetchCount = max(minRcCnt, min(fetchCount, len(ts.moCh))/minRcCnt*minRcCnt) // multiples of minRcCnt
-			fmt.Println("xxxxxxx", fetchCount, sendDelayMs, fetchDelayMs, len(ts.moCh))
+			fmt.Println("xxxxxxx", fetchCount, sendDelayMs, fetchDelayMs, sendBaseLineDelayMs, len(ts.moCh))
 
 			fetchTimestamp := time.Now()
 			if mos, err := ts.fetchMos(fetchCount); err != nil {
