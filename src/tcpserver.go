@@ -139,58 +139,58 @@ func (ts *TCPServer) distributor() error {
 	defer ticker.Stop()
 
 	for {
-		if ts.clientsReady() {
-			ts.Logger.Debug("MoCh cache capacity: %d/%d.", len(ts.moCh), maxRcCnt)
-			sendDelayMs := int(time.Since(sendTimestamp).Milliseconds())
-
-			if fetchCount >= minRcCnt {
-				if resetBaseLine {
-					sendBaseLineDelayMs = int(float64(sendDelayMs) * 1.2)
-					sendBaseLineMaxCount = sendBaseLineMaxCount * 95 / 100 / minRcCnt * minRcCnt // multiples of minRcCnt
-					resetBaseLine = false
-					fmt.Println("ffffffff", sendDelayMs, fetchCount, sendBaseLineDelayMs, fetchCount, sendBaseLineMaxCount)
-				}
-
-				select {
-				case <-ticker.C:
-					fetchCount = minRcCnt
-					resetBaseLine = true
-				default:
-					if sendDelayMs <= sendBaseLineDelayMs {
-						fetchCount += minRcCnt
-					} else {
-						fetchCount -= minRcCnt
-					}
-					sendBaseLineMaxCount = max(fetchCount, sendBaseLineMaxCount)
-
-					moCacheSize := len(ts.moCh) / minRcCnt * minRcCnt // multiples of minRcCnt
-					fetchCount = min(sendBaseLineMaxCount, moCacheSize)
-				}
-			}
-
-			fetchCount = max(minRcCnt, fetchCount)
-			fmt.Println("xxxxxxx", fetchCount, sendDelayMs, fetchDelayMs, sendBaseLineDelayMs, resetBaseLine, sendBaseLineMaxCount, len(ts.moCh))
-
-			fetchTimestamp := time.Now()
-			if mos, err := ts.fetchMos(fetchCount); err != nil {
-				ts.Logger.Error("Fetch mos fetch count: %d err: %s", fetchCount, err.Error())
-				return err
-			} else {
-				fetchDelayMs = int(time.Since(fetchTimestamp).Milliseconds())
-				fmt.Println("fetchcccccc", int(time.Since(fetchTimestamp).Milliseconds()))
-				ts.BatchID += 1
-				ts.Logger.Info("Push batch(%d) mos(%d) to clients.", ts.BatchID, len(mos))
-				sendTimestamp = time.Now()
-				ts.pushClients(mos)
-			}
-			noReadyMs = 0
-		} else {
+		if !ts.clientsReady() {
 			time.Sleep(time.Millisecond * time.Duration(noReadyMs))
 			ts.Logger.Debug("Clients not ready sleep: %d.", noReadyMs)
 			if noReadyMs <= 1000 {
 				noReadyMs += 10
 			}
+			continue
 		}
+
+		ts.Logger.Debug("MoCh cache capacity: %d/%d.", len(ts.moCh), maxRcCnt)
+		sendDelayMs := int(time.Since(sendTimestamp).Milliseconds())
+
+		if fetchCount >= minRcCnt {
+			if resetBaseLine {
+				sendBaseLineDelayMs = int(float64(sendDelayMs) * 1.2)
+				resetBaseLine = false
+				fmt.Println("ffffffff", sendDelayMs, fetchCount, sendBaseLineDelayMs, fetchCount, sendBaseLineMaxCount)
+			}
+
+			select {
+			case <-ticker.C:
+				fetchCount = minRcCnt
+				resetBaseLine = true
+			default:
+				if sendDelayMs <= sendBaseLineDelayMs {
+					fetchCount += minRcCnt
+					sendBaseLineMaxCount = max(fetchCount, sendBaseLineMaxCount)
+				} else {
+					fetchCount -= minRcCnt
+					sendBaseLineMaxCount = sendBaseLineMaxCount * 95 / 100 / minRcCnt * minRcCnt // multiples of minRcCnt
+				}
+				moCacheSize := len(ts.moCh) / minRcCnt * minRcCnt // multiples of minRcCnt
+				fetchCount = min(sendBaseLineMaxCount, moCacheSize)
+			}
+		}
+
+		fetchCount = max(minRcCnt, fetchCount)
+		fmt.Println("xxxxxxx", fetchCount, sendDelayMs, fetchDelayMs, sendBaseLineDelayMs, resetBaseLine, sendBaseLineMaxCount, len(ts.moCh))
+
+		fetchTimestamp := time.Now()
+		if mos, err := ts.fetchMos(fetchCount); err != nil {
+			ts.Logger.Error("Fetch mos fetch count: %d err: %s", fetchCount, err.Error())
+			return err
+		} else {
+			fetchDelayMs = int(time.Since(fetchTimestamp).Milliseconds())
+			fmt.Println("fetchcccccc", int(time.Since(fetchTimestamp).Milliseconds()))
+			ts.BatchID += 1
+			ts.Logger.Info("Push batch(%d) mos(%d) to clients.", ts.BatchID, len(mos))
+			sendTimestamp = time.Now()
+			ts.pushClients(mos)
+		}
+		noReadyMs = 0
 	}
 }
 
