@@ -172,11 +172,12 @@ func (ts *TCPServer) distributor() error {
 					}
 				}
 				moCacheSize := len(ts.moCh) / minRcCnt * minRcCnt // multiples of minRcCnt
-				fetchCount = min(max(fetchCount, sendBaseLineMaxCount), moCacheSize)
+				fetchCount = max(fetchCount, sendBaseLineMaxCount)
+				fetchCount = min(fetchCount, moCacheSize)
+				fetchCount = max(fetchCount, minRcCnt)
 			}
 		}
 
-		fetchCount = max(minRcCnt, fetchCount)
 		fmt.Println("xxxxxxx", fetchCount, sendDelayMs, fetchDelayMs, sendBaseLineDelayMs, resetBaseLine, sendBaseLineMaxCount, len(ts.moCh))
 
 		fetchTimestamp := time.Now()
