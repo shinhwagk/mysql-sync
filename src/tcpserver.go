@@ -140,13 +140,14 @@ func (ts *TCPServer) distributor() error {
 
 	for {
 		if !ts.clientsReady() {
-			time.Sleep(time.Millisecond * time.Duration(noReadyMs))
-			ts.Logger.Debug("Clients not ready sleep: %d.", noReadyMs)
 			if noReadyMs <= 1000 {
 				noReadyMs += 10
 			}
+			ts.Logger.Debug("Clients not ready sleep: %d.", noReadyMs)
+			time.Sleep(time.Millisecond * time.Duration(noReadyMs))
 			continue
 		}
+		noReadyMs = 0
 
 		ts.Logger.Debug("MoCh cache capacity: %d/%d.", len(ts.moCh), maxRcCnt)
 		sendDelayMs := int(time.Since(sendTimestamp).Milliseconds())
@@ -167,18 +168,16 @@ func (ts *TCPServer) distributor() error {
 					sendBaseLineMaxCount = max(fetchCount, sendBaseLineMaxCount)
 					fetchCount += minRcCnt
 				} else {
-					if fetchCount >= sendBaseLineMaxCount*90/100 {
-						sendBaseLineMaxCount = sendBaseLineMaxCount * 90 / 100 / minRcCnt * minRcCnt // multiples of minRcCnt
-					}
+					sendBaseLineMaxCount -= minRcCnt
+					fetchCount = sendBaseLineMaxCount
 				}
 				moCacheSize := len(ts.moCh) / minRcCnt * minRcCnt // multiples of minRcCnt
-				fetchCount = max(fetchCount, sendBaseLineMaxCount)
 				fetchCount = min(fetchCount, moCacheSize)
-				fetchCount = max(fetchCount, minRcCnt)
 			}
 		}
 
-		fmt.Println("xxxxxxx", fetchCount, sendDelayMs, fetchDelayMs, sendBaseLineDelayMs, resetBaseLine, sendBaseLineMaxCount, len(ts.moCh))
+		fetchCount = max(fetchCount, minRcCnt)
+		fmt.Println("xxxxxxxf", fetchCount, sendDelayMs, fetchDelayMs, sendBaseLineDelayMs, resetBaseLine, sendBaseLineMaxCount, len(ts.moCh))
 
 		fetchTimestamp := time.Now()
 		if mos, err := ts.fetchMos(fetchCount); err != nil {
@@ -192,7 +191,6 @@ func (ts *TCPServer) distributor() error {
 			sendTimestamp = time.Now()
 			ts.pushClients(mos)
 		}
-		noReadyMs = 0
 	}
 }
 
