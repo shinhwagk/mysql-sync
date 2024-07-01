@@ -168,8 +168,7 @@ func (ts *TCPServer) distributor() error {
 					sendBaseLineMaxCount = max(fetchCount, sendBaseLineMaxCount)
 					fetchCount += minRcCnt
 				} else {
-					sendBaseLineMaxCount -= minRcCnt
-					fetchCount = sendBaseLineMaxCount
+					sendBaseLineMaxCount = int(float64(sendBaseLineMaxCount)/float64(sendDelayMs)/float64(sendBaseLineDelayMs)) / minRcCnt * minRcCnt
 				}
 				moCacheSize := len(ts.moCh) / minRcCnt * minRcCnt // multiples of minRcCnt
 				fetchCount = min(fetchCount, moCacheSize)
