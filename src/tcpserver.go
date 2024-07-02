@@ -163,34 +163,30 @@ func (ts *TCPServer) distributor() error {
 				fmt.Println("xxxxxxx", sendDelayMs, fetchCount, sendBaseLineDelayMs, fetchCount, sendBaseLineMaxCount)
 			} else {
 				delayMsSlice = updateSlice(delayMsSlice, sendDelayMs)
-			}
 
-			select {
-			case <-ticker.C:
-				fetchCount = minRcCnt
-				resetBaseLine = true
-			default:
-				avgSendDelayMs := calculateAdjustedMean(delayMsSlice)
-				fmt.Println("xxxxxxx avgSendDelayMs:", avgSendDelayMs, sendBaseLineDelayMs)
+				select {
+				case <-ticker.C:
+					fetchCount = minRcCnt
+					resetBaseLine = true
+				default:
+					avgSendDelayMs := calculateAdjustedMean(delayMsSlice)
+					fmt.Println("xxxxxxx avgSendDelayMs:", avgSendDelayMs, sendBaseLineDelayMs)
 
-				if avgSendDelayMs <= sendBaseLineDelayMs {
-					sendBaseLineMaxCount = max(fetchCount, sendBaseLineMaxCount)
-					fetchCount += minRcCnt
-					// fetchCount = max(fetchCount, sendBaseLineMaxCount)
-				} else {
-					sendBaseLineMaxCount -= minRcCnt
-					sendBaseLineMaxCount = max(sendBaseLineMaxCount, minRcCnt)
-					fetchCount -= minRcCnt
-					// sendBaseLineMaxCount = int(float64(sendBaseLineMaxCount) / (float64(avgSendDelayms) / float64(sendBaseLineDelayMs)))
-					// fetchCount = sendBaseLineMaxCount
+					if avgSendDelayMs <= sendBaseLineDelayMs {
+						sendBaseLineMaxCount = max(fetchCount, sendBaseLineMaxCount)
+						fetchCount += minRcCnt
+					} else {
+						sendBaseLineMaxCount -= minRcCnt
+						sendBaseLineMaxCount = max(sendBaseLineMaxCount, minRcCnt) // not less than minRcCnt
+						fetchCount -= minRcCnt
+					}
+					fmt.Println("xxxxxxx max(fetchCount, sendBaseLineMaxCount)", fetchCount, sendBaseLineMaxCount)
+					fetchCount = max(fetchCount, sendBaseLineMaxCount)
 				}
-				fmt.Println("xxxxxxx max(fetchCount, sendBaseLineMaxCount)", fetchCount, sendBaseLineMaxCount)
-				fetchCount = max(fetchCount, sendBaseLineMaxCount)
-				fetchCount = min(fetchCount, len(ts.moCh))
-				// fetchCount = min(fetchCount, len(ts.moCh))
 			}
 		}
 
+		fetchCount = min(fetchCount, len(ts.moCh))
 		// multiples of minRcCnt
 		fetchCount = fetchCount / minRcCnt * minRcCnt
 		// Ensure fetchCount is never less than minRcCnt. This line is critical and must remain here for correct functionality.
