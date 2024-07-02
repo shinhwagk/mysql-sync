@@ -145,3 +145,18 @@ func contains(value string, list []string) bool {
 	}
 	return false
 }
+
+func updateSlice(slice []int, newItem int, maxSize int) ([]int, int) {
+	slice = append(slice, newItem)
+
+	if len(slice) > maxSize {
+		slice = slice[1:]
+	}
+	total := 0
+	for _, value := range slice {
+		total += value
+	}
+	average := int(float64(total) / float64(len(slice)))
+
+	return slice, average
+}
