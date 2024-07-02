@@ -155,14 +155,13 @@ func (ts *TCPServer) distributor() error {
 		ts.Logger.Debug("MoCh cache capacity: %d/%d.", len(ts.moCh), maxRcCnt)
 		sendDelayMs := max(int(time.Since(sendTimestamp).Milliseconds()), 1) // min delay 1ms
 
-		delayMsSlice = updateSlice(delayMsSlice, sendDelayMs)
-		avgSendDelayms := calculateAdjustedMean(delayMsSlice)
-
 		if fetchCount >= minRcCnt {
 			if resetBaseLine {
 				sendBaseLineDelayMs = int(float64(sendDelayMs) * 1.2)
 				resetBaseLine = false
 				fmt.Println("ffffffff", sendDelayMs, fetchCount, sendBaseLineDelayMs, fetchCount, sendBaseLineMaxCount)
+			} else {
+				delayMsSlice = updateSlice(delayMsSlice, sendDelayMs)
 			}
 
 			select {
@@ -170,14 +169,19 @@ func (ts *TCPServer) distributor() error {
 				fetchCount = minRcCnt
 				resetBaseLine = true
 			default:
-				if avgSendDelayms <= sendBaseLineDelayMs {
+				avgSendDelayMs := calculateAdjustedMean(delayMsSlice)
+				fmt.Println("avgSendDelayMs:", avgSendDelayMs, sendBaseLineDelayMs)
+
+				if avgSendDelayMs <= sendBaseLineDelayMs {
 					sendBaseLineMaxCount = max(fetchCount, sendBaseLineMaxCount)
 					fetchCount += minRcCnt
 					// fetchCount = max(fetchCount, sendBaseLineMaxCount)
 				} else {
-					sendBaseLineMaxCount = int(float64(sendBaseLineMaxCount) / (float64(avgSendDelayms) / float64(sendBaseLineDelayMs)))
+					sendBaseLineMaxCount -= minRcCnt
+					// sendBaseLineMaxCount = int(float64(sendBaseLineMaxCount) / (float64(avgSendDelayms) / float64(sendBaseLineDelayMs)))
 					// fetchCount = sendBaseLineMaxCount
 				}
+				fmt.Println("max(fetchCount, sendBaseLineMaxCount)", fetchCount, sendBaseLineMaxCount)
 				fetchCount = max(fetchCount, sendBaseLineMaxCount)
 				fetchCount = min(fetchCount, len(ts.moCh))
 				// fetchCount = min(fetchCount, len(ts.moCh))
