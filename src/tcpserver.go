@@ -179,6 +179,7 @@ func (ts *TCPServer) distributor() error {
 					// fetchCount = max(fetchCount, sendBaseLineMaxCount)
 				} else {
 					sendBaseLineMaxCount -= minRcCnt
+					sendBaseLineMaxCount = max(sendBaseLineMaxCount, minRcCnt)
 					fetchCount -= minRcCnt
 					// sendBaseLineMaxCount = int(float64(sendBaseLineMaxCount) / (float64(avgSendDelayms) / float64(sendBaseLineDelayMs)))
 					// fetchCount = sendBaseLineMaxCount
