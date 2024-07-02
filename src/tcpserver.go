@@ -159,7 +159,7 @@ func (ts *TCPServer) distributor() error {
 			if resetBaseLine {
 				sendBaseLineDelayMs = int(float64(sendDelayMs) * 1.2)
 				resetBaseLine = false
-				fetchCount = sendBaseLineMaxCount
+				fetchCount = max(sendBaseLineMaxCount, fetchCount)
 				fmt.Println("xxxxxxx", sendDelayMs, fetchCount, sendBaseLineDelayMs, fetchCount, sendBaseLineMaxCount)
 			} else {
 				delayMsSlice = updateSlice(delayMsSlice, sendDelayMs)
@@ -176,9 +176,8 @@ func (ts *TCPServer) distributor() error {
 						sendBaseLineMaxCount = max(fetchCount, sendBaseLineMaxCount)
 						fetchCount += minRcCnt
 					} else {
-						sendBaseLineMaxCount -= minRcCnt
-						sendBaseLineMaxCount = max(sendBaseLineMaxCount, minRcCnt) // not less than minRcCnt
-						fetchCount -= minRcCnt
+						sendBaseLineMaxCount = max(sendBaseLineMaxCount-minRcCnt, minRcCnt) // not less than minRcCnt
+						fetchCount = max(fetchCount-minRcCnt, minRcCnt)                     // not less than minRcCnt
 					}
 					fmt.Println("xxxxxxx max(fetchCount, sendBaseLineMaxCount)", fetchCount, sendBaseLineMaxCount)
 					fetchCount = max(fetchCount, sendBaseLineMaxCount)
