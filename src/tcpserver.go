@@ -135,8 +135,8 @@ func (ts *TCPServer) distributor() error {
 	fetchCount := 0
 	resetBaseLine := true
 
-	delays := []int{}
-	avgSendDelayms := 0
+	// min delay 1ms
+	delayMsSlice := make([]int, 10) // maxSize must greater then 3
 
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
@@ -153,14 +153,14 @@ func (ts *TCPServer) distributor() error {
 		noReadyMs = 0
 
 		ts.Logger.Debug("MoCh cache capacity: %d/%d.", len(ts.moCh), maxRcCnt)
-		sendDelayMs := int(time.Since(sendTimestamp).Milliseconds())
+		sendDelayMs := max(int(time.Since(sendTimestamp).Milliseconds()), 1) // min delay 1ms
 
-		delays, avgSendDelayms = updateSlice(delays, sendDelayMs, 10)
-		avgSendDelayms = max(avgSendDelayms, 1) // min baseline 1ms
+		delayMsSlice = updateSlice(delayMsSlice, sendDelayMs)
+		avgSendDelayms := calculateAdjustedMean(delayMsSlice)
 
 		if fetchCount >= minRcCnt {
 			if resetBaseLine {
-				sendBaseLineDelayMs = max(int(float64(sendDelayMs)*1.2), 1) // min baseline 1ms
+				sendBaseLineDelayMs = int(float64(sendDelayMs) * 1.2)
 				resetBaseLine = false
 				fmt.Println("ffffffff", sendDelayMs, fetchCount, sendBaseLineDelayMs, fetchCount, sendBaseLineMaxCount)
 			}
@@ -173,16 +173,20 @@ func (ts *TCPServer) distributor() error {
 				if avgSendDelayms <= sendBaseLineDelayMs {
 					sendBaseLineMaxCount = max(fetchCount, sendBaseLineMaxCount)
 					fetchCount += minRcCnt
-					fetchCount = max(fetchCount, sendBaseLineMaxCount)
+					// fetchCount = max(fetchCount, sendBaseLineMaxCount)
 				} else {
 					sendBaseLineMaxCount = int(float64(sendBaseLineMaxCount) / (float64(avgSendDelayms) / float64(sendBaseLineDelayMs)))
-					fetchCount = sendBaseLineMaxCount
+					// fetchCount = sendBaseLineMaxCount
 				}
+				fetchCount = max(fetchCount, sendBaseLineMaxCount)
 				fetchCount = min(fetchCount, len(ts.moCh))
+				// fetchCount = min(fetchCount, len(ts.moCh))
 			}
 		}
 
-		fetchCount = fetchCount / minRcCnt * minRcCnt // multiples of minRcCnt
+		// multiples of minRcCnt
+		fetchCount = fetchCount / minRcCnt * minRcCnt
+		// Ensure fetchCount is never less than minRcCnt. This line is critical and must remain here for correct functionality.
 		fetchCount = max(fetchCount, minRcCnt)
 		fmt.Println("xxxxxxxf", fetchCount, sendDelayMs, fetchDelayMs, sendBaseLineDelayMs, resetBaseLine, sendBaseLineMaxCount, len(ts.moCh))
 

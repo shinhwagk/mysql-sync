@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 
 	"github.com/go-mysql-org/go-mysql/mysql"
@@ -146,17 +147,27 @@ func contains(value string, list []string) bool {
 	return false
 }
 
-func updateSlice(slice []int, newItem int, maxSize int) ([]int, int) {
-	slice = append(slice, newItem)
-
-	if len(slice) > maxSize {
-		slice = slice[1:]
+func updateSlice(slice []int, newItem int) []int {
+	for i, value := range slice {
+		if value == 0 {
+			slice[i] = newItem
+		}
 	}
+	slice = append(slice[1:], newItem)
+	return slice
+}
+
+func calculateAdjustedMean(slice []int) int {
+	sliceCopy := make([]int, len(slice))
+	copy(sliceCopy, slice)
+
+	sort.Ints(sliceCopy)
+	sliceCopy = sliceCopy[1 : len(slice)-1]
+
 	total := 0
-	for _, value := range slice {
+	for _, value := range sliceCopy {
 		total += value
 	}
-	average := int(float64(total) / float64(len(slice)))
 
-	return slice, average
+	return total / len(sliceCopy)
 }
