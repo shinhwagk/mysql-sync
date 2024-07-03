@@ -1,0 +1,9 @@
+groups:
+  - name: MysqlSync
+    rules: 
+      - alert: MysqlSync Delay
+        expr: clamp_min(mysqlsync_destination_delay{repl="${repl}"} - 1 , 0) >= 10
+        for: 1m
+        annotations:
+          summary: "MysqlSync Delay Repl:{{ $labels.repl }} -> Dest:{{ $labels.dest }}"
+          description: "MysqlSync Delay repl:{{ $labels.repl }} -> dest:{{ $labels.dest }}, Value: {{ .Value }}s."

@@ -63,6 +63,7 @@
                             "mode": "off"
                         }
                     },
+                    "decimals": 0,
                     "mappings": [],
                     "thresholds": {
                         "mode": "absolute",
@@ -119,9 +120,9 @@
                         "uid": "cdp1kz3veskcgc"
                     },
                     "editorMode": "code",
-                    "expr": "mysqlsync_destination_delay",
+                    "expr": "clamp_min(mysqlsync_destination_delay{repl=\"${repl}\"} - 1 , 0)",
                     "instant": false,
-                    "legendFormat": "__auto",
+                    "legendFormat": "{{repl}} -> {{dest}}",
                     "range": true,
                     "refId": "A"
                 }
@@ -194,7 +195,7 @@
                 "x": 8,
                 "y": 0
             },
-            "id": 6,
+            "id": 2,
             "options": {
                 "legend": {
                     "calcs": [],
@@ -213,43 +214,38 @@
                         "type": "prometheus",
                         "uid": "cdp1kz3veskcgc"
                     },
-                    "editorMode": "code",
-                    "expr": "delta(mysqlsync_destination_dml_delete_times[1m])",
+                    "disableTextWrap": false,
+                    "editorMode": "builder",
+                    "expr": "irate(mysqlsync_destination_applier_operations{repl=\"${repl}\", dest=~\"${dests}\"}[1m])",
+                    "fullMetaSearch": false,
+                    "includeNullMetadata": true,
                     "instant": false,
-                    "interval": "1m",
-                    "legendFormat": "delete",
+                    "interval": "15s",
+                    "legendFormat": "applier-{{dest}}",
                     "range": true,
-                    "refId": "A"
+                    "refId": "A",
+                    "useBackend": false
                 },
                 {
                     "datasource": {
                         "type": "prometheus",
                         "uid": "cdp1kz3veskcgc"
                     },
-                    "editorMode": "code",
-                    "expr": "delta(mysqlsync_destination_dml_insert_times[1m])",
+                    "disableTextWrap": false,
+                    "editorMode": "builder",
+                    "expr": "irate(mysqlsync_replication_extract_operations{repl=\"${repl}\"}[1m])",
+                    "fullMetaSearch": false,
                     "hide": false,
+                    "includeNullMetadata": true,
                     "instant": false,
-                    "interval": "1m",
-                    "legendFormat": "insert",
+                    "interval": "15s",
+                    "legendFormat": "extract-{{repl}}",
                     "range": true,
-                    "refId": "B"
-                },
-                {
-                    "datasource": {
-                        "type": "prometheus",
-                        "uid": "cdp1kz3veskcgc"
-                    },
-                    "editorMode": "code",
-                    "expr": "delta(mysqlsync_destination_dml_update_times[1m])",
-                    "hide": false,
-                    "instant": false,
-                    "legendFormat": "update",
-                    "range": true,
-                    "refId": "C"
+                    "refId": "B",
+                    "useBackend": false
                 }
             ],
-            "title": "DML",
+            "title": "Extract/s & Applier/s ",
             "type": "timeseries"
         },
         {
@@ -317,7 +313,7 @@
                 "x": 16,
                 "y": 0
             },
-            "id": 2,
+            "id": 5,
             "options": {
                 "legend": {
                     "calcs": [],
@@ -336,30 +332,38 @@
                         "type": "prometheus",
                         "uid": "cdp1kz3veskcgc"
                     },
-                    "editorMode": "code",
-                    "expr": "delta(mysqlsync_destination_applier_operations[1m])",
+                    "disableTextWrap": false,
+                    "editorMode": "builder",
+                    "expr": "irate(mysqlsync_replication_tcp_server_send_operations[1m])",
+                    "fullMetaSearch": false,
+                    "includeNullMetadata": true,
                     "instant": false,
                     "interval": "1m",
-                    "legendFormat": "applier",
+                    "legendFormat": "repl-send",
                     "range": true,
-                    "refId": "A"
+                    "refId": "A",
+                    "useBackend": false
                 },
                 {
                     "datasource": {
                         "type": "prometheus",
                         "uid": "cdp1kz3veskcgc"
                     },
-                    "editorMode": "code",
-                    "expr": "delta(mysqlsync_replication_extract_operations[1m])",
+                    "disableTextWrap": false,
+                    "editorMode": "builder",
+                    "expr": "irate(mysqlsync_destination_tcp_client_receive_operations[1m])",
+                    "fullMetaSearch": false,
                     "hide": false,
+                    "includeNullMetadata": true,
                     "instant": false,
                     "interval": "1m",
-                    "legendFormat": "extract",
+                    "legendFormat": "dest-receive",
                     "range": true,
-                    "refId": "B"
+                    "refId": "B",
+                    "useBackend": false
                 }
             ],
-            "title": "Extract & Applier",
+            "title": "Tcp Send/s & Receive/s",
             "type": "timeseries"
         },
         {
@@ -423,8 +427,147 @@
             },
             "gridPos": {
                 "h": 8,
-                "w": 12,
+                "w": 8,
                 "x": 0,
+                "y": 8
+            },
+            "id": 6,
+            "options": {
+                "legend": {
+                    "calcs": [
+                        "last"
+                    ],
+                    "displayMode": "list",
+                    "placement": "bottom",
+                    "showLegend": true
+                },
+                "tooltip": {
+                    "mode": "single",
+                    "sort": "none"
+                }
+            },
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "cdp1kz3veskcgc"
+                    },
+                    "disableTextWrap": false,
+                    "editorMode": "builder",
+                    "expr": "irate(mysqlsync_destination_dml_delete_times{repl=\"${repl}\", dest=~\"${dests}\"}[1m])",
+                    "fullMetaSearch": false,
+                    "includeNullMetadata": true,
+                    "instant": false,
+                    "interval": "1m",
+                    "legendFormat": "delete-{{dest}}",
+                    "range": true,
+                    "refId": "A",
+                    "useBackend": false
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "cdp1kz3veskcgc"
+                    },
+                    "disableTextWrap": false,
+                    "editorMode": "builder",
+                    "expr": "irate(mysqlsync_destination_dml_insert_times{repl=\"${repl}\", dest=~\"${dests}\"}[1m])",
+                    "fullMetaSearch": false,
+                    "hide": false,
+                    "includeNullMetadata": true,
+                    "instant": false,
+                    "interval": "1m",
+                    "legendFormat": "insert-{{dest}}",
+                    "range": true,
+                    "refId": "B",
+                    "useBackend": false
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "cdp1kz3veskcgc"
+                    },
+                    "disableTextWrap": false,
+                    "editorMode": "builder",
+                    "expr": "irate(mysqlsync_destination_dml_update_times{repl=\"${repl}\", dest=~\"${dests}\"}[1m])",
+                    "fullMetaSearch": false,
+                    "hide": false,
+                    "includeNullMetadata": true,
+                    "instant": false,
+                    "interval": "1m",
+                    "legendFormat": "update-{{dest}}",
+                    "range": true,
+                    "refId": "C",
+                    "useBackend": false
+                }
+            ],
+            "title": "Insert/s & Delete/s & Update/s",
+            "type": "timeseries"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "cdp1kz3veskcgc"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "custom": {
+                        "axisBorderShow": false,
+                        "axisCenteredZero": false,
+                        "axisColorMode": "text",
+                        "axisLabel": "",
+                        "axisPlacement": "auto",
+                        "barAlignment": 0,
+                        "drawStyle": "line",
+                        "fillOpacity": 0,
+                        "gradientMode": "none",
+                        "hideFrom": {
+                            "legend": false,
+                            "tooltip": false,
+                            "viz": false
+                        },
+                        "insertNulls": false,
+                        "lineInterpolation": "linear",
+                        "lineWidth": 1,
+                        "pointSize": 5,
+                        "scaleDistribution": {
+                            "type": "linear"
+                        },
+                        "showPoints": "auto",
+                        "spanNulls": false,
+                        "stacking": {
+                            "group": "A",
+                            "mode": "none"
+                        },
+                        "thresholdsStyle": {
+                            "mode": "off"
+                        }
+                    },
+                    "decimals": 0,
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "red",
+                                "value": 80
+                            }
+                        ]
+                    }
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 8,
+                "x": 8,
                 "y": 8
             },
             "id": 3,
@@ -446,30 +589,38 @@
                         "type": "prometheus",
                         "uid": "cdp1kz3veskcgc"
                     },
-                    "editorMode": "code",
-                    "expr": "delta(mysqlsync_destination_trx[1m])",
+                    "disableTextWrap": false,
+                    "editorMode": "builder",
+                    "expr": "irate(mysqlsync_destination_trx{repl=\"${repl}\", dest=~\"${dests}\"}[1m])",
+                    "fullMetaSearch": false,
+                    "includeNullMetadata": true,
                     "instant": false,
                     "interval": "1m",
-                    "legendFormat": "trx",
+                    "legendFormat": "trx-{{dest}}",
                     "range": true,
-                    "refId": "A"
+                    "refId": "A",
+                    "useBackend": false
                 },
                 {
                     "datasource": {
                         "type": "prometheus",
                         "uid": "cdp1kz3veskcgc"
                     },
-                    "editorMode": "code",
-                    "expr": "delta(mysqlsync_destination_merge_trx[1m])",
+                    "disableTextWrap": false,
+                    "editorMode": "builder",
+                    "expr": "irate(mysqlsync_destination_merge_trx{repl=\"${repl}\", dest=~\"${dests}\"}[1m])",
+                    "fullMetaSearch": false,
                     "hide": false,
+                    "includeNullMetadata": true,
                     "instant": false,
                     "interval": "1m",
-                    "legendFormat": "merge-trx",
+                    "legendFormat": "merge-trx-{{dest}}",
                     "range": true,
-                    "refId": "B"
+                    "refId": "B",
+                    "useBackend": false
                 }
             ],
-            "title": "Transaction",
+            "title": "Trx/s & MergeTrx/s",
             "type": "timeseries"
         },
         {
@@ -514,6 +665,7 @@
                             "mode": "off"
                         }
                     },
+                    "decimals": 0,
                     "mappings": [],
                     "thresholds": {
                         "mode": "absolute",
@@ -529,15 +681,28 @@
                         ]
                     }
                 },
-                "overrides": []
+                "overrides": [
+                    {
+                        "matcher": {
+                            "id": "byType",
+                            "options": "number"
+                        },
+                        "properties": [
+                            {
+                                "id": "unit",
+                                "value": "bytes"
+                            }
+                        ]
+                    }
+                ]
             },
             "gridPos": {
-                "h": 8,
-                "w": 12,
-                "x": 12,
+                "h": 7,
+                "w": 8,
+                "x": 16,
                 "y": 8
             },
-            "id": 5,
+            "id": 7,
             "options": {
                 "legend": {
                     "calcs": [],
@@ -556,38 +721,85 @@
                         "type": "prometheus",
                         "uid": "cdp1kz3veskcgc"
                     },
-                    "editorMode": "code",
-                    "expr": "delta(mysqlsync_replication_tcp_server_send_operations[1m])",
+                    "disableTextWrap": false,
+                    "editorMode": "builder",
+                    "expr": "irate(mysqlsync_replication_tcp_server_outgoing_bytes{repl=\"$repl\"}[1m])",
+                    "fullMetaSearch": false,
+                    "includeNullMetadata": true,
                     "instant": false,
                     "interval": "1m",
-                    "legendFormat": "repl-send",
+                    "legendFormat": "__auto",
                     "range": true,
-                    "refId": "A"
-                },
-                {
-                    "datasource": {
-                        "type": "prometheus",
-                        "uid": "cdp1kz3veskcgc"
-                    },
-                    "editorMode": "code",
-                    "expr": "delta(mysqlsync_destination_tcp_client_receive_operations[1m])",
-                    "hide": false,
-                    "instant": false,
-                    "interval": "1m",
-                    "legendFormat": "dest-receive",
-                    "range": true,
-                    "refId": "B"
+                    "refId": "A",
+                    "useBackend": false
                 }
             ],
-            "title": "Tcp send & receive",
+            "title": "Tcp Outgoing/s",
             "type": "timeseries"
         }
     ],
-    "refresh": "10s",
+    "refresh": "5s",
     "schemaVersion": 39,
     "tags": [],
     "templating": {
-        "list": []
+        "list": [
+            {
+                "current": {
+                    "selected": false,
+                    "text": "sc_db3_3310",
+                    "value": "sc_db3_3310"
+                },
+                "datasource": {
+                    "type": "prometheus",
+                    "uid": "cdp1kz3veskcgc"
+                },
+                "definition": "label_values(mysqlsync_replication_extract_operations,repl)",
+                "hide": 0,
+                "includeAll": false,
+                "label": "Repl",
+                "multi": false,
+                "name": "repl",
+                "options": [],
+                "query": {
+                    "qryType": 1,
+                    "query": "label_values(mysqlsync_replication_extract_operations,repl)",
+                    "refId": "PrometheusVariableQueryEditor-VariableQuery"
+                },
+                "refresh": 1,
+                "regex": "",
+                "skipUrlSync": false,
+                "sort": 0,
+                "type": "query"
+            },
+            {
+                "current": {
+                    "selected": false,
+                    "text": "sc_db3_3317",
+                    "value": "sc_db3_3317"
+                },
+                "datasource": {
+                    "type": "prometheus",
+                    "uid": "cdp1kz3veskcgc"
+                },
+                "definition": "label_values(mysqlsync_destination_applier_operations,dest)",
+                "hide": 0,
+                "includeAll": true,
+                "label": "Dests",
+                "multi": true,
+                "name": "dests",
+                "options": [],
+                "query": {
+                    "qryType": 1,
+                    "query": "label_values(mysqlsync_destination_applier_operations,dest)",
+                    "refId": "PrometheusVariableQueryEditor-VariableQuery"
+                },
+                "refresh": 1,
+                "regex": "",
+                "skipUrlSync": false,
+                "sort": 0,
+                "type": "query"
+            }
+        ]
     },
     "time": {
         "from": "now-15m",
@@ -597,6 +809,6 @@
     "timezone": "browser",
     "title": "MysqlSync",
     "uid": "edp1lh3y5eupse",
-    "version": 14,
+    "version": 43,
     "weekStart": ""
 }

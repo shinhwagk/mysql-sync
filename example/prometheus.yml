@@ -1,8 +1,19 @@
 global:
-  scrape_interval: 15s  
-  evaluation_interval: 15s  
+  scrape_interval: 10s
+  evaluation_interval: 10s
+
+alerting:
+  alertmanagers:
+  - static_configs:
+    - targets:
+      - alertmanager:9093
+
+rule_files:
+  - "prom-alert.yml"
 
 scrape_configs:
-  - job_name: "prometheus"
+  - job_name: "mysqlsync"
     static_configs:
-      - targets: ["localhost:9090"]
+      - targets: ["172.16.0.179:9091"]
+      - targets: ["dest:9092"]
+
