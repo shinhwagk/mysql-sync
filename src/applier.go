@@ -170,8 +170,9 @@ func (ma *MysqlApplier) OnDMLInsert(op MysqlOperationDMLInsert) error {
 }
 
 func (ma *MysqlApplier) OnDMLDelete(op MysqlOperationDMLDelete) error {
+	// todo
 	if len(op.PrimaryKey) == 0 {
-		ma.Logger.Warning("OnDMLUpdate -- SchemaContext: %s, Table: %s", op.Database, op.Table)
+		ma.Logger.Warning("OnDMLDelete -- Not Primarykey -- SchemaContext: %s, Table: %s, Columne: %v", op.Database, op.Table, op.Columns)
 		return nil
 	}
 
@@ -188,20 +189,20 @@ func (ma *MysqlApplier) OnDMLDelete(op MysqlOperationDMLDelete) error {
 func (ma *MysqlApplier) OnDMLUpdate(op MysqlOperationDMLUpdate) error {
 	// todo
 	if len(op.PrimaryKey) == 0 {
-		ma.Logger.Warning("OnDMLUpdate -- SchemaContext: %s, Table: %s", op.Database, op.Table)
+		ma.Logger.Warning("OnDMLUpdate -- Not Primarykey -- SchemaContext: %s, Table: %s, BeforeColumne: %v, AfterColume: %v", op.Database, op.Table, op.BeforeColumns, op.AfterColumns)
 		return nil
 	}
 
 	ma.Logger.Debug("OnDMLUpdate -- SchemaContext: %s, Table: %s", op.Database, op.Table)
 
 	query, params := BuildDMLDeleteQuery(op.Database, op.Table, op.BeforeColumns, op.PrimaryKey)
-	ma.Logger.Trace("OnDMLUpdate -- SchemaContext: %s, Table: %s, Query: %s, Params: %v", op.Database, op.Table, query, params)
+	ma.Logger.Trace("OnDMLUpdate -- Delete -- SchemaContext: %s, Table: %s, Query: %s, Params: %v", op.Database, op.Table, query, params)
 	if err := ma.mysqlClient.ExecuteDML(query, params); err != nil {
 		return err
 	}
 
 	query, params = BuildDMLInsertQuery(op.Database, op.Table, op.AfterColumns)
-	ma.Logger.Trace("OnDMLUpdate -- SchemaContext: %s, Table: %s, Query: %s, Params: %v", op.Database, op.Table, query, params)
+	ma.Logger.Trace("OnDMLUpdate -- Insert -- SchemaContext: %s, Table: %s, Query: %s, Params: %v", op.Database, op.Table, query, params)
 	if err := ma.mysqlClient.ExecuteDML(query, params); err != nil {
 		return err
 	}

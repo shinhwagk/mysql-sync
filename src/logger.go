@@ -21,6 +21,7 @@ type Logger struct {
 	LogDebug   *log.Logger
 	LogWarning *log.Logger
 	LogTrace   *log.Logger
+	LogAudit   *log.Logger
 }
 
 func NewLogger(level int, module string) *Logger {
@@ -31,6 +32,7 @@ func NewLogger(level int, module string) *Logger {
 		LogInfo:    log.New(os.Stdout, "", 0),
 		LogDebug:   log.New(os.Stdout, "", 0),
 		LogWarning: log.New(os.Stdout, "", 0),
+		LogAudit:   log.New(os.Stdout, "", 0),
 	}
 }
 
@@ -59,6 +61,13 @@ func (l *Logger) Trace(format string, a ...interface{}) {
 		l.output(l.LogWarning, "TRACE", format, a...)
 	}
 }
+
+func (l *Logger) Audit(format string, a ...interface{}) {
+	if l.Level >= LevelTrace {
+		l.output(l.LogWarning, "AUDIT", format, a...)
+	}
+}
+
 func (l *Logger) output(logger *log.Logger, level string, format string, a ...interface{}) {
 	fullFormat := "%s -- %s -- %s -- " + format
 	timestamp := time.Now().Format("2006-01-02 15:04:05")
