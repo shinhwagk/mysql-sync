@@ -27,7 +27,7 @@ type ReplicationConfig struct {
 
 type DestinationsConfig struct {
 	TCPAddr      string                       `yaml:"tcpaddr"`
-	Settings     *SettingsConfig              `yaml:"settings"`
+	CacheSize    int                          `yaml:"cache"`
 	Destinations map[string]DestinationConfig `yaml:"destinations"`
 }
 
@@ -44,7 +44,6 @@ type DestinationMysqlConfig struct {
 }
 
 type DestinationSyncConfig struct {
-	CacheSize            int                         `yaml:"cache"`
 	Replicate            *DestinationReplicateConfig `yaml:"replicate"`
 	InitGtidSetsRangeStr string                      `yaml:"gtidsets"`
 }

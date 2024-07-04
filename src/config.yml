@@ -11,8 +11,7 @@ replication:
     cache: 1000
 destination:
   tcpaddr: "127.0.0.1:9998"
-  settings:
-    cache: 1000
+  cache: 1000
   destinations:
     db2:
       mysql:
@@ -23,7 +22,6 @@ destination:
           do_db: test
           ignore_tab: test.year_table
         gtidsets: ""
-        cache_size: 100000
       prom:
         export: 9092
       loglevel: 1

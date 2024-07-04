@@ -38,11 +38,8 @@ func main() {
 			logger.Error("'name' parameter is required when 'dest' is specified.")
 			return
 		}
-		replName := config.Replication.Name
-		destConfig := config.Destination.Destinations[*destName]
-		hjdbAddr := config.HJDB.Addr
-		tcpAddr := config.Destination.TCPAddr
-		destination := NewDestination(replName, *destName, tcpAddr, destConfig, hjdbAddr)
+
+		destination := NewDestination(*config, *destName)
 		if err := destination.Start(ctx, cancel); err != nil {
 			logger.Error("Destination start: " + err.Error())
 			cancel()

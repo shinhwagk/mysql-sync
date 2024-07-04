@@ -6,59 +6,59 @@ import (
 	"sync"
 )
 
-func NewDestination(replName string, destName string, tcpAddr string, dc DestinationConfig, hjdbAddr string) *Destination {
+func NewDestination(msc MysqlSyncConfig, destName string) *Destination {
+	destConf := msc.Destination.Destinations[destName]
 	return &Destination{
-		replName: replName,
-		destName: destName,
-		tcpAddr:  tcpAddr,
-		dc:       dc,
-		hjdbAddr: hjdbAddr,
-		Logger:   NewLogger(dc.LogLevel, "destination"),
+		msc:    msc,
+		Name:   destName,
+		Logger: NewLogger(destConf.LogLevel, "destination"),
 	}
 }
 
 type Destination struct {
-	replName string
-	destName string
-	tcpAddr  string
-	dc       DestinationConfig
-	hjdbAddr string
-	Logger   *Logger
+	msc    MysqlSyncConfig
+	Name   string
+	Logger *Logger
 }
 
 func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) error {
+	replName := dest.msc.Replication.Name
+	destConf := dest.msc.Destination.Destinations[dest.Name]
+	hjdbAddr := dest.msc.HJDB.Addr
+	tcpAddr := dest.msc.Destination.TCPAddr
+
 	metricCh := make(chan MetricUnit)
 	cacheSize := 1000
-	if dest.dc.Sync.CacheSize > cacheSize {
-		cacheSize = dest.dc.Sync.CacheSize
+	if dest.msc.Destination.CacheSize > cacheSize {
+		cacheSize = dest.msc.Destination.CacheSize
 	}
-	moCh := make(chan MysqlOperation, dest.dc.Sync.CacheSize)
+	moCh := make(chan MysqlOperation, cacheSize)
 	defer close(metricCh)
 	defer close(moCh)
 
 	// gtidsets must first init.
-	gtidSets := NewGtidSets(dest.hjdbAddr, dest.replName, dest.destName)
-	err := gtidSets.InitStartupGtidSetsMap(dest.dc.Sync.InitGtidSetsRangeStr)
+	gtidSets := NewGtidSets(hjdbAddr, replName, dest.Name)
+	err := gtidSets.InitStartupGtidSetsMap(destConf.Sync.InitGtidSetsRangeStr)
 	if err != nil {
 		return err
 	}
 
-	metricDirector := NewMetricDestDirector(dest.dc.LogLevel, "destination", dest.replName, dest.destName, metricCh)
-	tcpClient, err := NewTCPClient(dest.dc.LogLevel, dest.tcpAddr, dest.destName, moCh, metricCh)
+	metricDirector := NewMetricDestDirector(destConf.LogLevel, "destination", replName, dest.Name, metricCh)
+	tcpClient, err := NewTCPClient(destConf.LogLevel, tcpAddr, dest.Name, moCh, metricCh)
 	if err != nil {
 		tcpClient.Logger.Error("NewTCPClient: %s", err.Error())
 		return err
 	}
 
-	mysqlClient, err := NewMysqlClient(dest.dc.LogLevel, dest.dc.Mysql.Dsn, dest.dc.Mysql.SkipErrors)
+	mysqlClient, err := NewMysqlClient(destConf.LogLevel, destConf.Mysql.Dsn, destConf.Mysql.SkipErrors)
 	if err != nil {
 		mysqlClient.Logger.Error("NewMysqlClient: ", err.Error())
 		return err
 	}
 	defer mysqlClient.Close()
 
-	replicateFilter := NewReplicateFilter(dest.dc.Sync.Replicate)
-	mysqlApplier := NewMysqlApplier(dest.dc.LogLevel, gtidSets, mysqlClient, replicateFilter, metricCh)
+	replicateFilter := NewReplicateFilter(destConf.Sync.Replicate)
+	mysqlApplier := NewMysqlApplier(destConf.LogLevel, gtidSets, mysqlClient, replicateFilter, metricCh)
 
 	mdCtx, mdCancel := context.WithCancel(context.Background())
 	defer mdCancel()
@@ -69,8 +69,8 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) e
 		defer wg0.Done()
 		metricDirector.Logger.Info("started.")
 		promExportPort := 9092
-		if dest.dc.Prometheus != nil {
-			promExportPort = dest.dc.Prometheus.ExportPort
+		if destConf.Prometheus != nil {
+			promExportPort = destConf.Prometheus.ExportPort
 		}
 		metricDirector.Start(mdCtx, fmt.Sprintf("0.0.0.0:%d", promExportPort))
 		metricDirector.Logger.Info("stopped.")
