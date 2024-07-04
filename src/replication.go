@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"sync"
 )
 
@@ -46,8 +45,6 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 		gss := NewGtidSets(repl.msc.HJDB.Addr, repl.msc.Replication.Name, destName)
 		gss.InitStartupGtidSetsMap(dc.Sync.InitGtidSetsRangeStr)
 		destGtidSetss = append(destGtidSetss, gss.GtidSetsMap)
-
-		fmt.Println("xxxxxxx", destName)
 		destNames = append(destNames, destName)
 	}
 

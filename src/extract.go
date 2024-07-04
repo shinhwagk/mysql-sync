@@ -208,14 +208,14 @@ func (bext *BinlogExtract) handleEventUpdateRows(e *replication.RowsEvent, eh *r
 
 func (bext *BinlogExtract) handleEventGtid(e *replication.GTIDEvent, eh *replication.EventHeader) error {
 	if gtidNext, err := e.GTIDNext(); err != nil {
-		fmt.Println("Error retrieving GTID:", err)
+		bext.Logger.Error("Retrieving GTID: %s", err.Error())
 		return err
 	} else {
 		parts := strings.Split(gtidNext.String(), ":")
 		if len(parts) == 2 {
 			xid, err := strconv.ParseInt(parts[1], 10, 64)
 			if err != nil {
-				fmt.Println("Error converting string to integer:", err)
+				bext.Logger.Error("Error converting string to integer: %s", err.Error())
 				return err
 			} else {
 				bext.toMoCh(MysqlOperationGTID{e.LastCommitted, eh.ServerID, eh.Timestamp, parts[0], xid})
