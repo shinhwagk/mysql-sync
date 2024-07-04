@@ -52,6 +52,7 @@ func (mc *MysqlClient) SkipError(err error) error {
 	if merr, ok := err.(*mysql.MySQLError); ok {
 		for _, v := range mc.SkipErrors {
 			if v == merr.Number {
+				mc.Logger.Error("Skip %s.", err.Error())
 				return nil
 			}
 		}
