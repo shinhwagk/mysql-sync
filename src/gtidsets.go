@@ -71,7 +71,6 @@ func (gss *GtidSets) QueryGtidSetsMapFromHJDB(replName string, destName string) 
 	}
 
 	if *hjdbResp.State == "err" {
-		fmt.Println(*hjdbResp.ErrCode)
 		if hjdbResp.ErrCode != nil && (*hjdbResp.ErrCode == "HJDB-001" || *hjdbResp.ErrCode == "HJDB-002" || *hjdbResp.ErrCode == "HJDB-005") {
 			gss.Logger.Warning("hjdb-err: %s", *hjdbResp.ErrMsg)
 			return make(map[string]uint), nil
@@ -175,53 +174,3 @@ func MergeGtidSets(gsss []map[string]uint) map[string]uint {
 	}
 	return gssout
 }
-
-// func main() {
-// 	gss, err := NewGtidSets(1, "hjdb:8000", "test1", "aaa:1-2")
-
-// 	if err != nil {
-// 		fmt.Println(err.Error())
-// 	}
-
-// 	fmt.Println(gss.GtidSetsRangeStr)
-// 	fmt.Println(gss.GtidSetsMap)
-
-// 	gss.SetTrxIdOfServerUUID("aaa", 3)
-// 	gss.PersistGtidSetsMaptToHJDB()
-// 	fmt.Println(gss.GetTrxIdOfServerUUID("aaa"))
-// }
-
-// func QueryGtidSetsMapFromHJDB(hjdbAddr string, replName string, destName string) (map[string]uint, error) {
-// 	url := fmt.Sprintf("http://%s/file/mysqlsync_%s/dest_%s/gtidsets", hjdbAddr, replName, destName)
-// 	gss.Logger.Info("Query " + url)
-
-// 	resp, err := http.Get(url)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	defer resp.Body.Close()
-
-// 	body, err := io.ReadAll(resp.Body)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-// 	var hjdbResp HJDBResponse
-// 	if err := json.Unmarshal(body, &hjdbResp); err != nil {
-// 		gss.Logger.Error(fmt.Sprintf("json unmarshal err: %s", err.Error()))
-// 		return nil, err
-// 	} else {
-// 		if *hjdbResp.State == "err" {
-// 			fmt.Println(*hjdbResp.ErrCode)
-// 			if hjdbResp.ErrCode != nil && (*hjdbResp.ErrCode == "HJDB-001" || *hjdbResp.ErrCode == "HJDB-002" || *hjdbResp.ErrCode == "HJDB-005") {
-// 				gss.Logger.Error(fmt.Sprintf("hjdb-err: %s", *hjdbResp.ErrMsg))
-// 				return make(map[string]uint), nil
-// 			}
-// 			return nil, fmt.Errorf(*hjdbResp.ErrMsg)
-// 		} else {
-// 			gss.Logger.Info(fmt.Sprintf("Query gtidsets from hjdb: %v", *hjdbResp.Data))
-// 			return *hjdbResp.Data, nil
-// 			// g.Logger.Debug(fmt.Sprintf("Persist gtidsets map '%v' success.", gssm))
-// 		}
-// 	}
-// }
