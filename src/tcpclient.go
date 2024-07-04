@@ -97,14 +97,13 @@ func (tc *TCPClient) receiveOperations() {
 			tc.moCh <- oper
 			tc.metricCh <- MetricUnit{Name: MetricTCPClientReceiveOperations, Value: 1}
 		}
-		tc.Logger.Debug("Receive mo: %d from tcp server.", len(operations))
+		tc.Logger.Debug("Receive mo(%d), moCh(%d) from tcp server.", len(operations), len(tc.moCh))
 
-		if err := tc.SendSignal(sig.BatchID); err != nil {
-			fmt.Println("sdsfdfsd", err.Error())
+		if err := tc.encoder.Encode(Signal2{BatchID: sig.BatchID}); err != nil {
 			tc.Logger.Error("Send signal: %s", err.Error())
 			return
 		}
-		fmt.Println("batch", sig.BatchID, len(sig.Mos))
+		tc.Logger.Debug("Send signal 'BatchID: %s' success.", sig.BatchID)
 	}
 }
 
@@ -141,9 +140,9 @@ func (tc *TCPClient) Start(ctx context.Context) {
 	tc.handleServer()
 }
 
-func (tc *TCPClient) SendSignal(batchID uint) error {
-	return tc.encoder.Encode(Signal2{BatchID: batchID})
-}
+// func (tc *TCPClient) SendSignal(batchID uint) error {
+// 	return tc.encoder.Encode(Signal2{BatchID: batchID})
+// }
 
 func (tcs *TCPClient) Cleanup() error {
 	<-tcs.ctx.Done()
