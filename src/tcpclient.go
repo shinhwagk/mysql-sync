@@ -107,7 +107,15 @@ func (tc *TCPClient) receiveOperations() {
 	}
 }
 
-func (tc *TCPClient) handleServer() {
+func (tc *TCPClient) Start(ctx context.Context) {
+	tc.Logger.Info("Started.")
+	defer tc.Logger.Info("Closed.")
+
+	go func() {
+		<-ctx.Done()
+		tc.cancel()
+	}()
+
 	var wg sync.WaitGroup
 
 	wg.Add(1)
@@ -115,15 +123,13 @@ func (tc *TCPClient) handleServer() {
 		defer wg.Done()
 		tc.receiveOperations()
 		tc.Logger.Info("tcp from server '%s' handler close.", tc.conn.RemoteAddr().String())
-		tc.SetClose()
+		tc.cancel()
 	}()
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := tc.Cleanup(); err != nil {
-			tc.Logger.Error("Close connection: ", err.Error())
-		}
+		tc.Cleanup()
 	}()
 
 	tc.Logger.Info("Server connected " + tc.conn.LocalAddr().String())
@@ -131,31 +137,12 @@ func (tc *TCPClient) handleServer() {
 	tc.Logger.Info("Server connection close." + tc.conn.LocalAddr().String())
 }
 
-func (tc *TCPClient) Start(ctx context.Context) {
-	go func() {
-		<-ctx.Done()
-		tc.SetClose()
-	}()
+func (tc *TCPClient) Cleanup() {
+	<-tc.ctx.Done()
 
-	tc.handleServer()
-}
+	tc.decoderZstdReader.Close()
 
-// func (tc *TCPClient) SendSignal(batchID uint) error {
-// 	return tc.encoder.Encode(Signal2{BatchID: batchID})
-// }
-
-func (tcs *TCPClient) Cleanup() error {
-	<-tcs.ctx.Done()
-
-	tcs.decoderZstdReader.Close()
-
-	if err := tcs.conn.Close(); err != nil {
-		return err
+	if err := tc.conn.Close(); err != nil {
+		tc.Logger.Error("Close connection: %s", err.Error())
 	}
-
-	return nil
-}
-
-func (tcs *TCPClient) SetClose() {
-	tcs.cancel()
 }
