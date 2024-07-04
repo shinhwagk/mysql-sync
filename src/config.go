@@ -32,11 +32,16 @@ type DestinationsConfig struct {
 }
 
 type DestinationConfig struct {
-	Dsn                  string           `yaml:"dsn"`
-	InitGtidSetsRangeStr string           `yaml:"gtidsets"`
-	LogLevel             int              `yaml:"loglevel"`
-	Replicate            *ReplicateConfig `yaml:"replicate"`
-	ExportPort           int              `yaml:"export"`
+	InitGtidSetsRangeStr string                 `yaml:"gtidsets"`
+	LogLevel             int                    `yaml:"loglevel"`
+	Replicate            *ReplicateConfig       `yaml:"replicate"`
+	ExportPort           int                    `yaml:"export"`
+	Mysql                DestinationMysqlConfig `yaml:"mysql"`
+}
+
+type DestinationMysqlConfig struct {
+	Dsn        string  `yaml:"dsn"`
+	SkipErrors *string `yaml:"skip_errors"`
 }
 
 type ReplicateConfig struct {

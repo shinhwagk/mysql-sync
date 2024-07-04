@@ -49,6 +49,5 @@ func main() {
 		}
 	} else {
 		logger.Info("No specific mode activated")
-
 	}
 }

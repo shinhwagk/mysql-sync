@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/go-mysql-org/go-mysql/mysql"
@@ -170,4 +171,23 @@ func calculateAdjustedMean(slice []int) int {
 	}
 
 	return total / len(sliceCopy)
+}
+
+func ConvertStringToUint16Slice(input string) ([]uint16, error) {
+	numberStrings := strings.Split(input, ",")
+
+	var result []uint16
+
+	for _, numberString := range numberStrings {
+		numberString = strings.TrimSpace(numberString)
+
+		number, err := strconv.ParseUint(numberString, 10, 16)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing '%s': %v", numberString, err)
+		}
+
+		result = append(result, uint16(number))
+	}
+
+	return result, nil
 }

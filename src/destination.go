@@ -46,7 +46,7 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) e
 		return err
 	}
 
-	mysqlClient, err := NewMysqlClient(dest.dc.LogLevel, dest.dc.Dsn)
+	mysqlClient, err := NewMysqlClient(dest.dc.LogLevel, dest.dc.Mysql.Dsn, dest.dc.Mysql.SkipErrors)
 	if err != nil {
 		mysqlClient.Logger.Error("NewMysqlClient: ", err.Error())
 		return err
