@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"sync"
 )
 
@@ -41,13 +42,13 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) e
 	metricDirector := NewMetricDestDirector(dest.dc.LogLevel, "destination", dest.replName, dest.destName, metricCh)
 	tcpClient, err := NewTCPClient(dest.dc.LogLevel, dest.tcpAddr, dest.destName, moCh, metricCh)
 	if err != nil {
-		tcpClient.Logger.Error("NewTCPClient error: " + err.Error())
+		tcpClient.Logger.Error("NewTCPClient: %s", err.Error())
 		return err
 	}
 
 	mysqlClient, err := NewMysqlClient(dest.dc.LogLevel, dest.dc.Dsn)
 	if err != nil {
-		mysqlClient.Logger.Error("NewMysqlClient error: " + err.Error())
+		mysqlClient.Logger.Error("NewMysqlClient: ", err.Error())
 		return err
 	}
 	defer mysqlClient.Close()
@@ -63,7 +64,7 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) e
 	go func() {
 		defer wg0.Done()
 		metricDirector.Logger.Info("started.")
-		metricDirector.Start(mdCtx, "0.0.0.0:9092")
+		metricDirector.Start(mdCtx, fmt.Sprintf("0.0.0.0:%d", dest.dc.ExportPort))
 		metricDirector.Logger.Info("stopped.")
 	}()
 

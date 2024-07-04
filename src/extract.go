@@ -55,7 +55,10 @@ func (bext *BinlogExtract) toMoCh(mo MysqlOperation) {
 	bext.metricCh <- MetricUnit{Name: MetricReplDelay, Value: uint(time.Now().Unix() - int64(mo.GetTimestamp()))}
 }
 
-func (bext *BinlogExtract) Start(ctx context.Context, gtidsets string) error {
+func (bext *BinlogExtract) Start(ctx context.Context, gtidsets string) {
+	bext.Logger.Info("Started.")
+	defer bext.Logger.Info("Closed.")
+
 	if bext.binlogSyncer == nil {
 		bext.binlogSyncer = replication.NewBinlogSyncer(bext.binlogSyncerConfig)
 	}
@@ -63,7 +66,7 @@ func (bext *BinlogExtract) Start(ctx context.Context, gtidsets string) error {
 	gtidSet, err := mysql.ParseGTIDSet("mysql", gtidsets)
 	if err != nil {
 		bext.Logger.Error("ParseGTIDSet " + err.Error())
-		return err
+		return
 	}
 
 	bext.Logger.Info("Start from gtidsets:" + gtidSet.String())
@@ -71,7 +74,7 @@ func (bext *BinlogExtract) Start(ctx context.Context, gtidsets string) error {
 	streamer, err := bext.binlogSyncer.StartSyncGTID(gtidSet)
 	if err != nil {
 		bext.Logger.Error("start sync err:" + err.Error())
-		return err
+		return
 	}
 
 	bext.Logger.Info("binlogSyncer ready.")
@@ -84,13 +87,13 @@ func (bext *BinlogExtract) Start(ctx context.Context, gtidsets string) error {
 			bext.binlogSyncer = nil
 			if err == context.DeadlineExceeded {
 				bext.Logger.Error(fmt.Sprintf("Event fetch timed out: %s", err))
-				return nil
+				return
 			} else if err == context.Canceled {
 				bext.Logger.Error(fmt.Sprintf("Event handling canceled: %s", err))
-				return nil
+				return
 			}
 			bext.Logger.Error("error event " + err.Error())
-			return err
+			return
 		}
 
 		switch e := ev.Event.(type) {
@@ -98,25 +101,30 @@ func (bext *BinlogExtract) Start(ctx context.Context, gtidsets string) error {
 			switch ev.Header.EventType {
 			case replication.WRITE_ROWS_EVENTv0, replication.WRITE_ROWS_EVENTv1, replication.WRITE_ROWS_EVENTv2:
 				if err := bext.handleEventWriteRows(e, ev.Header); err != nil {
-					return err
+					bext.Logger.Error("error event " + err.Error())
+					return
 				}
 			case replication.UPDATE_ROWS_EVENTv0, replication.UPDATE_ROWS_EVENTv1, replication.UPDATE_ROWS_EVENTv2:
 				if err := bext.handleEventUpdateRows(e, ev.Header); err != nil {
-					return err
+					bext.Logger.Error("error event " + err.Error())
+					return
 				}
 			case replication.DELETE_ROWS_EVENTv0, replication.DELETE_ROWS_EVENTv1, replication.DELETE_ROWS_EVENTv2:
 				if err := bext.handleEventDeleteRows(e, ev.Header); err != nil {
-					return err
+					bext.Logger.Error("error event " + err.Error())
+					return
 				}
 			}
 		case *replication.TableMapEvent:
 		case *replication.GTIDEvent:
 			if err := bext.handleEventGtid(e, ev.Header); err != nil {
-				return err
+				bext.Logger.Error("error event " + err.Error())
+				return
 			}
 		case *replication.QueryEvent:
 			if err := bext.handleQueryEvent(e, ev.Header); err != nil {
-				return err
+				bext.Logger.Error("error event " + err.Error())
+				return
 			}
 		case *replication.XIDEvent:
 			bext.toMoCh(MysqlOperationXid{ev.Header.Timestamp})

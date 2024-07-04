@@ -35,8 +35,8 @@ type DestinationConfig struct {
 	Dsn                  string           `yaml:"dsn"`
 	InitGtidSetsRangeStr string           `yaml:"gtidsets"`
 	LogLevel             int              `yaml:"loglevel"`
-	Settings             *SettingsConfig  `yaml:"settings"`
 	Replicate            *ReplicateConfig `yaml:"replicate"`
+	ExportPort           int              `yaml:"export"`
 }
 
 type ReplicateConfig struct {

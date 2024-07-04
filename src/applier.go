@@ -65,12 +65,12 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 		case <-ctx.Done():
 			ma.Logger.Info("ctx done signal received.")
 			if err := ma.mysqlClient.Rollback(); err != nil {
-				ma.mysqlClient.Logger.Info("mysql connect rollback error: " + err.Error())
+				ma.mysqlClient.Logger.Error("mysql connect rollback: %s", err.Error())
 			} else {
 				ma.mysqlClient.Logger.Info("mysql connect rollback complate.")
 			}
 			if err := ma.mysqlClient.Close(); err != nil {
-				ma.mysqlClient.Logger.Info("mysql connect close error: " + err.Error())
+				ma.mysqlClient.Logger.Error("mysql connect close: %s", err.Error())
 			} else {
 				ma.mysqlClient.Logger.Info("mysql connect close complate.")
 			}
@@ -86,7 +86,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					continue
 				}
 				if err := ma.OnDDLDatabase(op); err != nil {
-					ma.Logger.Error("OnDDLDatabase -- %s", err)
+					ma.Logger.Error("OnDDLDatabase: %s", err.Error())
 					return
 				}
 			case MysqlOperationDDLTable:
@@ -94,7 +94,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					continue
 				}
 				if err := ma.OnDDLTable(op); err != nil {
-					ma.Logger.Error("MysqlOperationDDLTable " + err.Error())
+					ma.Logger.Error("MysqlOperationDDLTable: %s", err.Error())
 					return
 				}
 			case MysqlOperationDMLInsert:

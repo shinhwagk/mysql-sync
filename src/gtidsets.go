@@ -116,7 +116,7 @@ func (gss *GtidSets) SetTrxIdOfServerUUID(serverUUID string, trxID uint) error {
 		if lastTrxID+1 == trxID {
 			gss.GtidSetsMap[serverUUID] = trxID
 		} else {
-			return fmt.Errorf("gtid trxid order error: uuid:'%s' last:'%d', next '%d'", serverUUID, lastTrxID, trxID)
+			return fmt.Errorf("gtid trxid order uuid:'%s' last:'%d', next '%d'", serverUUID, lastTrxID, trxID)
 		}
 	} else {
 		gss.Logger.Warning(fmt.Sprintf("Gtid: '%s:%d' first join.", serverUUID, trxID))

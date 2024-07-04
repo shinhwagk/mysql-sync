@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"fmt"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -40,7 +39,7 @@ func NewMysqlClient(logLevel int, dsn string) (*MysqlClient, error) {
 func (mc *MysqlClient) Close() error {
 	err := mc.db.Close()
 	if err != nil {
-		mc.Logger.Error("connection close error: " + err.Error())
+		mc.Logger.Error("Connection close: ", err.Error())
 	}
 	return err
 }
@@ -95,7 +94,7 @@ func (mc *MysqlClient) ExecuteOnDatabase(query string) error {
 	_, err := mc.tx.Exec(query)
 
 	if err != nil {
-		mc.Logger.Error(fmt.Sprintf("query: '%s', error: %s", query, err.Error()))
+		mc.Logger.Error("query: '%s': %s", query, err.Error())
 		mc.Rollback()
 		return err
 	}
@@ -107,7 +106,7 @@ func (mc *MysqlClient) Commit() error {
 	if mc.tx != nil {
 		err := mc.tx.Commit()
 		if err != nil {
-			mc.Logger.Error("Commit error: " + err.Error())
+			mc.Logger.Error("Commit: ", err.Error())
 			return err
 		}
 		mc.tx = nil

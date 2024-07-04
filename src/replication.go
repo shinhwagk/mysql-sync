@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"sync"
 )
 
 func NewReplication(msc MysqlSyncConfig) *Replication {
@@ -17,7 +18,10 @@ type Replication struct {
 	Logger *Logger
 }
 
-func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) error {
+func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
+	repl.Logger.Info("Started.")
+	defer repl.Logger.Info("Closed.")
+
 	metricCh := make(chan MetricUnit)
 
 	cacheSize := 1000
@@ -33,7 +37,8 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) e
 	destNames := []string{}
 
 	if len(repl.msc.Destination.Destinations) == 0 {
-		return fmt.Errorf("dest number 0")
+		repl.Logger.Error("dest number 0")
+		return
 	}
 
 	destGtidSetss := make([]map[string]uint, len(repl.msc.Destination.Destinations))
@@ -55,22 +60,22 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) e
 	repl.Logger.Info("Init gtidsets range string:'%s'", initGtidSetsRangeStr)
 
 	go func() {
-		if err := tcpServer.Start(ctx); err != nil {
-			repl.Logger.Error("tcp server start failed: " + err.Error())
-			cancel()
-		}
-	}()
-
-	go func() {
-		metricDirector.Logger.Info("started.")
 		metricDirector.Start(ctx, "0.0.0.0:9091")
-		metricDirector.Logger.Info("stopped.")
 	}()
 
-	binlogExtract.Logger.Info("binlog extract Started.")
-	if err := binlogExtract.Start(ctx, initGtidSetsRangeStr); err != nil { // 假设 RestartSync 需要 GTID 作为参数
-		binlogExtract.Logger.Error("failed to restart sync: " + err.Error())
-	}
-	binlogExtract.Logger.Info("binlog extract stopped.")
-	return nil
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		tcpServer.Start(ctx)
+		cancel()
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		binlogExtract.Start(ctx, initGtidSetsRangeStr)
+		cancel()
+	}()
+	wg.Wait()
 }

@@ -46,7 +46,7 @@ func NewTCPClient(logLevel int, serverAddress string, destName string, moCh chan
 	logger := NewLogger(logLevel, "tcp client")
 	conn, err := net.Dial("tcp", serverAddress)
 	if err != nil {
-		logger.Error("connection error: " + err.Error())
+		logger.Error("Connection: %s", err.Error())
 		return nil, err
 	}
 
@@ -114,7 +114,7 @@ func (tc *TCPClient) handleServer() {
 	go func() {
 		defer wg.Done()
 		tc.receiveOperations()
-		tc.Logger.Info(fmt.Sprintf("tcp from server '%s' handler close.", tc.conn.RemoteAddr().String()))
+		tc.Logger.Info("tcp from server '%s' handler close.", tc.conn.RemoteAddr().String())
 		tc.SetClose()
 	}()
 
@@ -122,7 +122,7 @@ func (tc *TCPClient) handleServer() {
 	go func() {
 		defer wg.Done()
 		if err := tc.Cleanup(); err != nil {
-			tc.Logger.Error(fmt.Sprintf("Close connection error: " + err.Error()))
+			tc.Logger.Error("Close connection: ", err.Error())
 		}
 	}()
 

@@ -25,19 +25,17 @@ func main() {
 	flag.Parse()
 
 	if *repl && *dest {
-		fmt.Println("Error: --repl and --dest cannot be used together.")
+		logger.Error("--repl and --dest cannot be used together.")
 		os.Exit(1)
 	}
 
 	if *repl {
 		replication := NewReplication(*config)
-		if err := replication.start(ctx, cancel); err != nil {
-			logger.Error("Replication start error: " + err.Error())
-			cancel()
-		}
+		replication.start(ctx, cancel)
+		cancel()
 	} else if *dest {
 		if *destName == "" {
-			fmt.Println("Error: 'name' parameter is required when 'dest' is specified.")
+			logger.Error("'name' parameter is required when 'dest' is specified.")
 			return
 		}
 		replName := config.Replication.Name
@@ -46,11 +44,11 @@ func main() {
 		tcpAddr := config.Destination.TCPAddr
 		destination := NewDestination(replName, *destName, tcpAddr, destConfig, hjdbAddr)
 		if err := destination.Start(ctx, cancel); err != nil {
-			logger.Error("Destination start error: " + err.Error())
+			logger.Error("Destination start: " + err.Error())
 			cancel()
 		}
 	} else {
-		fmt.Println("No specific mode activated")
+		logger.Info("No specific mode activated")
 
 	}
 }

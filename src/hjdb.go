@@ -35,7 +35,7 @@ func (hjdb *HJDB) Update(db string, sch string, tab string, data interface{}) (*
 	url := fmt.Sprintf("http://%s/file/%s/%s/%s", hjdb.Addr, db, sch, tab)
 	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
-		hjdb.Logger.Error("Post url: %s error: %s", url, err.Error())
+		hjdb.Logger.Error("Post url: %s: %s", url, err.Error())
 		return nil, err
 	}
 	return hjdb.parseHJDBResponse(resp)

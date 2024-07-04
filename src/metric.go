@@ -136,6 +136,9 @@ func (md *MetricDirector) set(name string, value uint, dest *string) {
 }
 
 func (md *MetricDirector) Start(ctx context.Context, addr string) {
+	md.Logger.Info("Started.")
+	defer md.Logger.Info("Closed.")
+
 	go func() {
 		md.StartHTTPServer(ctx, addr)
 	}()

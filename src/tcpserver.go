@@ -29,6 +29,9 @@ type TCPServer struct {
 	Logger        *Logger
 	listenAddress string
 
+	ctx    context.Context
+	cancel context.CancelFunc
+
 	moCh     <-chan MysqlOperation
 	metricCh chan<- MetricUnit
 
@@ -41,14 +44,16 @@ func NewTCPServer(logLevel int, listenAddress string, clientNames []string, moCh
 	clients := make(map[string]*TCPServerClient)
 
 	for _, name := range clientNames {
-		clients[name] = NewTcpServerClient1(logLevel, name, metricCh)
+		clients[name] = nil
 	}
 
-	fmt.Println("clients", len(clients))
-
+	ctx, cancel := context.WithCancel(context.Background())
 	return &TCPServer{
 		Logger:        NewLogger(logLevel, "tcp server"),
 		listenAddress: listenAddress,
+
+		ctx:    ctx,
+		cancel: cancel,
 
 		moCh:     moCh,
 		metricCh: metricCh,
@@ -58,42 +63,56 @@ func NewTCPServer(logLevel int, listenAddress string, clientNames []string, moCh
 	}
 }
 
-func (ts *TCPServer) Start(ctx context.Context) error {
+func (ts *TCPServer) Start(ctx context.Context) {
+	ts.Logger.Info("Started.")
+	defer ts.Logger.Info("Closed.")
+
 	listener, err := net.Listen("tcp", ts.listenAddress)
 	if err != nil {
-		ts.Logger.Error(fmt.Sprintf("Error listening: " + err.Error()))
+		ts.Logger.Error("Listening: %s", err.Error())
+
 	}
-	defer listener.Close()
-	ts.Logger.Info("listening on:" + ts.listenAddress)
 
 	go func() {
 		<-ctx.Done()
-		listener.Close()
+		ts.cancel()
+	}()
+
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-ts.ctx.Done()
+		// clear clients
 		for _, client := range ts.Clients {
 			if client != nil {
-				client.SetClose()
+				client.cancel()
 			}
 		}
+		// close listener
+		if err := listener.Close(); err != nil {
+			ts.Logger.Error("Listener Close: %s", err.Error())
+		} else {
+			ts.Logger.Info("Listener Closed.")
+		}
 	}()
 
+	wg.Add(1)
 	go func() {
-		if err := ts.distributor(); err != nil {
-			fmt.Println(err.Error())
-			listener.Close()
-		}
+		defer wg.Done()
+		ts.distributor()
+		ts.cancel()
 	}()
 
-	for {
-		conn, err := listener.Accept()
-		ts.Logger.Info("Listener started.")
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		ts.handleClients(listener)
+		ts.cancel()
+	}()
 
-		if err != nil {
-			ts.Logger.Info("Error accepting:" + err.Error())
-			return err
-		}
-
-		go ts.handleClient(conn)
-	}
+	wg.Wait()
 }
 
 func (ts *TCPServer) clientsReady() bool {
@@ -109,7 +128,7 @@ func (ts *TCPServer) clientsReady() bool {
 		if client.State == ClientBusy {
 			if client.SendError != nil {
 				ts.Logger.Info("Push to Client(%s) Batch(%d) again.", name, client.SendBatchID)
-				client.pushClient()
+				client.PushClient()
 			}
 			return false
 		}
@@ -121,7 +140,10 @@ func (ts *TCPServer) clientsReady() bool {
 	return true
 }
 
-func (ts *TCPServer) distributor() error {
+func (ts *TCPServer) distributor() {
+	ts.Logger.Info("Distributor started.")
+	defer ts.Logger.Info("Distributor closed.")
+
 	maxRcCnt := cap(ts.moCh)
 	const minRcCnt int = 10
 
@@ -142,67 +164,72 @@ func (ts *TCPServer) distributor() error {
 	defer ticker.Stop()
 
 	for {
-		if !ts.clientsReady() {
-			if noReadyMs <= 1000 {
-				noReadyMs += 10
+		select {
+		case <-ts.ctx.Done():
+			return
+		default:
+			if !ts.clientsReady() {
+				if noReadyMs <= 1000 {
+					noReadyMs += 10
+				}
+				ts.Logger.Debug("Clients not ready sleep: %d.", noReadyMs)
+				time.Sleep(time.Millisecond * time.Duration(noReadyMs))
+				continue
 			}
-			ts.Logger.Debug("Clients not ready sleep: %d.", noReadyMs)
-			time.Sleep(time.Millisecond * time.Duration(noReadyMs))
-			continue
-		}
-		noReadyMs = 0
+			noReadyMs = 0
 
-		ts.Logger.Debug("MoCh cache capacity: %d/%d.", len(ts.moCh), maxRcCnt)
-		sendDelayMs := max(int(time.Since(sendTimestamp).Milliseconds()), 1) // min delay 1ms
+			ts.Logger.Debug("MoCh cache capacity: %d/%d.", len(ts.moCh), maxRcCnt)
+			sendDelayMs := max(int(time.Since(sendTimestamp).Milliseconds()), 1) // min delay 1ms
 
-		if fetchCount >= minRcCnt {
-			if resetBaseLine {
-				sendBaseLineDelayMs = int(float64(sendDelayMs) * 1.2)
-				resetBaseLine = false
-				fetchCount = max(sendBaseLineMaxCount, fetchCount)
-				fmt.Println("xxxxxxx", sendDelayMs, fetchCount, sendBaseLineDelayMs, fetchCount, sendBaseLineMaxCount)
-			} else {
-				delayMsSlice = updateSlice(delayMsSlice, sendDelayMs)
+			if fetchCount >= minRcCnt {
+				if resetBaseLine {
+					sendBaseLineDelayMs = int(float64(sendDelayMs) * 1.2)
+					resetBaseLine = false
+					fetchCount = max(sendBaseLineMaxCount, fetchCount)
+					fmt.Println("xxxxxxx", sendDelayMs, fetchCount, sendBaseLineDelayMs, fetchCount, sendBaseLineMaxCount)
+				} else {
+					delayMsSlice = updateSlice(delayMsSlice, sendDelayMs)
 
-				select {
-				case <-ticker.C:
-					fetchCount = minRcCnt
-					resetBaseLine = true
-				default:
-					avgSendDelayMs := calculateAdjustedMean(delayMsSlice)
-					fmt.Println("xxxxxxx avgSendDelayMs:", avgSendDelayMs, sendBaseLineDelayMs)
+					select {
+					case <-ticker.C:
+						fetchCount = minRcCnt
+						resetBaseLine = true
+					default:
+						avgSendDelayMs := calculateAdjustedMean(delayMsSlice)
+						fmt.Println("xxxxxxx avgSendDelayMs:", avgSendDelayMs, sendBaseLineDelayMs)
 
-					if avgSendDelayMs <= sendBaseLineDelayMs {
-						sendBaseLineMaxCount = max(fetchCount, sendBaseLineMaxCount)
-						fetchCount += minRcCnt
-					} else {
-						sendBaseLineMaxCount = max(sendBaseLineMaxCount-minRcCnt, minRcCnt) // not less than minRcCnt
-						fetchCount = max(fetchCount-minRcCnt, minRcCnt)                     // not less than minRcCnt
+						if avgSendDelayMs <= sendBaseLineDelayMs {
+							sendBaseLineMaxCount = max(fetchCount, sendBaseLineMaxCount)
+							fetchCount += minRcCnt
+						} else {
+							sendBaseLineMaxCount = max(sendBaseLineMaxCount-minRcCnt, minRcCnt) // not less than minRcCnt
+							fetchCount = max(fetchCount-minRcCnt, minRcCnt)                     // not less than minRcCnt
+						}
+						fmt.Println("xxxxxxx max(fetchCount, sendBaseLineMaxCount)", fetchCount, sendBaseLineMaxCount)
+						fetchCount = max(fetchCount, sendBaseLineMaxCount)
 					}
-					fmt.Println("xxxxxxx max(fetchCount, sendBaseLineMaxCount)", fetchCount, sendBaseLineMaxCount)
-					fetchCount = max(fetchCount, sendBaseLineMaxCount)
 				}
 			}
-		}
 
-		fetchCount = min(fetchCount, len(ts.moCh))
-		// multiples of minRcCnt
-		fetchCount = fetchCount / minRcCnt * minRcCnt
-		// Ensure fetchCount is never less than minRcCnt. This line is critical and must remain here for correct functionality.
-		fetchCount = max(fetchCount, minRcCnt)
-		fmt.Println("xxxxxxxf", fetchCount, sendDelayMs, fetchDelayMs, sendBaseLineDelayMs, resetBaseLine, sendBaseLineMaxCount, len(ts.moCh))
+			fetchCount = min(fetchCount, len(ts.moCh))
+			// multiples of minRcCnt
+			fetchCount = fetchCount / minRcCnt * minRcCnt
+			// Ensure fetchCount is never less than minRcCnt. This line is critical and must remain here for correct functionality.
+			fetchCount = max(fetchCount, minRcCnt)
+			fmt.Println("xxxxxxxf", fetchCount, sendDelayMs, fetchDelayMs, sendBaseLineDelayMs, resetBaseLine, sendBaseLineMaxCount, len(ts.moCh))
 
-		fetchTimestamp := time.Now()
-		if mos, err := ts.fetchMos(fetchCount); err != nil {
-			ts.Logger.Error("Fetch mos fetch count: %d err: %s", fetchCount, err.Error())
-			return err
-		} else {
-			fetchDelayMs = int(time.Since(fetchTimestamp).Milliseconds())
-			fmt.Println("fetchcccccc", int(time.Since(fetchTimestamp).Milliseconds()))
-			ts.BatchID += 1
-			ts.Logger.Info("Push batch(%d) mos(%d) to clients.", ts.BatchID, len(mos))
-			sendTimestamp = time.Now()
-			ts.pushClients(mos)
+			fetchTimestamp := time.Now()
+			if mos, err := ts.fetchMos(fetchCount); err != nil {
+				ts.Logger.Error("Fetch mos fetch count: %d err: %s", fetchCount, err.Error())
+				return
+			} else {
+				fetchDelayMs = int(time.Since(fetchTimestamp).Milliseconds())
+				fmt.Println("fetchcccccc", int(time.Since(fetchTimestamp).Milliseconds()))
+				ts.BatchID += 1
+				ts.Logger.Info("Push batch(%d) mos(%d) to clients.", ts.BatchID, len(mos))
+				sendTimestamp = time.Now()
+				ts.pushClients(mos)
+			}
 		}
 	}
 }
@@ -213,9 +240,9 @@ func (ts *TCPServer) pushClients(mos []MysqlOperation) {
 		wg.Add(1)
 		go func(cli *TCPServerClient) {
 			defer wg.Done()
-			cli.setPush(ts.BatchID, mos)
+			cli.SetPush(ts.BatchID, mos)
 			ts.Logger.Info("Push to Client(%s) Batch(%d).", name, ts.BatchID)
-			cli.pushClient()
+			cli.PushClient()
 		}(client)
 	}
 	wg.Wait()
@@ -233,31 +260,52 @@ func (ts *TCPServer) fetchMos(count int) ([]MysqlOperation, error) {
 	return mos, nil
 }
 
-func (ts *TCPServer) handleClient(conn net.Conn) {
-	scanner := bufio.NewScanner(conn)
-	if !scanner.Scan() {
-		if err := scanner.Err(); err != nil {
-			fmt.Printf("Failed to read from client: %v", err)
-		} else {
-			fmt.Println("Client disconnected before sending a name")
+func (ts *TCPServer) handleClients(listener net.Listener) {
+	ts.Logger.Info("HandleClients started.")
+	defer ts.Logger.Info("HandleClients closed.")
+
+	var wg sync.WaitGroup
+	for {
+		conn, err := listener.Accept()
+		fmt.Println("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+		if err != nil {
+			ts.Logger.Error("Accepting: %s", err.Error())
+			break
 		}
-		return
-	}
 
-	clientName := scanner.Text()
-
-	if client, exists := ts.Clients[clientName]; exists {
-		if client.Dead {
-			if err := client.InitConn(conn); err != nil {
-				ts.Logger.Error("init client err: %s", err.Error())
+		scanner := bufio.NewScanner(conn)
+		if !scanner.Scan() {
+			if err := scanner.Err(); err != nil {
+				ts.Logger.Error("Failed to read from client: %s", err.Error())
 			} else {
-				ts.Logger.Info("Client %s Running.", clientName)
-				client.Running()
+				ts.Logger.Error("Client disconnected before sending a name")
+
+			}
+		}
+
+		clientName := scanner.Text()
+
+		if client, exists := ts.Clients[clientName]; exists {
+			if client == nil {
+				if ts.Clients[clientName], err = NewTcpServerClient(ts.Logger.Level, clientName, ts.metricCh, conn); err != nil {
+					ts.Logger.Error("Client(%s) Init: %s", clientName, err.Error())
+					return
+				} else {
+					wg.Add(1)
+					go func() {
+						defer wg.Done()
+						ts.Clients[clientName].Start()
+						ts.cancel()
+					}()
+				}
+			} else {
+				ts.Logger.Info("Client(%s) is exists.", clientName)
+				return
 			}
 		} else {
-			ts.Logger.Info("Client(%s) is Running.", clientName)
+			ts.Logger.Error("Client(%s) not exists.", clientName)
+			return
 		}
-	} else {
-		ts.Logger.Error("client not exists: %s", clientName)
 	}
+	wg.Wait()
 }

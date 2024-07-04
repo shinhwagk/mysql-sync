@@ -55,103 +55,59 @@ type TCPServerClient struct {
 	Dead bool
 }
 
-func NewTcpServerClient1(logLevel int, name string, metricCh chan<- MetricUnit) *TCPServerClient {
-	ctx, cancel := context.WithCancel(context.Background())
-	return &TCPServerClient{
-		Logger:      NewLogger(logLevel, fmt.Sprintf("tcp client(%s)", name)),
-		Name:        name,
-		ctx:         ctx,
-		cancel:      cancel,
-		SendBatchID: 0,
-		State:       ClientFree,
-		metricCh:    metricCh,
-		Dead:        true,
-	}
-}
-
-// func NewTcpServerClient(logLevel int, name string, conn net.Conn) (*TCPServerClient, error) {
-// 	var buf bytes.Buffer
-
-// 	multiWriter := io.MultiWriter(conn, &buf)
-// 	zstdWriter, err := zstd.NewWriter(multiWriter)
-
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-// 	ctx, cancel := context.WithCancel(context.Background())
-// 	return &TCPServerClient{
-// 		Logger: NewLogger(logLevel, fmt.Sprintf("%s -- tcp server client(%s)", name, conn.RemoteAddr().String())),
-
-// 		Name:   name,
-// 		ctx:    ctx,
-// 		cancel: cancel,
-
-// 		conn: conn,
-
-// 		encoder:           gob.NewEncoder(zstdWriter),
-// 		encoderBuffer:     &buf,
-// 		encoderZstdWriter: zstdWriter,
-// 		decoder:           gob.NewDecoder(conn),
-
-// 		SendBatch: 0,
-// 		State:     ClientFree,
-// 		SendError: nil,
-
-// 		IsAlive: false,
-// 	}, nil
-// }
-
-func (tsc *TCPServerClient) InitConn(conn net.Conn) error {
+func NewTcpServerClient(logLevel int, name string, metricCh chan<- MetricUnit, conn net.Conn) (*TCPServerClient, error) {
 	var buf bytes.Buffer
 
 	multiWriter := io.MultiWriter(conn, &buf)
 	zstdWriter, err := zstd.NewWriter(multiWriter)
 
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	tsc.ctx, tsc.cancel = context.WithCancel(context.Background())
-	tsc.conn = conn
-	tsc.encoder = gob.NewEncoder(zstdWriter)
-	tsc.encoderBuffer = &buf
-	tsc.encoderZstdWriter = zstdWriter
-	tsc.decoder = gob.NewDecoder(conn)
+	ctx, cancel := context.WithCancel(context.Background())
 
-	tsc.State = ClientFree
-	tsc.Dead = false
-	return nil
-}
-
-func (tsc *TCPServerClient) SetClose() {
-	tsc.cancel()
+	return &TCPServerClient{
+		Logger:            NewLogger(logLevel, fmt.Sprintf("tcp client(%s,%s)", name, conn.RemoteAddr().String())),
+		Name:              name,
+		ctx:               ctx,
+		cancel:            cancel,
+		SendBatchID:       0,
+		State:             ClientFree,
+		metricCh:          metricCh,
+		Dead:              false,
+		conn:              conn,
+		encoder:           gob.NewEncoder(zstdWriter),
+		encoderBuffer:     &buf,
+		encoderZstdWriter: zstdWriter,
+		decoder:           gob.NewDecoder(conn),
+	}, nil
 }
 
 func (tsc *TCPServerClient) Cleanup() {
 	<-tsc.ctx.Done()
 
+	tsc.Dead = true
+
 	if err := tsc.encoderZstdWriter.Close(); err != nil {
-		tsc.Logger.Error("zstd writer close err: %s", err.Error())
+		tsc.Logger.Error("Zstd writer close: %s", err.Error())
 	}
-	tsc.Logger.Info("zstd write closed.")
+	tsc.Logger.Info("Zstd writer closed.")
 
 	if err := tsc.conn.Close(); err != nil {
-		tsc.Logger.Error("conn close err: %s", err.Error())
+		tsc.Logger.Error("Conn close: %s", err.Error())
 	}
-	tsc.Logger.Info("conn closed.")
-
-	tsc.Dead = true
+	tsc.Logger.Info("Conn closed.")
 }
 
 func (tsc *TCPServerClient) sendOperations(s Signal1) error {
 	if err := tsc.encoder.Encode(s); err != nil {
-		tsc.Logger.Error("Error encoding message: %s", err.Error())
+		tsc.Logger.Error("Encoding message: %s", err.Error())
 		return err
 	}
 
 	if err := tsc.encoderZstdWriter.Flush(); err != nil {
-		tsc.Logger.Error("Error flushing zstd writer: %s", err)
+		tsc.Logger.Error("Zstd writer flushing: %s", err.Error())
 		return err
 	}
 
@@ -164,11 +120,11 @@ func (tsc *TCPServerClient) receivedSignal() {
 		var ack Signal2
 		if err := tsc.decoder.Decode(&ack); err != nil {
 			if err == io.EOF {
-				tsc.Logger.Info("tcp client close.")
+				tsc.Logger.Info("Tcp client close.")
 			} else {
-				tsc.Logger.Error("Error decoding message:" + err.Error())
+				tsc.Logger.Error("Decoding message: %s", err.Error())
 			}
-			tsc.Logger.Debug("Received signal", err.Error())
+			tsc.Logger.Error("Received signal: %s", err.Error())
 			return
 		}
 
@@ -178,12 +134,15 @@ func (tsc *TCPServerClient) receivedSignal() {
 			elapsed := time.Since(tsc.SendTimestamp).Milliseconds()
 			tsc.Logger.Debug("Client received batch: %d, elapsed ms: %d successfully.", ack.BatchID, elapsed)
 		} else {
-			tsc.Logger.Error("not resc beatch id %d,%d", tsc.SendBatchID, ack.BatchID)
+			tsc.Logger.Error("Not received batch id %d,%d", tsc.SendBatchID, ack.BatchID)
 		}
 	}
 }
 
-func (tsc *TCPServerClient) Running() {
+func (tsc *TCPServerClient) Start() {
+	tsc.Logger.Info("Started.")
+	defer tsc.Logger.Info("Closed.")
+
 	var wg sync.WaitGroup
 
 	wg.Add(1)
@@ -200,23 +159,21 @@ func (tsc *TCPServerClient) Running() {
 		tsc.Cleanup()
 	}()
 
-	tsc.Logger.Info("Receive new client(%s) ", tsc.conn.RemoteAddr().String())
 	wg.Wait()
-	tsc.Logger.Info("Client(%s) closed.", tsc.conn.RemoteAddr().String())
 }
 
-func (tsc *TCPServerClient) setPush(batchID uint, mos []MysqlOperation) {
+func (tsc *TCPServerClient) SetPush(batchID uint, mos []MysqlOperation) {
 	tsc.SendBatchID = batchID
 	tsc.SendMos = mos
 }
 
-func (tsc *TCPServerClient) pushClient() {
+func (tsc *TCPServerClient) PushClient() {
 	signal1 := Signal1{BatchID: tsc.SendBatchID, Mos: tsc.SendMos, Count: len(tsc.SendMos)}
 	tsc.State = ClientBusy
 	tsc.SendError = nil
 
 	if err := tsc.sendOperations(signal1); err != nil {
-		tsc.Logger.Error("Push mos to client error: %s", err.Error())
+		tsc.Logger.Error("Push mos to client: %s", err.Error())
 		tsc.SendError = err
 	} else {
 		tsc.metricCh <- MetricUnit{MetricTCPServerSendOperations, uint(len(tsc.SendMos)), &tsc.Name}
