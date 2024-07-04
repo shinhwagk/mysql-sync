@@ -101,6 +101,7 @@ func (tc *TCPClient) receiveOperations() {
 
 		if err := tc.SendSignal(sig.BatchID); err != nil {
 			fmt.Println("sdsfdfsd", err.Error())
+			tc.Logger.Error("Send signal: %s", err.Error())
 			return
 		}
 		fmt.Println("batch", sig.BatchID, len(sig.Mos))
