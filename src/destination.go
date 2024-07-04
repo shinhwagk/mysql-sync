@@ -28,13 +28,17 @@ type Destination struct {
 
 func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) error {
 	metricCh := make(chan MetricUnit)
-	moCh := make(chan MysqlOperation, 1000)
+	cacheSize := 1000
+	if dest.dc.Sync.CacheSize > cacheSize {
+		cacheSize = dest.dc.Sync.CacheSize
+	}
+	moCh := make(chan MysqlOperation, dest.dc.Sync.CacheSize)
 	defer close(metricCh)
 	defer close(moCh)
 
 	// gtidsets must first init.
 	gtidSets := NewGtidSets(dest.hjdbAddr, dest.replName, dest.destName)
-	err := gtidSets.InitStartupGtidSetsMap(dest.dc.InitGtidSetsRangeStr)
+	err := gtidSets.InitStartupGtidSetsMap(dest.dc.Sync.InitGtidSetsRangeStr)
 	if err != nil {
 		return err
 	}
@@ -53,7 +57,7 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) e
 	}
 	defer mysqlClient.Close()
 
-	replicateFilter := NewReplicateFilter(dest.dc.Replicate)
+	replicateFilter := NewReplicateFilter(dest.dc.Sync.Replicate)
 	mysqlApplier := NewMysqlApplier(dest.dc.LogLevel, gtidSets, mysqlClient, replicateFilter, metricCh)
 
 	mdCtx, mdCancel := context.WithCancel(context.Background())
@@ -64,7 +68,11 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) e
 	go func() {
 		defer wg0.Done()
 		metricDirector.Logger.Info("started.")
-		metricDirector.Start(mdCtx, fmt.Sprintf("0.0.0.0:%d", dest.dc.ExportPort))
+		promExportPort := 9092
+		if dest.dc.Prometheus != nil {
+			promExportPort = dest.dc.Prometheus.ExportPort
+		}
+		metricDirector.Start(mdCtx, fmt.Sprintf("0.0.0.0:%d", promExportPort))
 		metricDirector.Logger.Info("stopped.")
 	}()
 

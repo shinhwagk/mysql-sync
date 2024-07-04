@@ -9,7 +9,7 @@ type Replicate struct {
 	// WildIgnoreTable string
 }
 
-func NewReplicateFilter(config *ReplicateConfig) *Replicate {
+func NewReplicateFilter(config *DestinationReplicateConfig) *Replicate {
 	var DoDBs, IgnoreDBs, DoTabs, IgnoreTabs []string
 
 	if config != nil {

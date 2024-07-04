@@ -32,11 +32,10 @@ type DestinationsConfig struct {
 }
 
 type DestinationConfig struct {
-	InitGtidSetsRangeStr string                 `yaml:"gtidsets"`
-	LogLevel             int                    `yaml:"loglevel"`
-	Replicate            *ReplicateConfig       `yaml:"replicate"`
-	ExportPort           int                    `yaml:"export"`
-	Mysql                DestinationMysqlConfig `yaml:"mysql"`
+	LogLevel   int                          `yaml:"loglevel"`
+	Mysql      DestinationMysqlConfig       `yaml:"mysql"`
+	Sync       DestinationSyncConfig        `yaml:"sync"`
+	Prometheus *DestinationPrometheusConfig `yaml:"prom"`
 }
 
 type DestinationMysqlConfig struct {
@@ -44,7 +43,17 @@ type DestinationMysqlConfig struct {
 	SkipErrors *string `yaml:"skip_errors"`
 }
 
-type ReplicateConfig struct {
+type DestinationSyncConfig struct {
+	CacheSize            int                         `yaml:"cache"`
+	Replicate            *DestinationReplicateConfig `yaml:"replicate"`
+	InitGtidSetsRangeStr string                      `yaml:"gtidsets"`
+}
+
+type DestinationPrometheusConfig struct {
+	ExportPort int `yaml:"export"`
+}
+
+type DestinationReplicateConfig struct {
 	DoDB        *string `yaml:"do_db"`
 	IgnoreDB    *string `yaml:"ignore_db"`
 	DoTable     *string `yaml:"do_table"`

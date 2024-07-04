@@ -44,7 +44,7 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 	destGtidSetss := make([]map[string]uint, len(repl.msc.Destination.Destinations))
 	for destName, dc := range repl.msc.Destination.Destinations {
 		gss := NewGtidSets(repl.msc.HJDB.Addr, repl.msc.Replication.Name, destName)
-		gss.InitStartupGtidSetsMap(dc.InitGtidSetsRangeStr)
+		gss.InitStartupGtidSetsMap(dc.Sync.InitGtidSetsRangeStr)
 		destGtidSetss = append(destGtidSetss, gss.GtidSetsMap)
 
 		fmt.Println("xxxxxxx", destName)
