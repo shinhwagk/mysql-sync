@@ -9,7 +9,7 @@ import (
 
 func NewMysqlApplier(logLevel int, gtidSets *GtidSets, mysqlClient *MysqlClient, replicate *Replicate, metricCh chan<- MetricUnit) *MysqlApplier {
 	return &MysqlApplier{
-		Logger: NewLogger(logLevel, "mysql applier"),
+		Logger: NewLogger(logLevel, "mysql-applier"),
 
 		GtidSets: gtidSets,
 
@@ -59,6 +59,9 @@ func (ma *MysqlApplier) ReplicateNoExecute(schemaContext string, tableName strin
 }
 
 func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
+	ma.Logger.Info("started.")
+	defer ma.Logger.Info("stopped.")
+
 	for {
 		select {
 		case <-time.After(time.Millisecond * 100):

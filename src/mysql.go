@@ -2,10 +2,19 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
 	_ "github.com/go-sql-driver/mysql"
+)
+
+const (
+	StateNULL   = "null"
+	StateDML    = "dml"
+	StateDDL    = "ddl"
+	StateBEGIN  = "begin"
+	StateCOMMIT = "commit"
 )
 
 type MysqlClient struct {
@@ -13,6 +22,7 @@ type MysqlClient struct {
 	tx         *sql.Tx
 	Logger     *Logger
 	SkipErrors []uint16
+	State      string
 }
 
 func NewMysqlClient(logLevel int, dsn string, skipErrorsStr *string) (*MysqlClient, error) {
@@ -43,6 +53,7 @@ func NewMysqlClient(logLevel int, dsn string, skipErrorsStr *string) (*MysqlClie
 		tx:         nil,
 		Logger:     Logger,
 		SkipErrors: skipErrors,
+		State:      StateNULL,
 	}
 
 	return myclient, nil
@@ -69,71 +80,86 @@ func (mc *MysqlClient) Close() error {
 }
 
 func (mc *MysqlClient) Begin() error {
-	var err error
-	if mc.tx == nil {
-		if mc.tx, err = mc.db.Begin(); err != nil {
-			return err
+	if mc.State == StateCOMMIT || mc.State == StateNULL {
+		var err error
+		if mc.tx == nil {
+			if mc.tx, err = mc.db.Begin(); err != nil {
+				mc.Logger.Error("execute Begin: %s", err.Error())
+				return err
+			}
+			mc.State = StateBEGIN
+		} else {
+			return fmt.Errorf("execute Begin: tx is not nil")
 		}
+	} else {
+		return fmt.Errorf("execute Begin: last state is '%s'", mc.State)
 	}
 	return nil
 }
 
 func (mc *MysqlClient) ExecuteDML(query string, args []interface{}) error {
-	if mc.tx != nil {
-		_, err := mc.tx.Exec(query, args...)
-		if mc.SkipError(err) != nil {
-			return mc.Rollback()
+	if mc.State == StateBEGIN || mc.State == StateDML {
+		if mc.tx != nil {
+			_, err := mc.tx.Exec(query, args...)
+			if mc.SkipError(err) != nil {
+				mc.Logger.Error("execute DML: %s, Query: %s, Params: %v.", err.Error(), query, args)
+				return err
+			}
+			mc.State = StateDML
+		} else {
+			return fmt.Errorf("execute DML: tx is not nil")
 		}
+	} else {
+		return fmt.Errorf("execute DML: last state is '%s'", mc.State)
 	}
 	return nil
 }
 
 func (mc *MysqlClient) ExecuteOnTable(db string, query string) error {
-	mc.Commit()
-
 	mc.Begin()
 
 	if db != "" {
-		_, err := mc.tx.Exec("USE " + db)
-
-		if err != nil {
+		if _, err := mc.tx.Exec("USE " + db); err != nil {
 			return err
 		}
 	}
 
-	_, err := mc.tx.Exec(query)
-
-	if mc.SkipError(err) != nil {
+	if _, err := mc.tx.Exec(query); mc.SkipError(err) != nil {
+		mc.Logger.Error("execute DDL: %s, Database: %s Query: %s.", err.Error(), db, query)
 		return err
 	}
+
+	mc.State = StateDDL
 
 	return mc.Commit()
 }
 
 func (mc *MysqlClient) ExecuteOnDatabase(query string) error {
-	mc.Commit()
-
 	mc.Begin()
 
-	_, err := mc.tx.Exec(query)
-
-	if mc.SkipError(err) != nil {
-		mc.Logger.Error("query: '%s': %s", query, err.Error())
-		mc.Rollback()
-		return err
+	if _, err := mc.tx.Exec(query); mc.SkipError(err) != nil {
+		mc.Logger.Error("execute DDL: %s, Query: %s.", err.Error(), query)
 	}
+
+	mc.State = StateDDL
 
 	return mc.Commit()
 }
 
 func (mc *MysqlClient) Commit() error {
-	if mc.tx != nil {
-		err := mc.tx.Commit()
-		if err != nil {
-			mc.Logger.Error("Commit: ", err.Error())
-			return err
+	if mc.State == StateDML || mc.State == StateDDL || mc.State == StateBEGIN {
+		if mc.tx == nil {
+			return fmt.Errorf("execute Commit: tx is 'nil'")
+		} else {
+			if err := mc.tx.Commit(); err != nil {
+				mc.Logger.Error("execute Commit: %s", err.Error())
+				return err
+			}
+			mc.State = StateCOMMIT
+			mc.tx = nil
 		}
-		mc.tx = nil
+	} else {
+		return fmt.Errorf("execute Commit: last state is '%s'", mc.State)
 	}
 	return nil
 }

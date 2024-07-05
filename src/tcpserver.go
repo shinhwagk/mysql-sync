@@ -267,7 +267,6 @@ func (ts *TCPServer) handleClients(listener net.Listener) {
 	var wg sync.WaitGroup
 	for {
 		conn, err := listener.Accept()
-		fmt.Println("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
 		if err != nil {
 			ts.Logger.Error("Accepting: %s", err.Error())
 			break

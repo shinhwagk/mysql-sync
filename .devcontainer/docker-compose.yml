@@ -73,15 +73,15 @@ services:
   #   ports:
   #     - 4646:4646
   hjdb:
-    image: shinhwagk/hjdb:0.6.1
+    image: shinhwagk/hjdb:bun-0.7.4
     volumes:
       - ../example/hjdb:/var/lib/hjdb
-  prometheus:
-    image: prom/prometheus:v2.52.0
-    ports:
-      - 9090:9090
-    volumes:
-      - ../example/prometheus.yml:/etc/prometheus/prometheus.yml
+  # prometheus:
+  #   image: prom/prometheus:v2.52.0
+  #   ports:
+  #     - 9090:9090
+  #   volumes:
+  #     - ../example/prometheus.yml:/etc/prometheus/prometheus.yml
   #     docker run --name dtle-consul -p 8500:8500 --network=dtle-net -d consul:latest
   # docker run --name dtle -p 4646:4646 --network=dtle-net -d actiontech/dtle
 

@@ -67,22 +67,18 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) e
 	wg0.Add(1)
 	go func() {
 		defer wg0.Done()
-		metricDirector.Logger.Info("started.")
 		promExportPort := 9092
 		if destConf.Prometheus != nil {
 			promExportPort = destConf.Prometheus.ExportPort
 		}
 		metricDirector.Start(mdCtx, fmt.Sprintf("0.0.0.0:%d", promExportPort))
-		metricDirector.Logger.Info("stopped.")
 	}()
 
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		mysqlApplier.Logger.Info("started.")
 		mysqlApplier.Start(ctx, moCh)
-		mysqlApplier.Logger.Info("stopped.")
 		cancel()
 	}()
 
@@ -99,7 +95,7 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) e
 	mdCancel()
 	wg0.Wait()
 
-	dest.Logger.Info("stopped。")
+	dest.Logger.Info("Stopped.")
 
 	return nil
 }

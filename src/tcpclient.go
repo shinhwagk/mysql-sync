@@ -103,7 +103,7 @@ func (tc *TCPClient) receiveOperations() {
 			tc.Logger.Error("Send signal: %s", err.Error())
 			return
 		}
-		tc.Logger.Debug("Send signal 'BatchID: %s' success.", sig.BatchID)
+		tc.Logger.Debug("Send signal 'BatchID: %d' success.", sig.BatchID)
 	}
 }
 
