@@ -1,7 +1,7 @@
 #!/bin/bash
 
 build() {
-  go build -o /tmp/mysqlsync ./src/*.go
+  go build -v -o /tmp/mysqlsync ./src/*.go
 #   go build -ldflags="-s -w" -o /tmp/mysqlsync ./src/*.go
 
 }

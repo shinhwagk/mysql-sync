@@ -26,7 +26,7 @@ func NewMysqlApplier(logLevel int, gtidSets *GtidSets, mysqlClient *MysqlClient,
 
 		// excludeSchemas: []string{"mysql"},
 
-		skip: false,
+		GitdSkip: false,
 	}
 }
 
@@ -49,12 +49,12 @@ type MysqlApplier struct {
 
 	// excludeSchemas []string
 
-	skip bool
+	GitdSkip bool
 
 	// metric *MetricDestination
 }
 
-func (ma *MysqlApplier) ReplicateNoExecute(schemaContext string, tableName string) bool {
+func (ma *MysqlApplier) ReplicateNotExecute(schemaContext string, tableName string) bool {
 	return !ma.replicate.filter(schemaContext, tableName)
 }
 
@@ -85,77 +85,69 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 			}
 			switch op := oper.(type) {
 			case MysqlOperationDDLDatabase:
-				if ma.skip || ma.ReplicateNoExecute(op.Schema, "") {
+				if ma.GitdSkip || ma.ReplicateNotExecute(op.Schema, "") {
 					continue
 				}
 				if err := ma.OnDDLDatabase(op); err != nil {
-					ma.Logger.Error("OnDDLDatabase: %s", err.Error())
 					return
 				}
 			case MysqlOperationDDLTable:
-				if ma.skip || ma.ReplicateNoExecute(op.Schema, op.Table) {
+				if ma.GitdSkip || ma.ReplicateNotExecute(op.Schema, op.Table) {
 					continue
 				}
 				if err := ma.OnDDLTable(op); err != nil {
-					ma.Logger.Error("MysqlOperationDDLTable: %s", err.Error())
 					return
 				}
 			case MysqlOperationDMLInsert:
-				if ma.skip || ma.ReplicateNoExecute(op.Database, op.Table) {
+				if ma.GitdSkip || ma.ReplicateNotExecute(op.Database, op.Table) {
 					continue
 				}
 				if err := ma.OnDMLInsert(op); err != nil {
-					ma.Logger.Error("MysqlOperationDMLInsert " + err.Error())
 					return
 				}
 				ma.metricCh <- MetricUnit{Name: MetricDestDMLInsertTimes, Value: 1}
 			case MysqlOperationDMLDelete:
-				if ma.skip || ma.ReplicateNoExecute(op.Database, op.Table) {
+				if ma.GitdSkip || ma.ReplicateNotExecute(op.Database, op.Table) {
 					continue
 				}
 				if err := ma.OnDMLDelete(op); err != nil {
-					ma.Logger.Error("MysqlOperationDMLDelete " + err.Error())
 					return
 				}
 				ma.metricCh <- MetricUnit{Name: MetricDestDMLDeleteTimes, Value: 1}
 			case MysqlOperationDMLUpdate:
-				if ma.skip || ma.ReplicateNoExecute(op.Database, op.Table) {
+				if ma.GitdSkip || ma.ReplicateNotExecute(op.Database, op.Table) {
 					continue
 				}
 				if err := ma.OnDMLUpdate(op); err != nil {
-					ma.Logger.Error("MysqlOperationDMLUpdate " + err.Error())
 					return
 				}
 				ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdateTimes, Value: 1}
 			case MysqlOperationXid:
-				if ma.skip {
+				if ma.GitdSkip {
 					continue
 				}
 				if err := ma.OnXID(op); err != nil {
-					ma.Logger.Error("MysqlOperationXid " + err.Error())
 					return
 				}
 				ma.metricCh <- MetricUnit{Name: MetricDestTrx, Value: 1}
 			case MysqlOperationGTID:
 				if err := ma.OnGTID(op); err != nil {
-					ma.Logger.Error("MysqlOperationGTID " + err.Error())
 					return
 				}
 			case MysqlOperationHeartbeat:
 				if err := ma.OnHeartbeat(op); err != nil {
-					ma.Logger.Error("MysqlOperationHeartbeat " + err.Error())
 					return
 				}
 			case MysqlOperationBegin:
-				if ma.skip {
+				if ma.GitdSkip {
 					continue
 				}
 				if err := ma.OnBegin(op); err != nil {
-					ma.Logger.Error("MysqlOperationBegin " + err.Error())
 					return
 				}
 			default:
 				ma.Logger.Error("unknow operation.")
+				return
 			}
 			ma.metricCh <- MetricUnit{Name: MetricApplierOperations, Value: 1}
 		}
@@ -223,7 +215,7 @@ func (ma *MysqlApplier) OnDDLDatabase(op MysqlOperationDDLDatabase) error {
 	ma.metricCh <- MetricUnit{Name: MetricDestDDLDatabaseTimes, Value: 1}
 
 	ma.Checkpoint(op.Timestamp)
-
+	ma.AllowCommit = false
 	return nil
 }
 
@@ -241,11 +233,12 @@ func (ma *MysqlApplier) OnDDLTable(op MysqlOperationDDLTable) error {
 	ma.metricCh <- MetricUnit{Name: MetricDestDDLTableTimes, Value: 1}
 
 	ma.Checkpoint(op.Timestamp)
-
+	ma.AllowCommit = false
 	return nil
 }
 
 func (ma *MysqlApplier) OnXID(op MysqlOperationXid) error {
+	ma.Logger.Debug("OnXID")
 	ma.LastCommitTimestamp = op.Timestamp
 	ma.AllowCommit = true
 
@@ -253,6 +246,7 @@ func (ma *MysqlApplier) OnXID(op MysqlOperationXid) error {
 }
 
 func (ma *MysqlApplier) OnBegin(op MysqlOperationBegin) error {
+	ma.Logger.Debug("OnBegin")
 	if err := ma.mysqlClient.Begin(); err != nil {
 		return err
 	}
@@ -261,15 +255,22 @@ func (ma *MysqlApplier) OnBegin(op MysqlOperationBegin) error {
 }
 
 func (ma *MysqlApplier) OnGTID(op MysqlOperationGTID) error {
-	ma.skip = false
+	ma.Logger.Debug("OnGTID: %s:%d", op.ServerUUID, op.TrxID)
+	ma.GitdSkip = false
 	if trx, ok := ma.GtidSets.GetTrxIdOfServerUUID(op.ServerUUID); ok {
 		if trx >= uint(op.TrxID) {
-			ma.skip = true
+			ma.GitdSkip = true
 			ma.Logger.Info("skip %s %s", op.ServerUUID, op.TrxID)
 			return nil
 		} else if uint(op.TrxID) >= trx+2 {
-			return fmt.Errorf("sdfsdf op", op.TrxID, trx)
+			err := fmt.Errorf("gtid miss '%s:%d'", op.ServerUUID, trx+1)
+			ma.Logger.Error("OnGTID: %s", err.Error())
+			return err
 		}
+	} else {
+		err := fmt.Errorf("ServerUUID: %s not exists", op.ServerUUID)
+		ma.Logger.Error("OnGTID: %s", err.Error())
+		return err
 	}
 
 	if ma.LastCommitted != op.LastCommitted {
@@ -279,7 +280,6 @@ func (ma *MysqlApplier) OnGTID(op MysqlOperationGTID) error {
 		ma.LastCommitted = op.LastCommitted
 	}
 
-	ma.Logger.Debug("Gtid: %s:%d", op.ServerUUID, op.TrxID)
 	if err := ma.GtidSets.SetTrxIdOfServerUUID(op.ServerUUID, uint(op.TrxID)); err != nil {
 		return err
 	}
@@ -289,6 +289,7 @@ func (ma *MysqlApplier) OnGTID(op MysqlOperationGTID) error {
 }
 
 func (ma *MysqlApplier) OnHeartbeat(op MysqlOperationHeartbeat) error {
+	ma.Logger.Debug("OnHeartbeat")
 	if err := ma.TryMergeCommit(); err != nil {
 		return err
 	}
@@ -297,9 +298,11 @@ func (ma *MysqlApplier) OnHeartbeat(op MysqlOperationHeartbeat) error {
 }
 
 func (ma *MysqlApplier) TryMergeCommit() error {
+	ma.Logger.Debug("TryMergeCommit")
 	if ma.AllowCommit {
 		ma.Logger.Debug("The last commited was switched with merge commit.")
 		if err := ma.mysqlClient.Commit(); err != nil {
+			ma.Logger.Error("TryMergeCommit: %", err.Error())
 			return err
 		}
 
