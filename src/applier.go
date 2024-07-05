@@ -267,10 +267,6 @@ func (ma *MysqlApplier) OnGTID(op MysqlOperationGTID) error {
 			ma.Logger.Error("OnGTID: %s", err.Error())
 			return err
 		}
-	} else {
-		err := fmt.Errorf("ServerUUID: %s not exists", op.ServerUUID)
-		ma.Logger.Error("OnGTID: %s", err.Error())
-		return err
 	}
 
 	if ma.LastCommitted != op.LastCommitted {

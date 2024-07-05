@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"os"
 )
 
@@ -12,7 +11,7 @@ func main() {
 
 	config, err := LoadConfig("/etc/mysqlsync/config.yml")
 	if err != nil {
-		logger.Error(fmt.Sprintf("Failed to load config: %v", err))
+		logger.Error("Failed to load config: %v", err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

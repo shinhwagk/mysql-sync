@@ -86,10 +86,10 @@ func (bext *BinlogExtract) Start(ctx context.Context, gtidsets string) {
 			bext.binlogSyncer.Close()
 			bext.binlogSyncer = nil
 			if err == context.DeadlineExceeded {
-				bext.Logger.Error(fmt.Sprintf("Event fetch timed out: %s", err))
+				bext.Logger.Error("Event fetch timed out: %s", err)
 				return
 			} else if err == context.Canceled {
-				bext.Logger.Error(fmt.Sprintf("Event handling canceled: %s", err))
+				bext.Logger.Error("Event handling canceled: %s", err)
 				return
 			}
 			bext.Logger.Error("error event " + err.Error())

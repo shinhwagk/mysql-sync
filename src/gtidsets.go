@@ -77,9 +77,8 @@ func (gss *GtidSets) QueryGtidSetsMapFromHJDB(replName string, destName string) 
 		}
 		return nil, fmt.Errorf(*hjdbResp.ErrMsg)
 	} else {
-		gss.Logger.Info(fmt.Sprintf("Query gtidsets from hjdb: %v", *hjdbResp.Data))
+		gss.Logger.Info("Query gtidsets from hjdb: %v", *hjdbResp.Data)
 		return *hjdbResp.Data, nil
-		// g.Logger.Debug(fmt.Sprintf("Persist gtidsets map '%v' success.", gssm))
 	}
 
 }
@@ -96,10 +95,10 @@ func (gss *GtidSets) PersistGtidSetsMaptToHJDB() error {
 	}
 
 	if *hjdbResp.State == "err" {
-		gss.Logger.Error(fmt.Sprintf("hjdb resp err: %s", *hjdbResp.ErrMsg))
+		gss.Logger.Error("hjdb resp err: %s", *hjdbResp.ErrMsg)
 		return fmt.Errorf(*hjdbResp.ErrMsg + "\n")
 	} else {
-		gss.Logger.Debug(fmt.Sprintf("Persist gtidsets map '%v' complate.", gss.GtidSetsMap))
+		gss.Logger.Debug("Persist gtidsets map '%v' complate.", gss.GtidSetsMap)
 	}
 
 	return nil
@@ -118,7 +117,7 @@ func (gss *GtidSets) SetTrxIdOfServerUUID(serverUUID string, trxID uint) error {
 			return fmt.Errorf("gtid trxid order uuid:'%s' last:'%d', next '%d'", serverUUID, lastTrxID, trxID)
 		}
 	} else {
-		gss.Logger.Warning(fmt.Sprintf("Gtid: '%s:%d' first join.", serverUUID, trxID))
+		gss.Logger.Warning("Gtid: '%s:%d' first join.", serverUUID, trxID)
 		gss.GtidSetsMap[serverUUID] = trxID
 	}
 	return nil
