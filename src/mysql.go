@@ -61,11 +61,11 @@ func (mc *MysqlClient) SkipError(err error) error {
 }
 
 func (mc *MysqlClient) Close() error {
-	err := mc.db.Close()
-	if err != nil {
+	if err := mc.db.Close(); err != nil {
 		mc.Logger.Error("Connection close: ", err.Error())
+		return err
 	}
-	return err
+	return nil
 }
 
 func (mc *MysqlClient) Begin() error {
