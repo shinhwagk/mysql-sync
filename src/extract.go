@@ -281,12 +281,6 @@ func (bext *BinlogExtract) handleQueryEvent(e *replication.QueryEvent, eh *repli
 				schema = t.Table.Schema.O
 			}
 			bext.toMoCh(MysqlOperationDDLTable{SchemaContext: string(e.Schema), Schema: schema, Table: t.Table.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})
-		// case *ast.CreateIndexStmt:
-		// 	schema := string(e.Schema)
-		// 	if len(schema) == 0 {
-		// 		schema = t.Table.Schema.O
-		// 	}
-		// 	bext.toMoCh(MysqlOperationDDLTable{SchemaContext: string(e.Schema), Schema: schema, Table: t.Table.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})
 		case *ast.DropIndexStmt:
 		case *ast.CreateDatabaseStmt:
 			bext.toMoCh(MysqlOperationDDLDatabase{Schema: t.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})
