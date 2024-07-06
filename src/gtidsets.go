@@ -80,7 +80,6 @@ func (gss *GtidSets) QueryGtidSetsMapFromHJDB(replName string, destName string) 
 		gss.Logger.Info("Query gtidsets from hjdb: %v", *hjdbResp.Data)
 		return *hjdbResp.Data, nil
 	}
-
 }
 
 // gtid sets map gssm
@@ -158,7 +157,7 @@ func GetGtidSetsMapFromGtidSetsRangeStr(gtidSetsRangeStr string) (map[string]uin
 	return result, nil
 }
 
-func MergeGtidSets(gsss []map[string]uint) map[string]uint {
+func MergeGtidSetss(gsss []map[string]uint) map[string]uint {
 	gssout := make(map[string]uint)
 	for _, gss := range gsss {
 		for serverUUID, trxID := range gss {

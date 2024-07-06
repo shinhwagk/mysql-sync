@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/gob"
-	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -50,7 +49,9 @@ func NewTCPClient(logLevel int, serverAddress string, destName string, moCh chan
 		return nil, err
 	}
 
-	fmt.Fprintln(conn, destName)
+	if _, err := conn.Write([]byte(destName + "\n")); err != nil {
+		logger.Error("register: %s", err)
+	}
 
 	encoder := gob.NewEncoder(conn)
 

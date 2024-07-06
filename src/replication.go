@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"sync"
 )
 
@@ -22,6 +23,7 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 	defer repl.Logger.Info("Closed.")
 
 	metricCh := make(chan MetricUnit)
+	defer close(metricCh)
 
 	cacheSize := 1000
 	if repl.msc.Replication.Settings != nil && repl.msc.Replication.Settings.CacheSize > cacheSize {
@@ -29,8 +31,6 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 	}
 	repl.Logger.Info("Settings cache size: %d", cacheSize)
 	moCh := make(chan MysqlOperation, cacheSize)
-
-	defer close(metricCh)
 	defer close(moCh)
 
 	destNames := []string{}
@@ -43,24 +43,37 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 	destGtidSetss := make([]map[string]uint, len(repl.msc.Destination.Destinations))
 	for destName, dc := range repl.msc.Destination.Destinations {
 		gss := NewGtidSets(repl.msc.HJDB.Addr, repl.msc.Replication.Name, destName)
-		gss.InitStartupGtidSetsMap(dc.Sync.InitGtidSetsRangeStr)
+		if err := gss.InitStartupGtidSetsMap(dc.Sync.InitGtidSetsRangeStr); err != nil {
+			return
+		}
 		destGtidSetss = append(destGtidSetss, gss.GtidSetsMap)
 		destNames = append(destNames, destName)
 	}
 
 	metricDirector := NewMetricReplDirector(repl.msc.Replication.LogLevel, "replication", repl.msc.Replication.Name, metricCh)
 	tcpServer := NewTCPServer(repl.msc.Replication.LogLevel, repl.msc.Replication.TCPAddr, destNames, moCh, metricCh)
-	binlogExtract := NewBinlogExtract(repl.msc.Replication.LogLevel, repl.msc.Replication, moCh, metricCh)
+	extract := NewBinlogExtract(repl.msc.Replication.LogLevel, repl.msc.Replication, moCh, metricCh)
 
-	initGtidSetsRangeStr := GetGtidSetsRangeStrFromGtidSetsMap(MergeGtidSets(destGtidSetss))
+	initGtidSetsRangeStr := GetGtidSetsRangeStrFromGtidSetsMap(MergeGtidSetss(destGtidSetss))
 
 	repl.Logger.Info("Init gtidsets range string:'%s'", initGtidSetsRangeStr)
 
+	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
-		metricDirector.Start(ctx, "0.0.0.0:9091")
+		defer wg.Done()
+		promExportPort := 9092
+		if repl.msc.Replication.Prometheus != nil {
+			if repl.msc.Replication.Prometheus.ExportPort != 0 {
+				promExportPort = repl.msc.Replication.Prometheus.ExportPort
+			} else {
+				repl.Logger.Error("prometheus export port %d.", repl.msc.Replication.Prometheus.ExportPort)
+				return
+			}
+		}
+		metricDirector.Start(ctx, fmt.Sprintf("0.0.0.0:%d", promExportPort))
 	}()
 
-	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -71,7 +84,7 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		binlogExtract.Start(ctx, initGtidSetsRangeStr)
+		extract.Start(ctx, initGtidSetsRangeStr)
 		cancel()
 	}()
 	wg.Wait()

@@ -21,60 +21,64 @@ type Destination struct {
 	Logger *Logger
 }
 
-func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) error {
+func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) {
+	dest.Logger.Info("Started.")
+	defer dest.Logger.Info("Closed.")
+
 	replName := dest.msc.Replication.Name
 	destConf := dest.msc.Destination.Destinations[dest.Name]
 	hjdbAddr := dest.msc.HJDB.Addr
 	tcpAddr := dest.msc.Destination.TCPAddr
 
 	metricCh := make(chan MetricUnit)
+	defer close(metricCh)
 	cacheSize := 1000
 	if dest.msc.Destination.CacheSize > cacheSize {
 		cacheSize = dest.msc.Destination.CacheSize
 	}
 	moCh := make(chan MysqlOperation, cacheSize)
-	defer close(metricCh)
 	defer close(moCh)
 
 	// gtidsets must first init.
 	gtidSets := NewGtidSets(hjdbAddr, replName, dest.Name)
 	err := gtidSets.InitStartupGtidSetsMap(destConf.Sync.InitGtidSetsRangeStr)
 	if err != nil {
-		return err
+		return
 	}
 
 	metricDirector := NewMetricDestDirector(destConf.LogLevel, "destination", replName, dest.Name, metricCh)
 	tcpClient, err := NewTCPClient(destConf.LogLevel, tcpAddr, dest.Name, moCh, metricCh)
 	if err != nil {
-		tcpClient.Logger.Error("NewTCPClient: %s", err.Error())
-		return err
+		tcpClient.Logger.Error("NewTCPClient: %s", err)
+		return
 	}
 
 	mysqlClient, err := NewMysqlClient(destConf.LogLevel, destConf.Mysql.Dsn, destConf.Mysql.SkipErrors)
 	if err != nil {
-		mysqlClient.Logger.Error("NewMysqlClient: ", err.Error())
-		return err
+		mysqlClient.Logger.Error("NewMysqlClient: %s", err)
+		return
 	}
 	defer mysqlClient.Close()
 
 	replicateFilter := NewReplicateFilter(destConf.Sync.Replicate)
 	mysqlApplier := NewMysqlApplier(destConf.LogLevel, gtidSets, mysqlClient, replicateFilter, metricCh)
 
-	mdCtx, mdCancel := context.WithCancel(context.Background())
-	defer mdCancel()
-
-	var wg0 sync.WaitGroup
-	wg0.Add(1)
+	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
-		defer wg0.Done()
+		defer wg.Done()
 		promExportPort := 9092
 		if destConf.Prometheus != nil {
-			promExportPort = destConf.Prometheus.ExportPort
+			if destConf.Prometheus.ExportPort != 0 {
+				promExportPort = destConf.Prometheus.ExportPort
+			} else {
+				dest.Logger.Error("prometheus export port %d.", destConf.Prometheus.ExportPort)
+				return
+			}
 		}
-		metricDirector.Start(mdCtx, fmt.Sprintf("0.0.0.0:%d", promExportPort))
+		metricDirector.Start(ctx, fmt.Sprintf("0.0.0.0:%d", promExportPort))
 	}()
 
-	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -85,17 +89,8 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) e
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		tcpClient.Logger.Info("started.")
 		tcpClient.Start(ctx)
-		tcpClient.Logger.Info("stopped.")
 		cancel()
 	}()
 	wg.Wait()
-
-	mdCancel()
-	wg0.Wait()
-
-	dest.Logger.Info("Stopped.")
-
-	return nil
 }

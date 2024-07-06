@@ -9,6 +9,8 @@ replication:
   loglevel: 1
   settings:
     cache: 1000
+  prom:
+    export: 9091
 destination:
   tcpaddr: "127.0.0.1:9998"
   cache: 1000
@@ -36,5 +38,3 @@ destination:
         export: 9093
 hjdb:
   addr: hjdb:8000
-prometheus:
-  name: xx

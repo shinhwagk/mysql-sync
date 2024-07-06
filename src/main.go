@@ -39,10 +39,9 @@ func main() {
 		}
 
 		destination := NewDestination(*config, *destName)
-		if err := destination.Start(ctx, cancel); err != nil {
-			logger.Error("Destination start: " + err.Error())
-			cancel()
-		}
+		destination.Start(ctx, cancel)
+		cancel()
+
 	} else {
 		logger.Info("No specific mode activated")
 	}

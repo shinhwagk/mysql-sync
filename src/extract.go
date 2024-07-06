@@ -135,7 +135,7 @@ func (bext *BinlogExtract) Start(ctx context.Context, gtidsets string) {
 					// repl.binlogfile = string(e.NextLogName)
 				}
 			default:
-				fmt.Println("other RotateEvent", e)
+				bext.Logger.Warning("other RotateEvent", e)
 			}
 		case *replication.GenericEvent:
 			switch ev.Header.EventType {

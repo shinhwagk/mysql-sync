@@ -46,6 +46,7 @@ func (hjdb *HJDB) Query(db string, sch string, tab string) (*HJDBResponse, error
 	hjdb.Logger.Info("Query " + url)
 	resp, err := http.Get(url)
 	if err != nil {
+		hjdb.Logger.Error("url '%s': %s", url, err)
 		return nil, err
 	}
 	return hjdb.parseHJDBResponse(resp)

@@ -14,15 +14,16 @@ type MysqlSyncConfig struct {
 }
 
 type ReplicationConfig struct {
-	Name     string          `yaml:"name"`
-	TCPAddr  string          `yaml:"tcpaddr"`
-	ServerID int             `yaml:"serverid"`
-	Host     string          `yaml:"host"`
-	Port     int             `yaml:"port"`
-	User     string          `yaml:"user"`
-	Password string          `yaml:"password"`
-	LogLevel int             `yaml:"loglevel"`
-	Settings *SettingsConfig `yaml:"settings"`
+	Name       string            `yaml:"name"`
+	TCPAddr    string            `yaml:"tcpaddr"`
+	ServerID   int               `yaml:"serverid"`
+	Host       string            `yaml:"host"`
+	Port       int               `yaml:"port"`
+	User       string            `yaml:"user"`
+	Password   string            `yaml:"password"`
+	LogLevel   int               `yaml:"loglevel"`
+	Settings   *SettingsConfig   `yaml:"settings"`
+	Prometheus *PrometheusConfig `yaml:"prom"`
 }
 
 type DestinationsConfig struct {
@@ -32,10 +33,10 @@ type DestinationsConfig struct {
 }
 
 type DestinationConfig struct {
-	LogLevel   int                          `yaml:"loglevel"`
-	Mysql      DestinationMysqlConfig       `yaml:"mysql"`
-	Sync       DestinationSyncConfig        `yaml:"sync"`
-	Prometheus *DestinationPrometheusConfig `yaml:"prom"`
+	LogLevel   int                    `yaml:"loglevel"`
+	Mysql      DestinationMysqlConfig `yaml:"mysql"`
+	Sync       DestinationSyncConfig  `yaml:"sync"`
+	Prometheus *PrometheusConfig      `yaml:"prom"`
 }
 
 type DestinationMysqlConfig struct {
@@ -48,7 +49,7 @@ type DestinationSyncConfig struct {
 	InitGtidSetsRangeStr string                      `yaml:"gtidsets"`
 }
 
-type DestinationPrometheusConfig struct {
+type PrometheusConfig struct {
 	ExportPort int `yaml:"export"`
 }
 

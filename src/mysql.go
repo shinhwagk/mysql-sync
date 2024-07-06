@@ -28,7 +28,7 @@ type MysqlClient struct {
 func NewMysqlClient(logLevel int, dsn string, skipErrorsStr *string) (*MysqlClient, error) {
 	Logger := NewLogger(logLevel, "mysql-client")
 
-	Logger.Info("dsn: " + dsn)
+	Logger.Info("dsn: %s", dsn)
 	db, err := sql.Open("mysql", dsn)
 
 	if err != nil {
