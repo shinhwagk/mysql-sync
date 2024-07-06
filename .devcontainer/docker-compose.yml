@@ -73,7 +73,7 @@ services:
   #   ports:
   #     - 4646:4646
   hjdb:
-    image: shinhwagk/hjdb:bun-0.7.4
+    image: shinhwagk/hjdb:bun-0.7.6
     volumes:
       - ../example/hjdb:/var/lib/hjdb
   # prometheus:
