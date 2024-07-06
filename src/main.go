@@ -12,6 +12,7 @@ func main() {
 	config, err := LoadConfig("/etc/mysqlsync/config.yml")
 	if err != nil {
 		logger.Error("Failed to load config: %v", err)
+		return
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
