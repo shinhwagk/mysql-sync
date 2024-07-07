@@ -89,7 +89,6 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				ma.Logger.Info("mysql operation channel closed.")
 				return
 			}
-			fmt.Println("abcbcbc", oper.OperationType())
 			switch op := oper.(type) {
 			case MysqlOperationDDLDatabase:
 				if ma.State == StateGTID {
