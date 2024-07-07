@@ -95,7 +95,16 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) {
 	}()
 
 	<-ctxMd.Done()
-	<-ctxMa.Done()
+Loop:
+	for {
+		select {
+		case <-metricCh:
+		case <-ctxMa.Done():
+			break Loop
+		case <-time.After(time.Millisecond * 10):
+		}
+	}
+
 	for {
 		select {
 		case <-moCh:

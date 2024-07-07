@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"sync"
+	"time"
 )
 
 func NewReplication(msc MysqlSyncConfig) *Replication {
@@ -56,12 +56,11 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 	tcpServer := NewTCPServer(repl.msc.Replication.LogLevel, repl.msc.Replication.TCPAddr, destNames, moCh, metricCh)
 	extract := NewBinlogExtract(repl.msc.Replication.LogLevel, repl.msc.Replication, moCh, metricCh)
 
-	metricCtx, metricCancel := context.WithCancel(context.Background())
-	defer metricCancel()
-	var wg0 sync.WaitGroup
-	wg0.Add(1)
+	ctxMd, cancelMd := context.WithCancel(context.Background())
+	ctxTs, cancelTs := context.WithCancel(context.Background())
+	ctxEx, cancelEx := context.WithCancel(context.Background())
+
 	go func() {
-		defer wg0.Done()
 		promExportPort := 9092
 		if repl.msc.Replication.Prometheus != nil {
 			if repl.msc.Replication.Prometheus.ExportPort != 0 {
@@ -71,27 +70,41 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 				return
 			}
 		}
-		metricDirector.Start(metricCtx, fmt.Sprintf("0.0.0.0:%d", promExportPort))
+		metricDirector.Start(ctx, fmt.Sprintf("0.0.0.0:%d", promExportPort))
+		cancel()
+		cancelMd()
 	}()
 
-	var wg sync.WaitGroup
-	wg.Add(1)
 	go func() {
-		defer wg.Done()
 		tcpServer.Start(ctx)
 		cancel()
+		cancelTs()
 	}()
 
-	wg.Add(1)
 	go func() {
-		defer wg.Done()
 		extract.Start(ctx, initGtidSetsRangeStr)
 		cancel()
+		cancelEx()
 	}()
-	wg.Wait()
-	fmt.Println("sssss")
 
-	metricCancel()
-	// close(metricCh)
-	wg0.Wait()
+	<-ctxMd.Done()
+Loop:
+	for {
+		select {
+		case <-metricCh:
+		case <-ctxTs.Done():
+			break Loop
+		case <-time.After(time.Millisecond * 10):
+		}
+	}
+
+	for {
+		select {
+		case <-moCh:
+		case <-metricCh:
+		case <-ctxEx.Done():
+			return
+		case <-time.After(time.Millisecond * 10):
+		}
+	}
 }
