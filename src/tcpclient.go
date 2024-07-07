@@ -98,13 +98,13 @@ func (tc *TCPClient) receiveOperations() {
 			tc.moCh <- oper
 			tc.metricCh <- MetricUnit{Name: MetricTCPClientReceiveOperations, Value: 1}
 		}
-		tc.Logger.Debug("Receive mo(%d), moCh(%d) from tcp server.", len(operations), len(tc.moCh))
+		tc.Logger.Debug("Receive Batch: %d, mo count: %d from tcp server.", sig.BatchID, len(operations))
 
 		if err := tc.encoder.Encode(Signal2{BatchID: sig.BatchID}); err != nil {
 			tc.Logger.Error("Send signal: %s", err.Error())
 			return
 		}
-		tc.Logger.Debug("Send signal 'BatchID: %d' success.", sig.BatchID)
+		tc.Logger.Debug("Send signal 'Batch: %d' success.", sig.BatchID)
 	}
 }
 

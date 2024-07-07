@@ -224,7 +224,6 @@ func (ts *TCPServer) distributor() {
 				return
 			} else {
 				fetchDelayMs = int(time.Since(fetchTimestamp).Milliseconds())
-				fmt.Println("fetchcccccc", int(time.Since(fetchTimestamp).Milliseconds()))
 				ts.BatchID += 1
 				ts.Logger.Info("Push batch(%d) mos(%d) to clients.", ts.BatchID, len(mos))
 				sendTimestamp = time.Now()
