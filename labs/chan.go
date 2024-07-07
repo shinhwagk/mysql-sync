@@ -6,42 +6,34 @@ import (
 )
 
 func main() {
-	c1 := make(chan string, 100)
-
+	c1 := make(chan int)
 	go func() {
-		time.Sleep(time.Second * 5)
-		fmt.Println("send 2")
+		for i := 0; i <= 2; i++ {
+			fmt.Println("ru i")
+			c1 <- i
+			fmt.Println("ru i ok")
 
-		for i := 0; i < 5; i++ {
-			select {
-			case c1 <- "asdfd":
-				fmt.Println("send 2 send ")
-			case <-time.After(time.Second * 1):
-				fmt.Println("send 2 send timeout")
-			}
 		}
-
 	}()
 
 	go func() {
-		time.Sleep(time.Second * 5)
-		fmt.Println("send 3")
-
-		for i := 0; i < 5; i++ {
+		time.Sleep(time.Second * 2)
+		for {
 			select {
-			case c1 <- "asdfd":
-				fmt.Println("send 3 send ")
-			case <-time.After(time.Second * 1):
-				fmt.Println("send 3 send timeout")
+			case _, ok := <-c1:
+				if !ok {
+					fmt.Println("end")
+					return
+				}
+				fmt.Println("Xxxx")
+			case <-time.After(time.Second):
+				fmt.Println("xxxx1")
+				close(c1)
+				fmt.Println("xxxx")
 			}
 		}
 	}()
-	go func() {
-		time.Sleep(time.Second * 8)
 
-	}()
-
-	fmt.Println(len(c1))
-	time.Sleep(time.Second * 51)
+	time.Sleep(time.Second * 115)
 
 }
