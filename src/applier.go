@@ -7,6 +7,15 @@ import (
 	"time"
 )
 
+const (
+	StateNULL  = "null"
+	StateDML   = "dml"
+	StateDDL   = "ddl"
+	StateBEGIN = "begin"
+	StateXID   = "xid"
+	StateGTID  = "gtid"
+)
+
 func NewMysqlApplier(logLevel int, gtidSets *GtidSets, mysqlClient *MysqlClient, replicate *Replicate, metricCh chan<- MetricUnit) *MysqlApplier {
 	return &MysqlApplier{
 		Logger: NewLogger(logLevel, "mysql-applier"),
@@ -27,6 +36,8 @@ func NewMysqlApplier(logLevel int, gtidSets *GtidSets, mysqlClient *MysqlClient,
 		// excludeSchemas: []string{"mysql"},
 
 		GitdSkip: false,
+
+		State: StateNULL,
 	}
 }
 
@@ -36,9 +47,6 @@ type MysqlApplier struct {
 	replicate   *Replicate
 	GtidSets    *GtidSets
 
-	// state
-	// GtidSetMap map[string]uint
-	// LastGtidSets        map[string]uint
 	LastGtidServerUUID  string
 	LastCommitted       int64
 	LastCommitTimestamp uint32
@@ -47,11 +55,9 @@ type MysqlApplier struct {
 	MetricDelay uint
 	metricCh    chan<- MetricUnit
 
-	// excludeSchemas []string
-
 	GitdSkip bool
 
-	// metric *MetricDestination
+	State string
 }
 
 func (ma *MysqlApplier) ReplicateNotExecute(schemaContext string, tableName string) bool {
@@ -83,66 +89,117 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				ma.Logger.Info("mysql operation channel closed.")
 				return
 			}
+			fmt.Println("abcbcbc", oper.OperationType())
 			switch op := oper.(type) {
 			case MysqlOperationDDLDatabase:
-				if ma.GitdSkip || ma.ReplicateNotExecute(op.Schema, "") {
-					continue
-				}
-				if err := ma.OnDDLDatabase(op); err != nil {
+				if ma.State == StateGTID {
+					ma.State = StateDDL
+					if ma.GitdSkip || ma.ReplicateNotExecute(op.Schema, "") {
+						continue
+					}
+					if err := ma.OnDDLDatabase(op); err != nil {
+						return
+					}
+				} else {
+					ma.Logger.Error("execute DDL(database): last state is '%s'", ma.State)
 					return
 				}
 			case MysqlOperationDDLTable:
-				if ma.GitdSkip || ma.ReplicateNotExecute(op.Schema, op.Table) {
-					continue
-				}
-				if err := ma.OnDDLTable(op); err != nil {
+				if ma.State == StateGTID {
+					ma.State = StateDDL
+					if ma.GitdSkip || ma.ReplicateNotExecute(op.Schema, op.Table) {
+						continue
+					}
+					if err := ma.OnDDLTable(op); err != nil {
+						return
+					}
+				} else {
+					ma.Logger.Error("execute DDL(table): last state is '%s'", ma.State)
 					return
 				}
 			case MysqlOperationDMLInsert:
-				if ma.GitdSkip || ma.ReplicateNotExecute(op.Database, op.Table) {
-					continue
-				}
-				if err := ma.OnDMLInsert(op); err != nil {
+				if ma.State == StateBEGIN || ma.State == StateDML {
+					ma.State = StateDML
+					if ma.GitdSkip || ma.ReplicateNotExecute(op.Database, op.Table) {
+						continue
+					}
+					if err := ma.OnDMLInsert(op); err != nil {
+						return
+					}
+					ma.metricCh <- MetricUnit{Name: MetricDestDMLInsertTimes, Value: 1}
+				} else {
+					ma.Logger.Error("execute DML: last state is '%s'", ma.State)
 					return
 				}
-				ma.metricCh <- MetricUnit{Name: MetricDestDMLInsertTimes, Value: 1}
 			case MysqlOperationDMLDelete:
-				if ma.GitdSkip || ma.ReplicateNotExecute(op.Database, op.Table) {
-					continue
-				}
-				if err := ma.OnDMLDelete(op); err != nil {
+				if ma.State == StateBEGIN || ma.State == StateDML {
+					ma.State = StateDML
+					if ma.GitdSkip || ma.ReplicateNotExecute(op.Database, op.Table) {
+						continue
+					}
+					if err := ma.OnDMLDelete(op); err != nil {
+						return
+					}
+					ma.metricCh <- MetricUnit{Name: MetricDestDMLDeleteTimes, Value: 1}
+				} else {
+					ma.Logger.Error("execute DML: last state is '%s'", ma.State)
 					return
 				}
-				ma.metricCh <- MetricUnit{Name: MetricDestDMLDeleteTimes, Value: 1}
 			case MysqlOperationDMLUpdate:
-				if ma.GitdSkip || ma.ReplicateNotExecute(op.Database, op.Table) {
-					continue
-				}
-				if err := ma.OnDMLUpdate(op); err != nil {
+				if ma.State == StateBEGIN || ma.State == StateDML {
+					ma.State = StateDML
+					if ma.GitdSkip || ma.ReplicateNotExecute(op.Database, op.Table) {
+						continue
+					}
+					if err := ma.OnDMLUpdate(op); err != nil {
+						return
+					}
+					ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdateTimes, Value: 1}
+				} else {
+					ma.Logger.Error("execute DML: last state is '%s'", ma.State)
 					return
 				}
-				ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdateTimes, Value: 1}
 			case MysqlOperationXid:
-				if ma.GitdSkip {
-					continue
-				}
-				if err := ma.OnXID(op); err != nil {
+				if ma.State == StateDML || ma.State == StateBEGIN {
+					ma.State = StateXID
+					if ma.GitdSkip {
+						continue
+					}
+					if err := ma.OnXID(op); err != nil {
+						return
+					}
+					ma.metricCh <- MetricUnit{Name: MetricDestTrx, Value: 1}
+				} else {
+					ma.Logger.Error("event Xid: last state is '%s'", ma.State)
 					return
 				}
-				ma.metricCh <- MetricUnit{Name: MetricDestTrx, Value: 1}
 			case MysqlOperationGTID:
-				if err := ma.OnGTID(op); err != nil {
+				if ma.State == StateXID || ma.State == StateDDL || ma.State == StateNULL {
+					ma.State = StateGTID
+					if err := ma.OnGTID(op); err != nil {
+						return
+					}
+				} else {
+					ma.Logger.Error("operation(gtid): last state is '%s'", ma.State)
 					return
 				}
 			case MysqlOperationHeartbeat:
 				if err := ma.OnHeartbeat(op); err != nil {
 					return
 				}
+				ma.State = StateNULL
 			case MysqlOperationBegin:
-				if ma.GitdSkip {
-					continue
-				}
-				if err := ma.OnBegin(op); err != nil {
+				if ma.State == StateGTID {
+					ma.State = StateBEGIN
+
+					if ma.GitdSkip {
+						continue
+					}
+					if err := ma.OnBegin(op); err != nil {
+						return
+					}
+				} else {
+					ma.Logger.Error("operation(begin): last state is '%s'", ma.State)
 					return
 				}
 			default:
@@ -206,6 +263,10 @@ func (ma *MysqlApplier) OnDMLUpdate(op MysqlOperationDMLUpdate) error {
 }
 
 func (ma *MysqlApplier) OnDDLDatabase(op MysqlOperationDDLDatabase) error {
+	if err := ma.MergeCommit(); err != nil {
+		return err
+	}
+
 	ma.Logger.Debug("OnDDLDatabase -- query: '%s'", op.Query)
 
 	if err := ma.mysqlClient.ExecuteOnDatabase(op.Query); err != nil {
@@ -216,12 +277,16 @@ func (ma *MysqlApplier) OnDDLDatabase(op MysqlOperationDDLDatabase) error {
 	ma.metricCh <- MetricUnit{Name: MetricDestDDLDatabaseTimes, Value: 1}
 
 	ma.Checkpoint(op.Timestamp)
-	ma.AllowCommit = false
+
 	return nil
 }
 
 func (ma *MysqlApplier) OnDDLTable(op MysqlOperationDDLTable) error {
-	ma.Logger.Debug("OnDDLTable -- SchemaContext: %s Query: %s", op.Schema, op.Query)
+	if err := ma.MergeCommit(); err != nil {
+		return err
+	}
+
+	ma.Logger.Debug("OnDDLTable -- SchemaContext: %s, Database: %s, Query: %s", op.SchemaContext, op.Schema, op.Query)
 
 	if err := ma.mysqlClient.ExecuteOnTable(op.SchemaContext, op.Query); err != nil {
 		ma.Logger.Error("OnDDLTable: %s", err)
@@ -245,8 +310,10 @@ func (ma *MysqlApplier) OnXID(op MysqlOperationXid) error {
 
 func (ma *MysqlApplier) OnBegin(op MysqlOperationBegin) error {
 	ma.Logger.Debug("OnBegin")
-	if err := ma.mysqlClient.Begin(); err != nil {
-		return err
+	if !ma.AllowCommit {
+		if err := ma.mysqlClient.Begin(); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -258,7 +325,7 @@ func (ma *MysqlApplier) OnGTID(op MysqlOperationGTID) error {
 	if trx, ok := ma.GtidSets.GetTrxIdOfServerUUID(op.ServerUUID); ok {
 		if trx >= uint(op.TrxID) {
 			ma.GitdSkip = true
-			ma.Logger.Info("skip %s %s", op.ServerUUID, op.TrxID)
+			ma.Logger.Info("skip %s %d", op.ServerUUID, op.TrxID)
 			return nil
 		} else if uint(op.TrxID) >= trx+2 {
 			err := fmt.Errorf("gtid miss '%s:%d'", op.ServerUUID, trx+1)
@@ -268,7 +335,7 @@ func (ma *MysqlApplier) OnGTID(op MysqlOperationGTID) error {
 	}
 
 	if ma.LastCommitted != op.LastCommitted {
-		if err := ma.TryMergeCommit(); err != nil {
+		if err := ma.MergeCommit(); err != nil {
 			return err
 		}
 		ma.LastCommitted = op.LastCommitted
@@ -284,19 +351,18 @@ func (ma *MysqlApplier) OnGTID(op MysqlOperationGTID) error {
 
 func (ma *MysqlApplier) OnHeartbeat(op MysqlOperationHeartbeat) error {
 	ma.Logger.Debug("OnHeartbeat")
-	if err := ma.TryMergeCommit(); err != nil {
+	if err := ma.MergeCommit(); err != nil {
 		return err
 	}
 	ma.metricCh <- MetricUnit{Name: MetricDestDelay, Value: uint(time.Now().Unix() - int64(op.Timestamp))}
 	return nil
 }
 
-func (ma *MysqlApplier) TryMergeCommit() error {
-	ma.Logger.Debug("TryMergeCommit")
+func (ma *MysqlApplier) MergeCommit() error {
 	if ma.AllowCommit {
-		ma.Logger.Debug("The last commited was switched with merge commit.")
+		ma.Logger.Debug("MergeCommit.")
 		if err := ma.mysqlClient.Commit(); err != nil {
-			ma.Logger.Error("TryMergeCommit: %", err.Error())
+			ma.Logger.Error("MergeCommit: %", err)
 			return err
 		}
 

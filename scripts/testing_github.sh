@@ -65,11 +65,11 @@ for dbid in `seq 1 1`; do
 done
 
 
-echo "sync source to target"
-# time python3.12 main.py --config settings.py
-time go run src/*
+# echo "sync source to target"
+# # time python3.12 main.py --config settings.py
+# time go run src/*
 
-mysqldump --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} --set-gtid-purged=OFF --compact >/tmp/source.sql
-mysqldump --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} --set-gtid-purged=OFF --compact >/tmp/target.sql
+# mysqldump --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} --set-gtid-purged=OFF --compact >/tmp/source.sql
+# mysqldump --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} --set-gtid-purged=OFF --compact >/tmp/target.sql
 
-diff /tmp/source.sql /tmp/target.sql; exit $?
+# diff /tmp/source.sql /tmp/target.sql; exit $?

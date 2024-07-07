@@ -90,6 +90,7 @@ func (gss *GtidSets) PersistGtidSetsMaptToHJDB() error {
 
 	hjdbResp, err := gss.HJDB.Update(db, sch, tab, gss.GtidSetsMap)
 	if err != nil {
+		gss.Logger.Error("hjdb update: %s", err)
 		return err
 	}
 

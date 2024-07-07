@@ -40,7 +40,7 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 		return
 	}
 
-	destGtidSetss := make([]map[string]uint, len(repl.msc.Destination.Destinations))
+	destGtidSetss := make([]map[string]uint, 0, len(repl.msc.Destination.Destinations))
 	for destName, dc := range repl.msc.Destination.Destinations {
 		gss := NewGtidSets(repl.msc.HJDB.Addr, repl.msc.Replication.Name, destName)
 		if err := gss.InitStartupGtidSetsMap(dc.Sync.InitGtidSetsRangeStr); err != nil {
@@ -48,6 +48,7 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 		}
 		destGtidSetss = append(destGtidSetss, gss.GtidSetsMap)
 		destNames = append(destNames, destName)
+		repl.Logger.Info("Dest:%s, checkpoint: %v", destName, gss.GtidSetsMap)
 	}
 	initGtidSetsRangeStr := GetGtidSetsRangeStrFromGtidSetsMap(MergeGtidSetss(destGtidSetss))
 	repl.Logger.Info("Init gtidsets range string:'%s'", initGtidSetsRangeStr)
