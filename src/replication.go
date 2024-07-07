@@ -49,19 +49,19 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 		destGtidSetss = append(destGtidSetss, gss.GtidSetsMap)
 		destNames = append(destNames, destName)
 	}
+	initGtidSetsRangeStr := GetGtidSetsRangeStrFromGtidSetsMap(MergeGtidSetss(destGtidSetss))
+	repl.Logger.Info("Init gtidsets range string:'%s'", initGtidSetsRangeStr)
 
 	metricDirector := NewMetricReplDirector(repl.msc.Replication.LogLevel, "replication", repl.msc.Replication.Name, metricCh)
 	tcpServer := NewTCPServer(repl.msc.Replication.LogLevel, repl.msc.Replication.TCPAddr, destNames, moCh, metricCh)
 	extract := NewBinlogExtract(repl.msc.Replication.LogLevel, repl.msc.Replication, moCh, metricCh)
 
-	initGtidSetsRangeStr := GetGtidSetsRangeStrFromGtidSetsMap(MergeGtidSetss(destGtidSetss))
-
-	repl.Logger.Info("Init gtidsets range string:'%s'", initGtidSetsRangeStr)
-
-	var wg sync.WaitGroup
-	wg.Add(1)
+	metricCtx, metricCancel := context.WithCancel(context.Background())
+	defer metricCancel()
+	var wg0 sync.WaitGroup
+	wg0.Add(1)
 	go func() {
-		defer wg.Done()
+		defer wg0.Done()
 		promExportPort := 9092
 		if repl.msc.Replication.Prometheus != nil {
 			if repl.msc.Replication.Prometheus.ExportPort != 0 {
@@ -71,9 +71,10 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 				return
 			}
 		}
-		metricDirector.Start(ctx, fmt.Sprintf("0.0.0.0:%d", promExportPort))
+		metricDirector.Start(metricCtx, fmt.Sprintf("0.0.0.0:%d", promExportPort))
 	}()
 
+	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -88,4 +89,9 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 		cancel()
 	}()
 	wg.Wait()
+	fmt.Println("sssss")
+
+	metricCancel()
+	// close(metricCh)
+	wg0.Wait()
 }

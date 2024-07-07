@@ -160,6 +160,9 @@ func GetGtidSetsMapFromGtidSetsRangeStr(gtidSetsRangeStr string) (map[string]uin
 func MergeGtidSetss(gsss []map[string]uint) map[string]uint {
 	gssout := make(map[string]uint)
 	for _, gss := range gsss {
+		if len(gss) == 0 {
+			return make(map[string]uint)
+		}
 		for serverUUID, trxID := range gss {
 			if currentTrx, ok := gssout[serverUUID]; ok {
 				if trxID < currentTrx {

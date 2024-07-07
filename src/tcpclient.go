@@ -133,14 +133,11 @@ func (tc *TCPClient) Start(ctx context.Context) {
 		tc.Cleanup()
 	}()
 
-	tc.Logger.Info("Server connected " + tc.conn.LocalAddr().String())
 	wg.Wait()
-	tc.Logger.Info("Server connection close." + tc.conn.LocalAddr().String())
 }
 
 func (tc *TCPClient) Cleanup() {
 	<-tc.ctx.Done()
-
 	tc.decoderZstdReader.Close()
 
 	if err := tc.conn.Close(); err != nil {

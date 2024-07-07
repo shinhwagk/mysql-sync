@@ -65,15 +65,15 @@ func (bext *BinlogExtract) Start(ctx context.Context, gtidsets string) {
 
 	gtidSet, err := mysql.ParseGTIDSet("mysql", gtidsets)
 	if err != nil {
-		bext.Logger.Error("ParseGTIDSet " + err.Error())
+		bext.Logger.Error("ParseGTIDSet: %s", err)
 		return
 	}
 
-	bext.Logger.Info("Start from gtidsets:" + gtidSet.String())
+	bext.Logger.Info("Start from gtidsets: '%s'.", gtidSet.String())
 
 	streamer, err := bext.binlogSyncer.StartSyncGTID(gtidSet)
 	if err != nil {
-		bext.Logger.Error("start sync err:" + err.Error())
+		bext.Logger.Error("start sync: %s", err)
 		return
 	}
 

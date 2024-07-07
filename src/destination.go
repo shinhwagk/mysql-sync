@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"sync"
+	"time"
 )
 
 func NewDestination(msc MysqlSyncConfig, destName string) *Destination {
@@ -63,10 +63,11 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) {
 	replicateFilter := NewReplicateFilter(destConf.Sync.Replicate)
 	mysqlApplier := NewMysqlApplier(destConf.LogLevel, gtidSets, mysqlClient, replicateFilter, metricCh)
 
-	var wg sync.WaitGroup
-	wg.Add(1)
+	ctxMa, cancelMa := context.WithCancel(context.Background())
+	ctxTc, cancelTc := context.WithCancel(context.Background())
+	ctxMd, cancelMd := context.WithCancel(context.Background())
+
 	go func() {
-		defer wg.Done()
 		promExportPort := 9092
 		if destConf.Prometheus != nil {
 			if destConf.Prometheus.ExportPort != 0 {
@@ -77,20 +78,31 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) {
 			}
 		}
 		metricDirector.Start(ctx, fmt.Sprintf("0.0.0.0:%d", promExportPort))
+		cancel()
+		cancelMd()
 	}()
 
-	wg.Add(1)
 	go func() {
-		defer wg.Done()
 		mysqlApplier.Start(ctx, moCh)
 		cancel()
+		cancelMa()
 	}()
 
-	wg.Add(1)
 	go func() {
-		defer wg.Done()
 		tcpClient.Start(ctx)
 		cancel()
+		cancelTc()
 	}()
-	wg.Wait()
+
+	<-ctxMd.Done()
+	<-ctxMa.Done()
+	for {
+		select {
+		case <-moCh:
+		case <-metricCh:
+		case <-ctxTc.Done():
+			return
+		case <-time.After(time.Millisecond * 10):
+		}
+	}
 }

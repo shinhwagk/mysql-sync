@@ -209,6 +209,7 @@ func (ma *MysqlApplier) OnDDLDatabase(op MysqlOperationDDLDatabase) error {
 	ma.Logger.Debug("OnDDLDatabase -- query: '%s'", op.Query)
 
 	if err := ma.mysqlClient.ExecuteOnDatabase(op.Query); err != nil {
+		ma.Logger.Error("OnDDLDatabase: %s", err)
 		return err
 	}
 
@@ -223,10 +224,7 @@ func (ma *MysqlApplier) OnDDLTable(op MysqlOperationDDLTable) error {
 	ma.Logger.Debug("OnDDLTable -- SchemaContext: %s Query: %s", op.Schema, op.Query)
 
 	if err := ma.mysqlClient.ExecuteOnTable(op.SchemaContext, op.Query); err != nil {
-		if trxID, ok := ma.GtidSets.GetTrxIdOfServerUUID(ma.LastGtidServerUUID); ok {
-			ma.Logger.Error("Gtid: '%s:%d'", ma.LastGtidServerUUID, trxID)
-		}
-		ma.Logger.Error("OnDDLTable -- SchemaContext: %s Query: %s", op.SchemaContext, op.Query)
+		ma.Logger.Error("OnDDLTable: %s", err)
 		return err
 	}
 
