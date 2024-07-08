@@ -7,7 +7,6 @@ import (
 )
 
 type MysqlSyncConfig struct {
-	// Name        string              `yaml:"name"`
 	Replication ReplicationConfig  `yaml:"replication"`
 	Destination DestinationsConfig `yaml:"destination"`
 	HJDB        HJDBConfig         `yaml:"hjdb"`

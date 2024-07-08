@@ -32,9 +32,7 @@ func NewMysqlApplier(logLevel int, gtidSets *GtidSets, mysqlClient *MysqlClient,
 
 		metricCh: metricCh,
 
-		// excludeSchemas: []string{"mysql"},
-
-		GitdSkip: false,
+		GtidSkip: false,
 
 		State: StateNULL,
 	}
@@ -53,7 +51,7 @@ type MysqlApplier struct {
 
 	metricCh chan<- MetricUnit
 
-	GitdSkip bool
+	GtidSkip bool
 
 	State string
 }
@@ -92,7 +90,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				if ma.State == StateGTID {
 					ma.State = StateDDL
 					ma.LastCheckpointTimestamp = op.Timestamp
-					if ma.GitdSkip || ma.ReplicateNotExecute(op.Schema, "") {
+					if ma.GtidSkip || ma.ReplicateNotExecute(op.Schema, "") {
 						ma.SkipCommitCheckpoint()
 						continue
 					}
@@ -107,7 +105,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				if ma.State == StateGTID {
 					ma.State = StateDDL
 					ma.LastCheckpointTimestamp = op.Timestamp
-					if ma.GitdSkip || ma.ReplicateNotExecute(op.Schema, op.Table) {
+					if ma.GtidSkip || ma.ReplicateNotExecute(op.Schema, op.Table) {
 						ma.SkipCommitCheckpoint()
 						continue
 					}
@@ -121,7 +119,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 			case MysqlOperationDMLInsert:
 				if ma.State == StateBEGIN || ma.State == StateDML {
 					ma.State = StateDML
-					if ma.GitdSkip || ma.ReplicateNotExecute(op.Database, op.Table) {
+					if ma.GtidSkip || ma.ReplicateNotExecute(op.Database, op.Table) {
 						continue
 					}
 					if err := ma.OnDMLInsert(op); err != nil {
@@ -135,7 +133,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 			case MysqlOperationDMLDelete:
 				if ma.State == StateBEGIN || ma.State == StateDML {
 					ma.State = StateDML
-					if ma.GitdSkip || ma.ReplicateNotExecute(op.Database, op.Table) {
+					if ma.GtidSkip || ma.ReplicateNotExecute(op.Database, op.Table) {
 						continue
 					}
 					if err := ma.OnDMLDelete(op); err != nil {
@@ -149,7 +147,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 			case MysqlOperationDMLUpdate:
 				if ma.State == StateBEGIN || ma.State == StateDML {
 					ma.State = StateDML
-					if ma.GitdSkip || ma.ReplicateNotExecute(op.Database, op.Table) {
+					if ma.GtidSkip || ma.ReplicateNotExecute(op.Database, op.Table) {
 						continue
 					}
 					if err := ma.OnDMLUpdate(op); err != nil {
@@ -164,7 +162,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				if ma.State == StateDML || ma.State == StateBEGIN {
 					ma.State = StateXID
 					ma.LastCheckpointTimestamp = op.Timestamp
-					if ma.GitdSkip {
+					if ma.GtidSkip {
 						ma.SkipCommitCheckpoint()
 						continue
 					}
@@ -195,7 +193,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				if ma.State == StateGTID {
 					ma.State = StateBEGIN
 
-					if ma.GitdSkip {
+					if ma.GtidSkip {
 						continue
 					}
 					if err := ma.OnBegin(op); err != nil {
@@ -325,10 +323,10 @@ func (ma *MysqlApplier) OnBegin(op MysqlOperationBegin) error {
 
 func (ma *MysqlApplier) OnGTID(op MysqlOperationGTID) error {
 	ma.Logger.Debug("OnGTID: %s:%d", op.ServerUUID, op.TrxID)
-	ma.GitdSkip = false
+	ma.GtidSkip = false
 	if trx, ok := ma.GtidSets.GetTrxIdOfServerUUID(op.ServerUUID); ok {
 		if trx >= uint(op.TrxID) {
-			ma.GitdSkip = true
+			ma.GtidSkip = true
 			ma.Logger.Info("skip %s %d", op.ServerUUID, op.TrxID)
 			return nil
 		} else if uint(op.TrxID) >= trx+2 {
@@ -363,7 +361,7 @@ func (ma *MysqlApplier) OnHeartbeat(op MysqlOperationHeartbeat) error {
 }
 
 func (ma *MysqlApplier) SkipCommitCheckpoint() {
-	if ma.GitdSkip {
+	if ma.GtidSkip {
 		ma.Checkpoint(ma.LastCheckpointTimestamp)
 	}
 }
@@ -420,23 +418,19 @@ func BuildDMLDeleteQuery(datbaseName string, tableName string, columns []MysqlOp
 	return sql, whereParams
 }
 
-// func BuildDMLUpdateQuery() (string, []interface{}) {
-// 	params := []interface{}{}
+// func BuildDMLUpdateQuery(datbaseName string, tableName string, columns []MysqlOperationDMLColumn, primaryKey []uint64) (string, []interface{}) {
+// 	wherePlaceholder, whereParams := GenerateConditionAndValues(primaryKey, columns)
 
-// 	wherePlaceholder, whereParams := GenerateConditionAndValues(op.PrimaryKey, op.BeforeColumns)
-
-// 	setPlaceholder := make([]string, len(op.AfterColumns))
-
-// 	for i, c := range op.AfterColumns {
+// 	setPlaceholder := make([]string, len(columns))
+// 	var params []interface{}
+// 	for i, c := range columns {
 // 		setPlaceholder[i] = fmt.Sprintf("`%s` = ?", c.ColumnName)
 // 		params = append(params, c.ColumnValue)
 // 	}
 
-// 	for _, param := range whereParams {
-// 		params = append(params, param)
-// 	}
+// 	params = append(params, whereParams...)
 
-// 	sql := fmt.Sprintf("UPDATE `%s`.`%s` SET %s WHERE %s", op.Database, op.Table, strings.Join(setPlaceholder, ", "), wherePlaceholder)
+// 	sql := fmt.Sprintf("UPDATE `%s`.`%s` SET %s WHERE %s", datbaseName, tableName, strings.Join(setPlaceholder, ", "), wherePlaceholder)
 
 // 	return sql, params
 // }
