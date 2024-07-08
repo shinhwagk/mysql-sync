@@ -117,25 +117,21 @@ func (ts *TCPServer) Start(ctx context.Context) {
 
 func (ts *TCPServer) clientsReady() bool {
 	for name, client := range ts.Clients {
-		if client == nil {
-			return false
-		}
-		ts.Logger.Debug("Clients status client(%s), dead: %t, state: %s", client.Name, client.Dead, client.State)
-		if client.Dead {
+		if client == nil || client.Dead {
 			return false
 		}
 
 		if client.State == ClientBusy {
 			if client.SendError != nil {
 				ts.Logger.Info("Push to Client(%s) Batch(%d) again.", name, client.SendBatchID)
-				client.PushClient()
+				client.ClientPush()
 			}
 			return false
 		}
 
-		if client.State != ClientFree {
-			return false
-		}
+		// if client.State != ClientFree {
+		// 	return false
+		// }
 	}
 	return true
 }
@@ -241,7 +237,7 @@ func (ts *TCPServer) pushClients(mos []MysqlOperation) {
 			defer wg.Done()
 			cli.SetPush(ts.BatchID, mos)
 			ts.Logger.Info("Push to Client(%s) Batch(%d).", name, ts.BatchID)
-			cli.PushClient()
+			cli.ClientPush()
 		}(client)
 	}
 	wg.Wait()

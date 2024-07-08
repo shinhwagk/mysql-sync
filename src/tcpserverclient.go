@@ -85,8 +85,6 @@ func NewTcpServerClient(logLevel int, name string, metricCh chan<- MetricUnit, c
 }
 
 func (tsc *TCPServerClient) Cleanup() {
-	<-tsc.ctx.Done()
-
 	tsc.Dead = true
 
 	if err := tsc.encoderZstdWriter.Close(); err != nil {
@@ -132,9 +130,9 @@ func (tsc *TCPServerClient) receivedSignal() {
 			tsc.State = ClientFree
 			tsc.SendError = nil
 			elapsed := time.Since(tsc.SendTimestamp).Milliseconds()
-			tsc.Logger.Debug("Client received batch: %d, elapsed ms: %d successfully.", ack.BatchID, elapsed)
+			tsc.Logger.Debug("Client received batch(%d), elapsed ms(%d) successfully.", ack.BatchID, elapsed)
 		} else {
-			tsc.Logger.Error("Not received batch id %d,%d", tsc.SendBatchID, ack.BatchID)
+			tsc.Logger.Error("Not received batch(%d), %d", tsc.SendBatchID, ack.BatchID)
 		}
 	}
 }
@@ -156,6 +154,7 @@ func (tsc *TCPServerClient) Start() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		<-tsc.ctx.Done()
 		tsc.Cleanup()
 	}()
 
@@ -167,7 +166,7 @@ func (tsc *TCPServerClient) SetPush(batchID uint, mos []MysqlOperation) {
 	tsc.SendMos = mos
 }
 
-func (tsc *TCPServerClient) PushClient() {
+func (tsc *TCPServerClient) ClientPush() {
 	signal1 := Signal1{BatchID: tsc.SendBatchID, Mos: tsc.SendMos, Count: len(tsc.SendMos)}
 	tsc.State = ClientBusy
 	tsc.SendError = nil
@@ -178,8 +177,8 @@ func (tsc *TCPServerClient) PushClient() {
 	} else {
 		tsc.metricCh <- MetricUnit{MetricTCPServerSendOperations, uint(len(tsc.SendMos)), &tsc.Name}
 		tsc.metricCh <- MetricUnit{MetricTCPServerOutgoing, uint(tsc.encoderBuffer.Len()), &tsc.Name}
+		tsc.Logger.Info("Push batch(%d) mos(%d) bytes(%d) ok.", signal1.BatchID, len(tsc.SendMos), tsc.encoderBuffer.Len())
 		tsc.encoderBuffer.Reset()
 		tsc.SendTimestamp = time.Now()
-		tsc.Logger.Info("Push batch(%d) mos(%d) ok.", signal1.BatchID, len(tsc.SendMos))
 	}
 }
