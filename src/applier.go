@@ -370,7 +370,7 @@ func (ma *MysqlApplier) SkipCommitCheckpoint() {
 
 func (ma *MysqlApplier) MergeCommit() error {
 	if ma.AllowCommit {
-		ma.Logger.Debug("MergeCommit.")
+		ma.Logger.Debug("MergeCommit")
 		if err := ma.mysqlClient.Commit(); err != nil {
 			ma.Logger.Error("MergeCommit: %", err)
 			return err
