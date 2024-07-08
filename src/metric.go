@@ -67,7 +67,7 @@ type MetricDirector struct {
 
 func NewMetricReplDirector(logLevel int, subsystem string, replName string, metricCh <-chan MetricUnit) *MetricDirector {
 	return &MetricDirector{
-		Name:     "destination",
+		Name:     "replication",
 		Logger:   NewLogger(logLevel, "metric director"),
 		metrics:  make(map[string]*PrometheusMetric),
 		metricCh: metricCh,

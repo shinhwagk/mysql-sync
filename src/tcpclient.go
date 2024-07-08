@@ -38,6 +38,8 @@ type TCPClient struct {
 	decoder           *gob.Decoder
 	decoderZstdReader *zstd.Decoder
 
+	BatchID uint
+
 	moCh chan<- MysqlOperation
 }
 
@@ -75,6 +77,8 @@ func NewTCPClient(logLevel int, serverAddress string, destName string, moCh chan
 		decoderZstdReader: zstdReader,
 		metricCh:          metricCh,
 
+		BatchID: 0,
+
 		moCh: moCh,
 	}, nil
 }
@@ -93,18 +97,23 @@ func (tc *TCPClient) receiveOperations() {
 			return
 		}
 
-		operations := sig.Mos
-		for _, oper := range operations {
-			tc.moCh <- oper
-			tc.metricCh <- MetricUnit{Name: MetricTCPClientReceiveOperations, Value: 1}
-		}
-		tc.Logger.Debug("Receive Batch: %d, mo count: %d from tcp server.", sig.BatchID, len(operations))
+		if sig.BatchID == tc.BatchID+1 && len(sig.Mos) == sig.Count {
+			for _, oper := range sig.Mos {
+				tc.moCh <- oper
+				tc.metricCh <- MetricUnit{Name: MetricTCPClientReceiveOperations, Value: 1}
+			}
+			tc.Logger.Debug("Receive Batch: %d, mo count: %d from tcp server.", sig.BatchID, len(sig.Mos))
 
-		if err := tc.encoder.Encode(Signal2{BatchID: sig.BatchID}); err != nil {
-			tc.Logger.Error("Send signal: %s", err.Error())
+			if err := tc.encoder.Encode(Signal2{BatchID: sig.BatchID}); err != nil {
+				tc.Logger.Error("Send signal: %s", err.Error())
+				return
+			}
+			tc.Logger.Debug("Send signal 'Batch: %d' success.", sig.BatchID)
+			tc.BatchID = sig.BatchID
+		} else {
+			tc.Logger.Error("Receive Server Batch: %s, Client Batch: %s, Count: %d, Mos: %d", sig.BatchID, tc.BatchID, sig.Count, len(sig.Mos))
 			return
 		}
-		tc.Logger.Debug("Send signal 'Batch: %d' success.", sig.BatchID)
 	}
 }
 
