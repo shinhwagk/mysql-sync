@@ -316,6 +316,8 @@ func (ma *MysqlApplier) OnBegin(op MysqlOperationBegin) error {
 		if err := ma.mysqlClient.Begin(); err != nil {
 			return err
 		}
+	} else {
+		ma.Logger.Debug("Skip begin because merge commit.")
 	}
 
 	return nil
