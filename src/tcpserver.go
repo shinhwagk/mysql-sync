@@ -123,15 +123,11 @@ func (ts *TCPServer) clientsReady() bool {
 
 		if client.State == ClientBusy {
 			if client.SendError != nil {
-				ts.Logger.Info("Push to Client(%s) Batch(%d) again.", name, client.SendBatchID)
+				ts.Logger.Info("Push to Client(%s) Batch(%d) Mos(%d) again.", name, client.SendBatchID, len(client.SendMos))
 				client.ClientPush()
 			}
 			return false
 		}
-
-		// if client.State != ClientFree {
-		// 	return false
-		// }
 	}
 	return true
 }
@@ -147,7 +143,6 @@ func (ts *TCPServer) distributor() {
 
 	noReadyMs := 0
 
-	fetchDelayMs := 0
 	sendBaseLineDelayMs := 0
 	sendBaseLineMaxCount := 0
 	fetchCount := 0
@@ -182,7 +177,8 @@ func (ts *TCPServer) distributor() {
 					sendBaseLineDelayMs = int(float64(sendDelayMs) * 1.2)
 					resetBaseLine = false
 					fetchCount = max(sendBaseLineMaxCount, fetchCount)
-					fmt.Println("xxxxxxx", sendDelayMs, fetchCount, sendBaseLineDelayMs, fetchCount, sendBaseLineMaxCount)
+					ts.Logger.Debug("Adaptive sending params(reset base line): sendDelayMs(%d), sendBaseLineDelayMs(%d), sendBaseLineMaxCount(%d), fetchCount(%d).", sendDelayMs, sendBaseLineDelayMs, sendBaseLineMaxCount, fetchCount)
+
 				} else {
 					delayMsSlice = updateSlice(delayMsSlice, sendDelayMs)
 
@@ -192,8 +188,6 @@ func (ts *TCPServer) distributor() {
 						resetBaseLine = true
 					default:
 						avgSendDelayMs := calculateAdjustedMean(delayMsSlice)
-						fmt.Println("xxxxxxx avgSendDelayMs:", avgSendDelayMs, sendBaseLineDelayMs)
-
 						if avgSendDelayMs <= sendBaseLineDelayMs {
 							sendBaseLineMaxCount = max(fetchCount, sendBaseLineMaxCount)
 							fetchCount += minRcCnt
@@ -201,7 +195,7 @@ func (ts *TCPServer) distributor() {
 							sendBaseLineMaxCount = max(sendBaseLineMaxCount-minRcCnt, minRcCnt) // not less than minRcCnt
 							fetchCount = max(fetchCount-minRcCnt, minRcCnt)                     // not less than minRcCnt
 						}
-						fmt.Println("xxxxxxx max(fetchCount, sendBaseLineMaxCount)", fetchCount, sendBaseLineMaxCount)
+						ts.Logger.Debug("Adaptive sending params: sendDelayMs(%d), avgSendDelayMs(%d), sendBaseLineDelayMs(%d), sendBaseLineMaxCount(%d), fetchCount(%d).", sendDelayMs, avgSendDelayMs, sendBaseLineDelayMs, sendBaseLineMaxCount, fetchCount)
 						fetchCount = max(fetchCount, sendBaseLineMaxCount)
 					}
 				}
@@ -212,31 +206,31 @@ func (ts *TCPServer) distributor() {
 			fetchCount = fetchCount / minRcCnt * minRcCnt
 			// Ensure fetchCount is never less than minRcCnt. This line is critical and must remain here for correct functionality.
 			fetchCount = max(fetchCount, minRcCnt)
-			fmt.Println("xxxxxxxf", fetchCount, sendDelayMs, fetchDelayMs, sendBaseLineDelayMs, resetBaseLine, sendBaseLineMaxCount, len(ts.moCh))
 
-			fetchTimestamp := time.Now()
+			fetchStartTs := time.Now()
 			if mos, err := ts.fetchMos(fetchCount); err != nil {
 				ts.Logger.Error("Fetch mos fetch count: %d err: %s", fetchCount, err.Error())
 				return
 			} else {
-				fetchDelayMs = int(time.Since(fetchTimestamp).Milliseconds())
+				fetchElapsedMs := int(time.Since(fetchStartTs).Milliseconds())
+				ts.Logger.Debug("Fetch mos(%d) elapsed ms(%d)", fetchCount, fetchElapsedMs)
 				ts.BatchID += 1
 				ts.Logger.Info("Push batch(%d) mos(%d) to clients.", ts.BatchID, len(mos))
 				sendTimestamp = time.Now()
-				ts.pushClients(mos)
+				ts.ClientsPush(mos)
 			}
 		}
 	}
 }
 
-func (ts *TCPServer) pushClients(mos []MysqlOperation) {
+func (ts *TCPServer) ClientsPush(mos []MysqlOperation) {
 	var wg sync.WaitGroup
 	for name, client := range ts.Clients {
 		wg.Add(1)
 		go func(cli *TCPServerClient) {
 			defer wg.Done()
 			cli.SetPush(ts.BatchID, mos)
-			ts.Logger.Info("Push to Client(%s) Batch(%d).", name, ts.BatchID)
+			ts.Logger.Info("Push to Client(%s) Batch(%d) Mos(%d).", name, ts.BatchID, len(mos))
 			cli.ClientPush()
 		}(client)
 	}
