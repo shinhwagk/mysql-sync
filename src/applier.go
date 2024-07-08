@@ -25,13 +25,12 @@ func NewMysqlApplier(logLevel int, gtidSets *GtidSets, mysqlClient *MysqlClient,
 		mysqlClient: mysqlClient,
 		replicate:   replicate,
 
-		LastGtidServerUUID:  "",
-		LastCommitted:       0,
-		LastCommitTimestamp: 0,
-		AllowCommit:         false,
+		LastGtidServerUUID:      "",
+		LastCommitted:           0,
+		LastCheckpointTimestamp: 0,
+		AllowCommit:             false,
 
-		MetricDelay: 0,
-		metricCh:    metricCh,
+		metricCh: metricCh,
 
 		// excludeSchemas: []string{"mysql"},
 
@@ -47,13 +46,12 @@ type MysqlApplier struct {
 	replicate   *Replicate
 	GtidSets    *GtidSets
 
-	LastGtidServerUUID  string
-	LastCommitted       int64
-	LastCommitTimestamp uint32
-	AllowCommit         bool
+	LastGtidServerUUID      string
+	LastCommitted           int64
+	LastCheckpointTimestamp uint32
+	AllowCommit             bool
 
-	MetricDelay uint
-	metricCh    chan<- MetricUnit
+	metricCh chan<- MetricUnit
 
 	GitdSkip bool
 
@@ -93,7 +91,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 			case MysqlOperationDDLDatabase:
 				if ma.State == StateGTID {
 					ma.State = StateDDL
-					ma.LastCommitTimestamp = op.Timestamp
+					ma.LastCheckpointTimestamp = op.Timestamp
 					if ma.GitdSkip || ma.ReplicateNotExecute(op.Schema, "") {
 						ma.SkipCommitCheckpoint()
 						continue
@@ -108,7 +106,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 			case MysqlOperationDDLTable:
 				if ma.State == StateGTID {
 					ma.State = StateDDL
-					ma.LastCommitTimestamp = op.Timestamp
+					ma.LastCheckpointTimestamp = op.Timestamp
 					if ma.GitdSkip || ma.ReplicateNotExecute(op.Schema, op.Table) {
 						ma.SkipCommitCheckpoint()
 						continue
@@ -165,7 +163,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 			case MysqlOperationXid:
 				if ma.State == StateDML || ma.State == StateBEGIN {
 					ma.State = StateXID
-					ma.LastCommitTimestamp = op.Timestamp
+					ma.LastCheckpointTimestamp = op.Timestamp
 					if ma.GitdSkip {
 						ma.SkipCommitCheckpoint()
 						continue
@@ -364,7 +362,7 @@ func (ma *MysqlApplier) OnHeartbeat(op MysqlOperationHeartbeat) error {
 
 func (ma *MysqlApplier) SkipCommitCheckpoint() {
 	if ma.GitdSkip {
-		ma.Checkpoint(ma.LastCommitTimestamp)
+		ma.Checkpoint(ma.LastCheckpointTimestamp)
 	}
 }
 
@@ -376,7 +374,7 @@ func (ma *MysqlApplier) MergeCommit() error {
 			return err
 		}
 
-		ma.Checkpoint(ma.LastCommitTimestamp)
+		ma.Checkpoint(ma.LastCheckpointTimestamp)
 
 		ma.metricCh <- MetricUnit{Name: MetricDestMergeTrx, Value: 1}
 		ma.AllowCommit = false
@@ -387,6 +385,9 @@ func (ma *MysqlApplier) MergeCommit() error {
 
 func (ma *MysqlApplier) Checkpoint(timestamp uint32) error {
 	if err := ma.GtidSets.PersistGtidSetsMaptToHJDB(); err == nil {
+		if trx, ok := ma.GtidSets.GetTrxIdOfServerUUID(ma.LastGtidServerUUID); ok {
+			ma.Logger.Info("Checkpoint GTID: %s:%d", ma.LastGtidServerUUID, trx)
+		}
 		ma.metricCh <- MetricUnit{Name: MetricDestDelay, Value: uint(time.Now().Unix() - int64(timestamp))}
 	}
 

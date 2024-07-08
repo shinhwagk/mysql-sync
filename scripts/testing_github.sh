@@ -14,42 +14,52 @@ declare ARGS_TARGET_PORT="${ARGS_SOURCE_PORT}"
 declare ARGS_TARGET_USER="${ARGS_SOURCE_USER}"
 declare ARGS_TARGET_PASSWORD="${ARGS_TARGET_PASSWORD}"
 
-function MYSQL_SOURCE_CLIENT {
+function MYSQL_SOURCE_CLIENT0 {
     mysql --host=${ARGS_SOURCE_HOST} --port=${ARGS_SOURCE_PORT} --user=${ARGS_SOURCE_USER} --password=${ARGS_SOURCE_PASSWORD} "$@"
 }
 
-function MYSQL_TARGET_CLIENT {
+function MYSQL_TARGET_CLIENT1 {
     mysql --host=${ARGS_TARGET_HOST} --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} "$@"
 }
 
-MYSQL_SOURCE_CLIENT -e "SELECT version();"
-MYSQL_TARGET_CLIENT -e "SELECT version();"
+function MYSQL_TARGET_CLIENT2 {
+    mysql --host=db3 --port=${ARGS_TARGET_PORT} --user=${ARGS_TARGET_USER} --password=${ARGS_TARGET_PASSWORD} "$@"
+}
+
+MYSQL_SOURCE_CLIENT0 -e "SELECT version();"
+MYSQL_TARGET_CLIENT1 -e "SELECT version();"
+MYSQL_TARGET_CLIENT2 -e "SELECT version();"
 
 # drop all non-sys databases;
 echo "drop all non-sys databases;"
-for db in `MYSQL_SOURCE_CLIENT -N -s -e "show databases" | grep -Ev '(information_schema|mysql|sys|performance_schema)'`; do
-    MYSQL_SOURCE_CLIENT -N -s -e "drop database $db";
+for db in `MYSQL_SOURCE_CLIENT0 -N -s -e "show databases" | grep -Ev '(information_schema|mysql|sys|performance_schema)'`; do
+    MYSQL_SOURCE_CLIENT0 -N -s -e "drop database $db";
 done
 
 # drop all non-sys databases;
 echo "drop all non-sys databases;"
-for db in `MYSQL_TARGET_CLIENT -N -s -e "show databases" | grep -Ev '(information_schema|mysql|sys|performance_schema)'`; do
-    MYSQL_TARGET_CLIENT -N -s -e "drop database $db";
+for db in `MYSQL_TARGET_CLIENT1 -N -s -e "show databases" | grep -Ev '(information_schema|mysql|sys|performance_schema)'`; do
+    MYSQL_TARGET_CLIENT1 -N -s -e "drop database $db";
+done
+for db in `MYSQL_TARGET_CLIENT2 -N -s -e "show databases" | grep -Ev '(information_schema|mysql|sys|performance_schema)'`; do
+    MYSQL_TARGET_CLIENT2 -N -s -e "drop database $db";
 done
 
 echo "reset master"
-MYSQL_SOURCE_CLIENT -e 'reset master;'
-MYSQL_TARGET_CLIENT -e 'reset master;'
+MYSQL_SOURCE_CLIENT0 -e 'reset master;'
+MYSQL_TARGET_CLIENT1 -e 'reset master;'
+MYSQL_TARGET_CLIENT2 -e 'reset master;'
 
-MYSQL_SOURCE_CLIENT -e "SHOW MASTER STATUS\G"
-MYSQL_TARGET_CLIENT -e "SHOW MASTER STATUS\G"
+MYSQL_SOURCE_CLIENT0 -e "SHOW MASTER STATUS\G"
+MYSQL_TARGET_CLIENT1 -e "SHOW MASTER STATUS\G"
+MYSQL_TARGET_CLIENT2 -e "SHOW MASTER STATUS\G"
 
-cat scripts/mysql.sql | MYSQL_SOURCE_CLIENT
+cat scripts/mysql.sql | MYSQL_SOURCE_CLIENT0
 
 echo "start load data to source database"
 function sysbench_load_data() {
     local testdb=$1
-    MYSQL_SOURCE_CLIENT -e "CREATE DATABASE IF NOT EXISTS ${testdb};"
+    MYSQL_SOURCE_CLIENT0 -e "CREATE DATABASE IF NOT EXISTS ${testdb};"
     for testname in oltp_insert oltp_delete oltp_update_index oltp_update_non_index oltp_write_only bulk_insert; do
     # for testname in oltp_insert oltp_delete oltp_update_non_index oltp_update_index bulk_insert; do
         for action in cleanup prepare run; do

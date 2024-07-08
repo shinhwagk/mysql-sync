@@ -36,13 +36,12 @@ func main() {
 	} else if *dest {
 		if *destName == "" {
 			logger.Error("'name' parameter is required when 'dest' is specified.")
-			return
+			os.Exit(1)
 		}
 
 		destination := NewDestination(*config, *destName)
 		destination.Start(ctx, cancel)
 		cancel()
-
 	} else {
 		logger.Info("No specific mode activated")
 	}
