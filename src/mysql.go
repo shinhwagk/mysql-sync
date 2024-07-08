@@ -91,6 +91,8 @@ func (mc *MysqlClient) ExecuteDML(query string, args []interface{}) error {
 		if mc.SkipError(err) != nil {
 			mc.Logger.Error("execute DML: %s, Query: %s, Params: %v.", err.Error(), query, args)
 			return err
+		} else {
+			mc.Logger.Warning("mysql skip error: %s, Query: %s, Params: %v.", err, query, args)
 		}
 	} else {
 		err := fmt.Errorf("execute DML: tx is not nil")
@@ -113,8 +115,13 @@ func (mc *MysqlClient) ExecuteOnTable(db string, query string) error {
 		}
 	}
 
-	if _, err := mc.tx.Exec(query); mc.SkipError(err) != nil {
-		mc.Logger.Error("execute DDL: %s, Database: %s Query: %s.", err, db, query)
+	if _, err := mc.tx.Exec(query); err != nil {
+		if mc.SkipError(err) != nil {
+			mc.Logger.Error("execute DDL: %s, Database: %s Query: %s.", err, db, query)
+			return err
+		} else {
+			mc.Logger.Warning("mysql skip error: %s, Database: %s Query: %s.", err, db, query)
+		}
 		return err
 	}
 
@@ -130,9 +137,13 @@ func (mc *MysqlClient) ExecuteOnDatabase(query string) error {
 		return err
 	}
 
-	if _, err := mc.tx.Exec(query); mc.SkipError(err) != nil {
-		mc.Logger.Error("execute DDL: %s, Query: %s.", err, query)
-		return err
+	if _, err := mc.tx.Exec(query); err != nil {
+		if mc.SkipError(err) != nil {
+			mc.Logger.Error("execute DDL: %s, Query: %s.", err, query)
+			return err
+		} else {
+			mc.Logger.Warning("mysql skip error: %s, Query: %s.", err, query)
+		}
 	}
 
 	if err := mc.Commit(); err != nil {
