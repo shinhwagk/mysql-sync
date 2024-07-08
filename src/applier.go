@@ -93,7 +93,9 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 			case MysqlOperationDDLDatabase:
 				if ma.State == StateGTID {
 					ma.State = StateDDL
+					ma.LastCommitTimestamp = op.Timestamp
 					if ma.GitdSkip || ma.ReplicateNotExecute(op.Schema, "") {
+						ma.SkipCommitCheckpoint()
 						continue
 					}
 					if err := ma.OnDDLDatabase(op); err != nil {
@@ -106,7 +108,9 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 			case MysqlOperationDDLTable:
 				if ma.State == StateGTID {
 					ma.State = StateDDL
+					ma.LastCommitTimestamp = op.Timestamp
 					if ma.GitdSkip || ma.ReplicateNotExecute(op.Schema, op.Table) {
+						ma.SkipCommitCheckpoint()
 						continue
 					}
 					if err := ma.OnDDLTable(op); err != nil {
@@ -161,7 +165,9 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 			case MysqlOperationXid:
 				if ma.State == StateDML || ma.State == StateBEGIN {
 					ma.State = StateXID
+					ma.LastCommitTimestamp = op.Timestamp
 					if ma.GitdSkip {
+						ma.SkipCommitCheckpoint()
 						continue
 					}
 					if err := ma.OnXID(op); err != nil {
@@ -301,7 +307,6 @@ func (ma *MysqlApplier) OnDDLTable(op MysqlOperationDDLTable) error {
 
 func (ma *MysqlApplier) OnXID(op MysqlOperationXid) error {
 	ma.Logger.Debug("OnXID")
-	ma.LastCommitTimestamp = op.Timestamp
 	ma.AllowCommit = true
 
 	return nil
@@ -355,6 +360,12 @@ func (ma *MysqlApplier) OnHeartbeat(op MysqlOperationHeartbeat) error {
 	}
 	ma.metricCh <- MetricUnit{Name: MetricDestDelay, Value: uint(time.Now().Unix() - int64(op.Timestamp))}
 	return nil
+}
+
+func (ma *MysqlApplier) SkipCommitCheckpoint() {
+	if ma.GitdSkip {
+		ma.Checkpoint(ma.LastCommitTimestamp)
+	}
 }
 
 func (ma *MysqlApplier) MergeCommit() error {
