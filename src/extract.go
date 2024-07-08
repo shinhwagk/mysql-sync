@@ -253,6 +253,7 @@ func (bext *BinlogExtract) handleQueryEvent(e *replication.QueryEvent, eh *repli
 
 				Query := fmt.Sprintf("RENAME TABLE `%s`.`%s` TO `%s`.`%s`", oldSchema, tab.OldTable.Name.O, newSchema, tab.NewTable.Name)
 				bext.toMoCh(MysqlOperationDDLTable{SchemaContext: string(e.Schema), Schema: oldSchema, Table: tab.OldTable.Name.O, Query: Query, Timestamp: eh.Timestamp})
+				bext.metricCh <- MetricUnit{Name: MetricReplDDLTableTimes, Value: 1}
 			}
 		case *ast.AlterTableStmt:
 			schema := string(e.Schema)
@@ -260,6 +261,7 @@ func (bext *BinlogExtract) handleQueryEvent(e *replication.QueryEvent, eh *repli
 				schema = t.Table.Schema.O
 			}
 			bext.toMoCh(MysqlOperationDDLTable{SchemaContext: string(e.Schema), Schema: schema, Table: t.Table.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})
+			bext.metricCh <- MetricUnit{Name: MetricReplDDLTableTimes, Value: 1}
 		case *ast.DropTableStmt:
 			schema := string(e.Schema)
 			for _, tab := range t.Tables {
@@ -268,6 +270,7 @@ func (bext *BinlogExtract) handleQueryEvent(e *replication.QueryEvent, eh *repli
 				}
 				Query := fmt.Sprintf("DROP TABLE IF EXISTS `%s`.`%s`", schema, tab.Name.O)
 				bext.toMoCh(MysqlOperationDDLTable{SchemaContext: string(e.Schema), Schema: schema, Table: tab.Name.O, Query: Query, Timestamp: eh.Timestamp})
+				bext.metricCh <- MetricUnit{Name: MetricReplDDLTableTimes, Value: 1}
 			}
 		case *ast.CreateTableStmt:
 			schema := string(e.Schema)
@@ -275,30 +278,37 @@ func (bext *BinlogExtract) handleQueryEvent(e *replication.QueryEvent, eh *repli
 				schema = t.Table.Schema.O
 			}
 			bext.toMoCh(MysqlOperationDDLTable{SchemaContext: string(e.Schema), Schema: schema, Table: t.Table.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})
+			bext.metricCh <- MetricUnit{Name: MetricReplDDLTableTimes, Value: 1}
 		case *ast.TruncateTableStmt:
 			schema := string(e.Schema)
 			if len(schema) == 0 {
 				schema = t.Table.Schema.O
 			}
 			bext.toMoCh(MysqlOperationDDLTable{SchemaContext: string(e.Schema), Schema: schema, Table: t.Table.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})
+			bext.metricCh <- MetricUnit{Name: MetricReplDDLTableTimes, Value: 1}
 		case *ast.DropIndexStmt:
 			schema := string(e.Schema)
 			if len(schema) == 0 {
 				schema = t.Table.Schema.O
 			}
 			bext.toMoCh(MysqlOperationDDLTable{SchemaContext: string(e.Schema), Schema: schema, Table: t.Table.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})
+			bext.metricCh <- MetricUnit{Name: MetricReplDDLTableTimes, Value: 1}
 		case *ast.CreateIndexStmt:
 			schema := string(e.Schema)
 			if len(schema) == 0 {
 				schema = t.Table.Schema.O
 			}
 			bext.toMoCh(MysqlOperationDDLTable{SchemaContext: string(e.Schema), Schema: schema, Table: t.Table.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})
+			bext.metricCh <- MetricUnit{Name: MetricReplDDLTableTimes, Value: 1}
 		case *ast.CreateDatabaseStmt:
 			bext.toMoCh(MysqlOperationDDLDatabase{Schema: t.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})
+			bext.metricCh <- MetricUnit{Name: MetricReplDDLDatabaseTimes, Value: 1}
 		case *ast.AlterDatabaseStmt:
 			bext.toMoCh(MysqlOperationDDLDatabase{Schema: t.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})
+			bext.metricCh <- MetricUnit{Name: MetricReplDDLDatabaseTimes, Value: 1}
 		case *ast.DropDatabaseStmt:
 			bext.toMoCh(MysqlOperationDDLDatabase{Schema: t.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})
+			bext.metricCh <- MetricUnit{Name: MetricReplDDLDatabaseTimes, Value: 1}
 		case *ast.BeginStmt:
 			bext.toMoCh(MysqlOperationBegin{Timestamp: eh.Timestamp})
 		case *ast.CommitStmt:

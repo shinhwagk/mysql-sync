@@ -183,6 +183,16 @@ func (md *MetricDirector) Start(ctx context.Context, addr string) {
 				md.inc("tcp_server_outgoing_bytes", metric.Value, metric.Dest)
 			case MetricTCPServerSendOperations:
 				md.inc("tcp_server_send_operations", metric.Value, metric.Dest)
+			case MetricReplDMLInsertTimes:
+				md.inc("dml_insert_times", metric.Value, &md.ReplName)
+			case MetricReplDMLDeleteTimes:
+				md.inc("dml_delete_times", metric.Value, &md.ReplName)
+			case MetricReplDMLUpdateTimes:
+				md.inc("dml_update_times", metric.Value, &md.ReplName)
+			case MetricReplDDLDatabaseTimes:
+				md.inc("ddl_database_times", metric.Value, &md.ReplName)
+			case MetricReplDDLTableTimes:
+				md.inc("ddl_table_times", metric.Value, &md.ReplName)
 			}
 		}
 	}
