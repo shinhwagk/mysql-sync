@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"encoding/gob"
-	"fmt"
 	"net"
 	"sync"
 	"time"
@@ -139,7 +138,7 @@ func (ts *TCPServer) distributor() {
 	maxRcCnt := cap(ts.moCh)
 	const minRcCnt int = 10
 
-	sendTimestamp := time.Now()
+	sendStartTs := time.Now()
 
 	noReadyMs := 0
 
@@ -170,7 +169,7 @@ func (ts *TCPServer) distributor() {
 			noReadyMs = 0
 
 			ts.Logger.Debug("MoCh cache capacity: %d/%d.", len(ts.moCh), maxRcCnt)
-			sendDelayMs := max(int(time.Since(sendTimestamp).Milliseconds()), 1) // min delay 1ms
+			sendDelayMs := max(int(time.Since(sendStartTs).Milliseconds()), 1) // min delay 1ms
 
 			if fetchCount >= minRcCnt {
 				if resetBaseLine {
@@ -208,22 +207,18 @@ func (ts *TCPServer) distributor() {
 			fetchCount = max(fetchCount, minRcCnt)
 
 			fetchStartTs := time.Now()
-			if mos, err := ts.fetchMos(fetchCount); err != nil {
-				ts.Logger.Error("Fetch mos fetch count: %d err: %s", fetchCount, err.Error())
-				return
-			} else {
-				fetchElapsedMs := int(time.Since(fetchStartTs).Milliseconds())
-				ts.Logger.Debug("Fetch mos(%d) elapsed ms(%d)", fetchCount, fetchElapsedMs)
-				ts.BatchID += 1
-				ts.Logger.Info("Push batch(%d) mos(%d) to clients.", ts.BatchID, len(mos))
-				sendTimestamp = time.Now()
-				ts.ClientsPush(mos)
-			}
+			mos := ts.fetchMos(fetchCount)
+			fetchElapsedMs := int(time.Since(fetchStartTs).Milliseconds())
+			ts.Logger.Debug("Fetch mos(%d) elapsed ms(%d)", fetchCount, fetchElapsedMs)
+			ts.BatchID += 1
+			sendStartTs = time.Now()
+			ts.ClientsPush(mos)
 		}
 	}
 }
 
 func (ts *TCPServer) ClientsPush(mos []MysqlOperation) {
+	ts.Logger.Info("Push to Clients Batch(%d) Mos(%d).", ts.BatchID, len(mos))
 	var wg sync.WaitGroup
 	for name, client := range ts.Clients {
 		wg.Add(1)
@@ -237,16 +232,12 @@ func (ts *TCPServer) ClientsPush(mos []MysqlOperation) {
 	wg.Wait()
 }
 
-func (ts *TCPServer) fetchMos(count int) ([]MysqlOperation, error) {
+func (ts *TCPServer) fetchMos(count int) []MysqlOperation {
 	mos := make([]MysqlOperation, 0, count)
 	for i := 0; i < count; i++ {
-		op, ok := <-ts.moCh
-		if !ok {
-			return nil, fmt.Errorf("channel closed during reception")
-		}
-		mos = append(mos, op)
+		mos = append(mos, <-ts.moCh)
 	}
-	return mos, nil
+	return mos
 }
 
 func (ts *TCPServer) handleClients(listener net.Listener) {
