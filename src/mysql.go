@@ -55,7 +55,7 @@ func (mc *MysqlClient) SkipError(err error) error {
 	if merr, ok := err.(*mysql.MySQLError); ok {
 		for _, v := range mc.SkipErrors {
 			if v == merr.Number {
-				mc.Logger.Error("Skip %s.", err.Error())
+				mc.Logger.Error("Skip error: %s.", err.Error())
 				return nil
 			}
 		}
@@ -89,12 +89,13 @@ func (mc *MysqlClient) Begin() error {
 
 func (mc *MysqlClient) ExecuteDML(query string, args []interface{}) error {
 	if mc.tx != nil {
-		_, err := mc.tx.Exec(query, args...)
-		if mc.SkipError(err) != nil {
-			mc.Logger.Error("execute DML: %s, Query: %s, Params: %v.", err.Error(), query, args)
-			return err
-		} else {
-			mc.Logger.Warning("mysql skip error: %s, Query: %s, Params: %v.", err, query, args)
+		if _, err := mc.tx.Exec(query, args...); err != nil {
+			if serr := mc.SkipError(err); serr != nil {
+				mc.Logger.Error("execute DML: %s, Query: %s, Params: %v.", serr, query, args)
+				return err
+			} else {
+				mc.Logger.Warning("skip error: %s, Query: %s, Params: %v.", err, query, args)
+			}
 		}
 	} else {
 		err := fmt.Errorf("execute DML: tx is not nil")
@@ -118,11 +119,11 @@ func (mc *MysqlClient) ExecuteOnTable(db string, query string) error {
 	}
 
 	if _, err := mc.tx.Exec(query); err != nil {
-		if mc.SkipError(err) != nil {
-			mc.Logger.Error("execute DDL: %s, Database: %s Query: %s.", err, db, query)
+		if serr := mc.SkipError(err); serr != nil {
+			mc.Logger.Error("execute DDL: %s, Database: %s Query: %s.", serr, db, query)
 			return err
 		} else {
-			mc.Logger.Warning("mysql skip error: %s, Database: %s Query: %s.", err, db, query)
+			mc.Logger.Warning("skip error: %s, Database: %s Query: %s.", err, db, query)
 		}
 		return err
 	}
@@ -140,11 +141,11 @@ func (mc *MysqlClient) ExecuteOnDatabase(query string) error {
 	}
 
 	if _, err := mc.tx.Exec(query); err != nil {
-		if mc.SkipError(err) != nil {
-			mc.Logger.Error("execute DDL: %s, Query: %s.", err, query)
+		if serr := mc.SkipError(err); serr != nil {
+			mc.Logger.Error("execute DDL: %s, Query: %s.", serr, query)
 			return err
 		} else {
-			mc.Logger.Warning("mysql skip error: %s, Query: %s.", err, query)
+			mc.Logger.Warning("skip error: %s, Query: %s.", err, query)
 		}
 	}
 
