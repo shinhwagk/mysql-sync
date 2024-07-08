@@ -295,7 +295,7 @@ func (ma *MysqlApplier) OnDDLTable(op MysqlOperationDDLTable) error {
 	ma.metricCh <- MetricUnit{Name: MetricDestDDLTableTimes, Value: 1}
 
 	ma.Checkpoint(op.Timestamp)
-	ma.AllowCommit = false
+
 	return nil
 }
 

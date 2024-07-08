@@ -68,7 +68,7 @@ func NewTcpServerClient(logLevel int, name string, metricCh chan<- MetricUnit, c
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &TCPServerClient{
-		Logger:            NewLogger(logLevel, fmt.Sprintf("tcp client(%s,%s)", name, conn.RemoteAddr().String())),
+		Logger:            NewLogger(logLevel, fmt.Sprintf("tcp-client(%s,%s)", name, conn.RemoteAddr().String())),
 		Name:              name,
 		ctx:               ctx,
 		cancel:            cancel,
