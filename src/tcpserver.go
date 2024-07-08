@@ -159,7 +159,7 @@ func (ts *TCPServer) distributor() {
 			return
 		default:
 			if !ts.clientsReady() {
-				if noReadyMs <= 1000 {
+				if noReadyMs < 1000 {
 					noReadyMs += 10
 				}
 				ts.Logger.Debug("Clients not ready sleep: %dms.", noReadyMs)
