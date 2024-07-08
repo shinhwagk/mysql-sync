@@ -85,6 +85,9 @@ func NewTcpServerClient(logLevel int, name string, metricCh chan<- MetricUnit, c
 }
 
 func (tsc *TCPServerClient) Cleanup() {
+	tsc.Logger.Info("Cleanup started.")
+	defer tsc.Logger.Info("Cleanup closed.")
+
 	tsc.Dead = true
 
 	if err := tsc.encoderZstdWriter.Close(); err != nil {
@@ -113,6 +116,9 @@ func (tsc *TCPServerClient) sendOperations(s Signal1) error {
 }
 
 func (tsc *TCPServerClient) receivedSignal() {
+	tsc.Logger.Info("received signal started.")
+	defer tsc.Logger.Info("received signal closed.")
+
 	for {
 		var ack Signal2
 		if err := tsc.decoder.Decode(&ack); err != nil {
@@ -146,7 +152,6 @@ func (tsc *TCPServerClient) Start() {
 	go func() {
 		defer wg.Done()
 		tsc.receivedSignal()
-		tsc.Logger.Info("tcp from client(%s) handler close.", tsc.conn.RemoteAddr().String())
 		tsc.cancel()
 	}()
 
