@@ -195,8 +195,8 @@ func (ts *TCPServer) distributor() {
 							sendBaseLineMaxCount = max(sendBaseLineMaxCount-minRcCnt, minRcCnt) // not less than minRcCnt
 							fetchCount = max(fetchCount-minRcCnt, minRcCnt)                     // not less than minRcCnt
 						}
-						ts.Logger.Debug("Adaptive sending params: sendDelayMs(%d), avgSendDelayMs(%d), sendBaseLineDelayMs(%d), sendBaseLineMaxCount(%d), fetchCount(%d).", sendDelayMs, avgSendDelayMs, sendBaseLineDelayMs, sendBaseLineMaxCount, fetchCount)
 						fetchCount = max(fetchCount, sendBaseLineMaxCount)
+						ts.Logger.Debug("Adaptive sending params: sendDelayMs(%d), avgSendDelayMs(%d), sendBaseLineDelayMs(%d), sendBaseLineMaxCount(%d), fetchCount(%d).", sendDelayMs, avgSendDelayMs, sendBaseLineDelayMs, sendBaseLineMaxCount, fetchCount)
 					}
 				}
 			}
