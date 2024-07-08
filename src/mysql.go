@@ -16,23 +16,25 @@ type MysqlClient struct {
 	SkipErrors []uint16
 }
 
-func NewMysqlClient(logLevel int, dsn string, skipErrorsStr *string) (*MysqlClient, error) {
+func NewMysqlClient(logLevel int, dmc DestinationMysqlConfig) (*MysqlClient, error) {
 	Logger := NewLogger(logLevel, "mysql-client")
 
-	Logger.Info("dsn: %s", dsn)
-	db, err := sql.Open("mysql", dsn)
+	Logger.Info("dsn: %s", dmc.Dsn)
+	db, err := sql.Open("mysql", dmc.Dsn)
 
 	if err != nil {
 		return nil, err
 	}
 
-	skipErrors := []uint16{}
-	if skipErrorsStr != nil {
-		slice, err := ConvertStringToUint16Slice(*skipErrorsStr)
-		if err != nil {
+	if dmc.foreignKeyChecks != nil && !*dmc.foreignKeyChecks {
+		if _, err = db.Exec("SET foreign_key_checks = 0"); err != nil {
 			return nil, err
 		}
-		skipErrors = append(skipErrors, slice...)
+	}
+
+	skipErrors, err := ConvertStringToUint16Slice(dmc.SkipErrors)
+	if err != nil {
+		return nil, err
 	}
 
 	db.SetConnMaxLifetime(time.Minute * 1)
