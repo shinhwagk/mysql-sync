@@ -102,6 +102,7 @@ func (bext *BinlogExtract) Start(ctx context.Context, gtidsets string) {
 			case replication.WRITE_ROWS_EVENTv0, replication.WRITE_ROWS_EVENTv1, replication.WRITE_ROWS_EVENTv2:
 				// test
 				fmt.Println("====================================")
+				fmt.Println(string(e.Table.Schema), string(e.Table.Table))
 				for i, a := range e.Rows {
 					fmt.Println("testingtestingtestingtestingtestingtesting", i, a == nil, reflect.DeepEqual(a, []byte{}), reflect.DeepEqual(a, []byte(nil)))
 					fmt.Printf("Param %d: Type: %T, Value: %v, IsNil: %v, IsEmptyByteSlice: %v %v %v %v \n", i, a, a, a == nil, reflect.DeepEqual(a, []uint8(nil)), reflect.DeepEqual(a, []uint8{}), reflect.DeepEqual(a, []byte{}), reflect.DeepEqual(a, []byte(nil)))
