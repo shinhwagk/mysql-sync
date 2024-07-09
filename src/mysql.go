@@ -91,6 +91,11 @@ func (mc *MysqlClient) ExecuteDML(query string, args []interface{}) error {
 	if mc.tx != nil {
 		if _, err := mc.tx.Exec(query, args...); err != nil {
 			if serr := mc.SkipError(err); serr != nil {
+				// test
+				for i, a := range args {
+					fmt.Println("testingtestingtestingtestingtestingtesting", i, a == nil)
+				}
+				// test
 				mc.Logger.Error("execute DML: %s, Query: %s, Params: %v.", serr, query, args)
 				return err
 			} else {
