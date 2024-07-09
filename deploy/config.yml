@@ -1,0 +1,4 @@
+- file: config
+  repl: tn
+  dest:
+    db2: co
