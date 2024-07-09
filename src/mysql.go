@@ -95,6 +95,7 @@ func (mc *MysqlClient) ExecuteDML(query string, args []interface{}) error {
 				// test
 				for i, a := range args {
 					fmt.Println("testingtestingtestingtestingtestingtesting", i, a == nil, reflect.DeepEqual(a, []byte{}), reflect.DeepEqual(a, []byte(nil)))
+					fmt.Printf("Param %d: Type: %T, Value: %v, IsNil: %v, IsEmptyByteSlice: %v\n", i, a, a, a == nil, reflect.DeepEqual(a, []byte{}))
 				}
 				// test
 				mc.Logger.Error("execute DML: %s, Query: %s, Params: %v.", serr, query, args)
