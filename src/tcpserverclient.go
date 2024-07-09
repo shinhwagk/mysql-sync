@@ -88,8 +88,6 @@ func (tsc *TCPServerClient) Cleanup() {
 	tsc.Logger.Info("Cleanup started.")
 	defer tsc.Logger.Info("Cleanup closed.")
 
-	tsc.Dead = true
-
 	if err := tsc.encoderZstdWriter.Close(); err != nil {
 		tsc.Logger.Error("Zstd writer close: %s", err.Error())
 	}
@@ -163,6 +161,7 @@ func (tsc *TCPServerClient) Start() {
 	}()
 
 	wg.Wait()
+	tsc.Dead = true
 }
 
 func (tsc *TCPServerClient) SetPush(batchID uint, mos []MysqlOperation) {

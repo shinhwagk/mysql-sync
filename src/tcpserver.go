@@ -84,11 +84,20 @@ func (ts *TCPServer) Start(ctx context.Context) {
 		defer wg.Done()
 		<-ts.ctx.Done()
 		// clear clients
-		for _, client := range ts.Clients {
-			if client != nil {
-				client.cancel()
+		for {
+			allDead := true
+			for _, client := range ts.Clients {
+				if client != nil {
+					client.cancel()
+					allDead = allDead && client.Dead
+				}
+			}
+			if allDead {
+				break
 			}
 		}
+		ts.Logger.Info("Clients all cleanup.")
+
 		// close listener
 		if err := listener.Close(); err != nil {
 			ts.Logger.Error("Listener Close: %s", err.Error())
@@ -245,6 +254,8 @@ func (ts *TCPServer) handleClients(listener net.Listener) {
 	defer ts.Logger.Info("HandleClients closed.")
 
 	var wg sync.WaitGroup
+	defer wg.Wait()
+	defer ts.cancel()
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -255,10 +266,8 @@ func (ts *TCPServer) handleClients(listener net.Listener) {
 		scanner := bufio.NewScanner(conn)
 		if !scanner.Scan() {
 			if err := scanner.Err(); err != nil {
-				ts.Logger.Error("Failed to read from client: %s", err.Error())
-			} else {
-				ts.Logger.Error("Client disconnected before sending a name")
-
+				ts.Logger.Error("Failed to read client name: %s", err.Error())
+				break
 			}
 		}
 
@@ -268,7 +277,6 @@ func (ts *TCPServer) handleClients(listener net.Listener) {
 			if client == nil {
 				if ts.Clients[clientName], err = NewTcpServerClient(ts.Logger.Level, clientName, ts.metricCh, conn); err != nil {
 					ts.Logger.Error("Client(%s) Init: %s", clientName, err.Error())
-					return
 				} else {
 					wg.Add(1)
 					go func() {
@@ -276,15 +284,14 @@ func (ts *TCPServer) handleClients(listener net.Listener) {
 						ts.Clients[clientName].Start()
 						ts.cancel()
 					}()
+					continue
 				}
 			} else {
-				ts.Logger.Info("Client(%s) is exists.", clientName)
-				return
+				ts.Logger.Error("Client(%s) was exists.", clientName)
 			}
 		} else {
-			ts.Logger.Error("Client(%s) not exists.", clientName)
-			return
+			ts.Logger.Error("Client(%s) is not exists.", clientName)
 		}
+		break
 	}
-	wg.Wait()
 }
