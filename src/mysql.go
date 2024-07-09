@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
@@ -93,7 +94,7 @@ func (mc *MysqlClient) ExecuteDML(query string, args []interface{}) error {
 			if serr := mc.SkipError(err); serr != nil {
 				// test
 				for i, a := range args {
-					fmt.Println("testingtestingtestingtestingtestingtesting", i, a == nil)
+					fmt.Println("testingtestingtestingtestingtestingtesting", i, a == nil, reflect.DeepEqual(a, []byte{}), reflect.DeepEqual(a, []byte(nil)))
 				}
 				// test
 				mc.Logger.Error("execute DML: %s, Query: %s, Params: %v.", serr, query, args)
