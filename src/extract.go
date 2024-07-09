@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -99,6 +100,13 @@ func (bext *BinlogExtract) Start(ctx context.Context, gtidsets string) {
 		case *replication.RowsEvent:
 			switch ev.Header.EventType {
 			case replication.WRITE_ROWS_EVENTv0, replication.WRITE_ROWS_EVENTv1, replication.WRITE_ROWS_EVENTv2:
+				// test
+				fmt.Println("====================================")
+				for i, a := range e.Rows {
+					fmt.Println("testingtestingtestingtestingtestingtesting", i, a == nil, reflect.DeepEqual(a, []byte{}), reflect.DeepEqual(a, []byte(nil)))
+					fmt.Printf("Param %d: Type: %T, Value: %v, IsNil: %v, IsEmptyByteSlice: %v %v %v %v \n", i, a, a, a == nil, reflect.DeepEqual(a, []uint8(nil)), reflect.DeepEqual(a, []uint8{}), reflect.DeepEqual(a, []byte{}), reflect.DeepEqual(a, []byte(nil)))
+				}
+				// test
 				if err := bext.handleEventWriteRows(e, ev.Header); err != nil {
 					bext.Logger.Error("error event " + err.Error())
 					return
