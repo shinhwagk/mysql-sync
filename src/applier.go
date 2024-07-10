@@ -404,6 +404,7 @@ func BuildDMLInsertQuery(datbaseName string, tableName string, columns []MysqlOp
 		// important
 		// []uint8{} -> gob -> []uint8(nil)
 		// 252 == tinyblob tinytext blob text mediumblob mediumtext longblob longtext
+		fmt.Printf("DEBUG: %s %d %#v %v\n", col.ColumnName, col.ColumnType, col.ColumnValue, col.ColumnValueIsNil)
 		if col.ColumnType == 252 && !col.ColumnValueIsNil && col.ColumnValue == nil {
 			params = append(params, []uint8{})
 		} else {
