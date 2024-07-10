@@ -1,5 +1,9 @@
 package main
 
-func test1(delay int) {
+import "fmt"
 
+func main() {
+	// args:=[]interface{[]int{}}
+	// fmt.Fprint("%v",args)
+	fmt.Fprintf()
 }

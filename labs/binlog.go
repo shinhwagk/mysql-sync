@@ -18,7 +18,7 @@ import (
 func columnTypeAstrict(colName string, colType byte, colValue interface{}) {
 	fmt.Println("===========")
 	if reflect.TypeOf(colValue).Kind() == reflect.Slice {
-		fmt.Println("2", colName, colType, reflect.TypeOf(colValue).Elem().Kind())
+		fmt.Println("2", colName, colType, "slice", reflect.TypeOf(colValue).Elem().Kind())
 	} else {
 		fmt.Println("2", colName, colType, reflect.TypeOf(colValue).Kind())
 	}
@@ -62,6 +62,7 @@ func columnTypeAstrict(colName string, colType byte, colValue interface{}) {
 }
 
 func main() {
+	
 	// 假设这是配置和创建 BinlogSyncer 的代码段
 	config := replication.BinlogSyncerConfig{
 		ServerID: 1001,
