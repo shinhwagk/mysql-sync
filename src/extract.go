@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -100,17 +99,6 @@ func (bext *BinlogExtract) Start(ctx context.Context, gtidsets string) {
 		case *replication.RowsEvent:
 			switch ev.Header.EventType {
 			case replication.WRITE_ROWS_EVENTv0, replication.WRITE_ROWS_EVENTv1, replication.WRITE_ROWS_EVENTv2:
-				// test
-				fmt.Println("====================================")
-				fmt.Println(string(e.Table.Schema), string(e.Table.Table))
-				for _, row := range e.Rows {
-					for i, a := range row {
-						fmt.Println("testingtestingtestingtestingtestingtesting", i, a == nil, reflect.DeepEqual(a, []byte{}), reflect.DeepEqual(a, []byte(nil)))
-						fmt.Printf("Param %d: Type: %T, Value: %v, IsNil: %v, IsEmptyByteSlice: %v %v %v %v \n", i, a, a, a == nil, reflect.DeepEqual(a, []uint8(nil)), reflect.DeepEqual(a, []uint8{}), reflect.DeepEqual(a, []byte{}), reflect.DeepEqual(a, []byte(nil)))
-						fmt.Printf("Param %d: Type: %T, Value: %v, IsNil: %v, IsEmptyByteSlice: %v %v %v %v\n", i, a, a, a == nil, reflect.DeepEqual(a, []uint8(nil)), reflect.DeepEqual(a, []uint8{}), reflect.DeepEqual(a, []byte{}), reflect.DeepEqual(a, []byte(nil)))
-					}
-				}
-				// test
 				if err := bext.handleEventWriteRows(e, ev.Header); err != nil {
 					bext.Logger.Error("error event " + err.Error())
 					return
@@ -167,7 +155,13 @@ func (bext *BinlogExtract) handleEventWriteRows(e *replication.RowsEvent, eh *re
 			Timestamp:  eh.Timestamp,
 		}
 		for i := 0; i < int(e.Table.ColumnCount); i++ {
-			mod.Columns = append(mod.Columns, MysqlOperationDMLColumn{ColumnName: string(e.Table.ColumnName[i]), ColumnType: e.Table.ColumnType[i], ColumnValue: row[i]})
+			modmlc := MysqlOperationDMLColumn{
+				ColumnName:       string(e.Table.ColumnName[i]),
+				ColumnType:       e.Table.ColumnType[i],
+				ColumnValue:      row[i],
+				ColumnValueIsNil: row[i] == nil,
+			}
+			mod.Columns = append(mod.Columns, modmlc)
 		}
 		bext.toMoCh(mod)
 		bext.metricCh <- MetricUnit{Name: MetricReplDMLInsertTimes, Value: 1}
@@ -185,7 +179,7 @@ func (bext *BinlogExtract) handleEventDeleteRows(e *replication.RowsEvent, eh *r
 			Timestamp:  eh.Timestamp,
 		}
 		for i := 0; i < int(e.Table.ColumnCount); i++ {
-			mod.Columns = append(mod.Columns, MysqlOperationDMLColumn{ColumnName: string(e.Table.ColumnName[i]), ColumnType: e.Table.ColumnType[i], ColumnValue: row[i]})
+			mod.Columns = append(mod.Columns, MysqlOperationDMLColumn{ColumnName: string(e.Table.ColumnName[i]), ColumnType: e.Table.ColumnType[i], ColumnValue: row[i], ColumnValueIsNil: row[i] == nil})
 		}
 		bext.toMoCh(mod)
 		bext.metricCh <- MetricUnit{Name: MetricReplDMLDeleteTimes, Value: 1}
@@ -208,8 +202,8 @@ func (bext *BinlogExtract) handleEventUpdateRows(e *replication.RowsEvent, eh *r
 		}
 
 		for i := 0; i < int(e.Table.ColumnCount); i++ {
-			mod.BeforeColumns = append(mod.BeforeColumns, MysqlOperationDMLColumn{ColumnName: string(e.Table.ColumnName[i]), ColumnType: e.Table.ColumnType[i], ColumnValue: before_value[i]})
-			mod.AfterColumns = append(mod.AfterColumns, MysqlOperationDMLColumn{ColumnName: string(e.Table.ColumnName[i]), ColumnType: e.Table.ColumnType[i], ColumnValue: after_value[i]})
+			mod.BeforeColumns = append(mod.BeforeColumns, MysqlOperationDMLColumn{ColumnName: string(e.Table.ColumnName[i]), ColumnType: e.Table.ColumnType[i], ColumnValue: before_value[i], ColumnValueIsNil: before_value[i] == nil})
+			mod.AfterColumns = append(mod.AfterColumns, MysqlOperationDMLColumn{ColumnName: string(e.Table.ColumnName[i]), ColumnType: e.Table.ColumnType[i], ColumnValue: after_value[i], ColumnValueIsNil: after_value[i] == nil})
 		}
 		bext.toMoCh(mod)
 		bext.metricCh <- MetricUnit{Name: MetricReplDMLUpdateTimes, Value: 1}

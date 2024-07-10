@@ -41,9 +41,10 @@ func (op MysqlOperationDDLDatabase) GetTimestamp() uint32 {
 }
 
 type MysqlOperationDMLColumn struct {
-	ColumnName  string
-	ColumnType  byte
-	ColumnValue interface{}
+	ColumnName       string
+	ColumnType       byte
+	ColumnValue      interface{}
+	ColumnValueIsNil bool
 }
 
 type MysqlOperationDMLInsert struct {
