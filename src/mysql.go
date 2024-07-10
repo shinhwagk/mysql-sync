@@ -91,10 +91,10 @@ func (mc *MysqlClient) ExecuteDML(query string, args []interface{}) error {
 	if mc.tx != nil {
 		if _, err := mc.tx.Exec(query, args...); err != nil {
 			if serr := mc.SkipError(err); serr != nil {
-				mc.Logger.Error("execute DML: %s, Query: %s, Params: %v.", serr, query, args)
+				mc.Logger.Error("execute DML: %s, Query: %s, Params: %#v.", serr, query, args)
 				return err
 			} else {
-				mc.Logger.Warning("skip error: %s, Query: %s, Params: %v.", err, query, args)
+				mc.Logger.Warning("skip error: %s, Query: %s, Params: %#v.", err, query, args)
 			}
 		}
 	} else {
