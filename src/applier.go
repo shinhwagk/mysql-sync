@@ -404,7 +404,15 @@ func BuildDMLInsertQuery(datbaseName string, tableName string, columns []MysqlOp
 		// important
 		// []uint8{} -> gob -> []uint8(nil)
 		// 252 == tinyblob tinytext blob text mediumblob mediumtext longblob longtext
-		fmt.Printf("DEBUG: %s %d %#v %v %v %v %v\n", col.ColumnName, col.ColumnType, col.ColumnValue, col.ColumnValueIsNil, col.ColumnValue == nil, col.ColumnType == 252, !col.ColumnValueIsNil)
+		if col.ColumnType == 252 {
+			if value, ok := col.ColumnValue.([]byte); ok {
+				fmt.Printf("DEBUG: %s %d %#v %#v %#v %#v %#v %d %d\n", col.ColumnName, col.ColumnType, col.ColumnValue, col.ColumnValueIsNil, col.ColumnValue == nil, col.ColumnType == 252, !col.ColumnValueIsNil, len(value), cap(value))
+			} else {
+				fmt.Println("ColumnValue is not a byte slice or is nil")
+			}
+			fmt.Printf("DEBUG: %s %d %#v %#v %#v %#v %#v\n", col.ColumnName, col.ColumnType, col.ColumnValue, col.ColumnValueIsNil, col.ColumnValue == nil, col.ColumnType == 252, !col.ColumnValueIsNil)
+		}
+
 		if col.ColumnType == 252 && !col.ColumnValueIsNil && col.ColumnValue == nil {
 			params = append(params, []uint8{})
 		} else {
