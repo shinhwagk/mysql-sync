@@ -4,91 +4,62 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"reflect"
+	"strconv"
+	"strings"
 
 	"github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/go-mysql-org/go-mysql/replication"
+	_ "github.com/go-sql-driver/mysql"
 
 	_ "github.com/pingcap/tidb/pkg/types/parser_driver"
 )
 
-// func handleQueryEvent(e *replication.QueryEvent, eh *replication.EventHeader) error {
-// 	parser := parser.New()
-// 	stmts, warns, err := parser.Parse(string(e.Query), "", "")
-// 	for _, warn := range warns {
-// 		fmt.Println(warn)
-// 	}
-
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	for _, stmt := range stmts {
-// 		switch t := stmt.(type) {
-// 		case *ast.RenameTableStmt:
-// 			oldSchema := string(e.Schema)
-// 			newSchema := string(e.Schema)
-
-// 			for _, tab := range t.TableToTables {
-// 				if len(tab.OldTable.Schema.O) != 0 {
-// 					oldSchema = tab.OldTable.Schema.O
-// 				}
-
-// 				if len(tab.NewTable.Schema.O) != 0 {
-// 					newSchema = tab.NewTable.Schema.O
-// 				}
-// 				Query := fmt.Sprintf("RENAME TABLE `%s`.`%s` TO `%s`.`%s`", oldSchema, tab.OldTable.Name.O, newSchema, tab.NewTable.Name)
-// 				fmt.Println("Quewry " + string(e.Schema) + " " + Query)
-// 				bext.toMoCh(MysqlOperationDDLTable{Schema: string(e.Schema), Table: tab.OldTable.Name.O, Query: Query, Timestamp: eh.Timestamp})
-// 			}
-// 		case *ast.AlterTableStmt:
-// 			schema := string(e.Schema)
-// 			if len(schema) == 0 {
-// 				schema = t.Table.Schema.O
-// 			}
-
-// 		case *ast.DropTableStmt:
-// 			schema := string(e.Schema)
-// 			for _, tab := range t.Tables {
-// 				if len(schema) == 0 {
-// 					schema = tab.Schema.O
-// 				}
-// 				Query := fmt.Sprintf("DROP TABLE `%s`.`%s`", schema, tab.Name.O)
-// 				fmt.Println("Quewry", Query)
-
-// 				// bext.toMoCh(MysqlOperationDDLTable{Schema: schema, Table: tab.Name.O, Query: Query, Timestamp: eh.Timestamp})
-// 			}
-// 		case *ast.CreateTableStmt:
-// 			schema := string(e.Schema)
-// 			if len(schema) == 0 {
-// 				schema = t.Table.Schema.O
-// 			}
-
-// 		case *ast.TruncateTableStmt:
-// 			schema := string(e.Schema)
-// 			if len(schema) == 0 {
-// 				schema = t.Table.Schema.O
-// 			}
-
-// 		case *ast.CreateIndexStmt:
-// 			schema := string(e.Schema)
-// 			if len(schema) == 0 {
-// 				schema = t.Table.Schema.O
-// 			}
-
-// 		case *ast.DropIndexStmt:
-// 		case *ast.CreateDatabaseStmt:
-
-// 		case *ast.AlterDatabaseStmt:
-
-// 		case *ast.DropDatabaseStmt:
-
-// 		case *ast.BeginStmt:
-// 		case *ast.CommitStmt:
-// 			// warning
-// 		}
-// 	}
-// 	return nil
-// }
+func columnTypeAstrict(colName string, colType byte, colValue interface{}) {
+	fmt.Println("===========")
+	if reflect.TypeOf(colValue).Kind() == reflect.Slice {
+		fmt.Println("2", colName, colType, reflect.TypeOf(colValue).Elem().Kind())
+	} else {
+		fmt.Println("2", colName, colType, reflect.TypeOf(colValue).Kind())
+	}
+	switch colType {
+	case mysql.MYSQL_TYPE_TIMESTAMP2:
+		if reflect.TypeOf(colValue).Kind() == reflect.String {
+			fmt.Println("timestamp", reflect.TypeOf(colValue).Kind())
+		}
+	case mysql.MYSQL_TYPE_DATETIME2:
+		if colValue == nil || reflect.TypeOf(colValue).Kind() == reflect.String {
+			fmt.Println("datetime", reflect.TypeOf(colValue).Kind())
+		}
+	case mysql.MYSQL_TYPE_DATE:
+		if colValue == nil || reflect.TypeOf(colValue).Kind() == reflect.String {
+			fmt.Println("date", reflect.TypeOf(colValue).Kind())
+		}
+	case mysql.MYSQL_TYPE_TINY:
+		if colValue == nil || reflect.TypeOf(colValue).Kind() == reflect.Int8 {
+			fmt.Println("tinyint", reflect.TypeOf(colValue).Kind())
+		}
+	case mysql.MYSQL_TYPE_LONG:
+		if colValue == nil || reflect.TypeOf(colValue).Kind() == reflect.Int32 {
+			fmt.Println("smallint", reflect.TypeOf(colValue).Kind())
+		}
+	case mysql.MYSQL_TYPE_STRING:
+		if colValue == nil || reflect.TypeOf(colValue).Kind() == reflect.String {
+			fmt.Println("char", reflect.TypeOf(colValue).Kind())
+		}
+	case mysql.MYSQL_TYPE_VARCHAR:
+		if colValue == nil || reflect.TypeOf(colValue).Kind() == reflect.String {
+			fmt.Println("varchar", reflect.TypeOf(colValue).Kind())
+		}
+	case mysql.MYSQL_TYPE_BLOB:
+		if colValue == nil || reflect.TypeOf(colValue).Elem().Kind() == reflect.Uint8 {
+			fmt.Println("tinytext", reflect.TypeOf(colValue).Elem().Kind())
+		}
+	default:
+		fmt.Println("column type unprocess %d %s ", colType, reflect.TypeOf(colValue))
+	}
+	// return "", fmt.Errorf("column type unmatch  %s %d %s ", colName, colType, reflect.TypeOf(colValue))
+}
 
 func main() {
 	// 假设这是配置和创建 BinlogSyncer 的代码段
@@ -102,7 +73,9 @@ func main() {
 	}
 
 	syncer := replication.NewBinlogSyncer(config)
-	streamer, err := syncer.StartSync(mysql.Position{"mysql-bin.000001", 0})
+	gtidSet, _ := mysql.ParseGTIDSet("mysql", "73b24aef-0b4d-11ef-9a54-1418774ca835:1-93998679,eb559d55-f6e4-11ee-94e4-c81f66d988c2:1-52461618")
+
+	streamer, err := syncer.StartSyncGTID(gtidSet)
 
 	if err != nil {
 		log.Fatal("Failed to start sync:", err)
@@ -114,15 +87,49 @@ func main() {
 			log.Fatal("Error getting event:", err)
 			break
 		}
+		// a := []byte(nil)
 
 		switch e := ev.Event.(type) {
-		case *replication.RowsEvent:
-			fmt.Println(string(e.Table.Schema), string(e.Table.Table))
-			for i, key := range e.Table.PrimaryKey {
-				fmt.Println(i, key)
+		case *replication.GTIDEvent:
+			if gtidNext, err := e.GTIDNext(); err != nil {
+				fmt.Println(err.Error())
+			} else {
+				parts := strings.Split(gtidNext.String(), ":")
+				if len(parts) == 2 {
+					xid, err := strconv.ParseInt(parts[1], 10, 64)
+					if err != nil {
+						fmt.Println(err.Error())
+					} else {
+						fmt.Println(parts[0], xid)
+					}
+				}
 			}
-			// fmt.Println(string(e.Query))
-		}
+		case *replication.RowsEvent:
+			if string(e.Table.Table) == "test" {
+				continue
+			}
+			// fmt.Println("1111111", ev.Header.EventType, replication.UPDATE_ROWS_EVENTv0, replication.UPDATE_ROWS_EVENTv1, replication.UPDATE_ROWS_EVENTv2)
+			fmt.Println("2", string(e.Table.Schema), string(e.Table.Table), len(e.Rows))
+			for j := 0; j < len(e.Rows); j += 1 {
 
+				for i := 0; i < int(e.ColumnCount); i += 1 {
+					ct := e.Table.ColumnType[i]
+					cn := string(e.Table.ColumnName[i])
+
+					columnTypeAstrict(cn, ct, e.Rows[j][i])
+				}
+				// before_value := e.Rows[i]
+				// // after_value := e.Rows[i+1]
+
+				// for i, a := range before_value {
+				// 	fmt.Printf("Param %d: Type: %T, Value: %v, IsNil: %v, IsEmptyByteSlice: %v\n", i, a, a, a == nil, reflect.DeepEqual(a, []uint8(nil)))
+				// }
+
+				// for i, a := range after_value {
+				// 	fmt.Printf("Param %d: Type: %T, Value: %v, IsNil: %v, IsEmptyByteSlice: %v\n", i, a, a, a == nil, reflect.DeepEqual(a, []uint8(nil)))
+				// }
+
+			}
+		}
 	}
 }

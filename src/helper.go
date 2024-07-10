@@ -66,43 +66,41 @@ func ParseDSN(dsn string) (user, password, host, port string, err error) {
 
 func columnTypeAstrict(colName string, colType byte, colValue interface{}) (string, error) {
 	switch colType {
-	case mysql.MYSQL_TYPE_NULL:
+	case mysql.MYSQL_TYPE_TIMESTAMP2:
+		if reflect.TypeOf(colValue).Kind() == reflect.String {
+			return "timestamp", nil
+		}
+	case mysql.MYSQL_TYPE_DATETIME2:
+		if colValue == nil || reflect.TypeOf(colValue).Kind() == reflect.String {
+			return "datetime", nil
+		}
+	case mysql.MYSQL_TYPE_DATE:
+		if colValue == nil || reflect.TypeOf(colValue).Kind() == reflect.String {
+			return "date", nil
+		}
+	case mysql.MYSQL_TYPE_TINY:
+		if colValue == nil || reflect.TypeOf(colValue).Kind() == reflect.Int8 {
+			return "tinyint", nil
+		}
+	case mysql.MYSQL_TYPE_LONG:
+		if colValue == nil || reflect.TypeOf(colValue).Kind() == reflect.Int32 {
+			return "smallint", nil
+		}
+	case mysql.MYSQL_TYPE_STRING:
+		if colValue == nil || reflect.TypeOf(colValue).Kind() == reflect.String {
+			return "char", nil
+		}
+	case mysql.MYSQL_TYPE_VARCHAR:
+		if colValue == nil || reflect.TypeOf(colValue).Kind() == reflect.String {
+			return "varchar", nil
+		}
+	case mysql.MYSQL_TYPE_BLOB:
+		if colValue == nil || reflect.TypeOf(colValue).Elem().Kind() == reflect.Uint8 {
+			return "tinytext", nil
+		}
+	default:
+		return "", fmt.Errorf("column type unprocess %d %s ", colType, reflect.TypeOf(colValue))
 	}
-	// case mysql.MYSQL_TYPE_TIMESTAMP2:
-	// 	if reflect.TypeOf(colValue).Kind() == reflect.String {
-	// 		return "timestamp", nil
-	// 	}
-	// case mysql.MYSQL_TYPE_DATETIME2:
-	// 	if colValue == nil || reflect.TypeOf(colValue).Kind() == reflect.String {
-	// 		return "datetime", nil
-	// 	}
-	// case mysql.MYSQL_TYPE_DATE:
-	// 	if colValue == nil || reflect.TypeOf(colValue).Kind() == reflect.String {
-	// 		return "date", nil
-	// 	}
-	// case mysql.MYSQL_TYPE_TINY:
-	// 	if colValue == nil || reflect.TypeOf(colValue).Kind() == reflect.Int8 {
-	// 		return "tinyint", nil
-	// 	}
-	// case mysql.MYSQL_TYPE_LONG:
-	// 	if colValue == nil || reflect.TypeOf(colValue).Kind() == reflect.Int32 {
-	// 		return "smallint", nil
-	// 	}
-	// case mysql.MYSQL_TYPE_STRING:
-	// 	if colValue == nil || reflect.TypeOf(colValue).Kind() == reflect.String {
-	// 		return "char", nil
-	// 	}
-	// case mysql.MYSQL_TYPE_VARCHAR:
-	// 	if colValue == nil || reflect.TypeOf(colValue).Kind() == reflect.String {
-	// 		return "varchar", nil
-	// 	}
-	// case mysql.MYSQL_TYPE_BLOB:
-	// 	if colValue == nil || reflect.TypeOf(colValue).Elem().Kind() == reflect.Uint8 {
-	// 		return "tinytext", nil
-	// 	}
-	// default:
-	// 	return "", fmt.Errorf("column type unprocess %d %s ", colType, reflect.TypeOf(colValue))
-	// }
 	return "", fmt.Errorf("column type unmatch  %s %d %s ", colName, colType, reflect.TypeOf(colValue))
 }
 

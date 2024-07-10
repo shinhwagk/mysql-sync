@@ -169,18 +169,6 @@ func (bext *BinlogExtract) handleEventWriteRows(e *replication.RowsEvent, eh *re
 		for i := 0; i < int(e.Table.ColumnCount); i++ {
 			mod.Columns = append(mod.Columns, MysqlOperationDMLColumn{ColumnName: string(e.Table.ColumnName[i]), ColumnType: e.Table.ColumnType[i], ColumnValue: row[i]})
 		}
-
-		// test
-		fmt.Println("====================================2")
-		fmt.Println(string(e.Table.Schema), string(e.Table.Table))
-
-		for i, c := range mod.Columns {
-			a := c.ColumnValue
-			fmt.Println("testingtestingtestingtestingtestingtesting", i, a == nil, reflect.DeepEqual(a, []byte{}), reflect.DeepEqual(a, []byte(nil)))
-			fmt.Printf("Param %d: Type: %T, Value: %v, IsNil: %v, IsEmptyByteSlice: %v %v %v %v \n", i, a, a, a == nil, reflect.DeepEqual(a, []uint8(nil)), reflect.DeepEqual(a, []uint8{}), reflect.DeepEqual(a, []byte{}), reflect.DeepEqual(a, []byte(nil)))
-			fmt.Printf("Param %d: Type: %T, Value: %v, IsNil: %v, IsEmptyByteSlice: %v %v %v %v\n", i, a, a, a == nil, reflect.DeepEqual(a, []uint8(nil)), reflect.DeepEqual(a, []uint8{}), reflect.DeepEqual(a, []byte{}), reflect.DeepEqual(a, []byte(nil)))
-		}
-		// test
 		bext.toMoCh(mod)
 		bext.metricCh <- MetricUnit{Name: MetricReplDMLInsertTimes, Value: 1}
 	}
