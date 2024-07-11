@@ -122,6 +122,12 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					if ma.GtidSkip || ma.ReplicateNotExecute(op.Database, op.Table) {
 						continue
 					}
+					if gobRepairColumns, err := gobUint8NilRepair(op.Columns); err != nil {
+						ma.Logger.Error("gob repair []uint8(nil): ", err)
+						return
+					} else {
+						op.Columns = gobRepairColumns
+					}
 					if err := ma.OnDMLInsert(op); err != nil {
 						return
 					}
@@ -135,6 +141,12 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					ma.State = StateDML
 					if ma.GtidSkip || ma.ReplicateNotExecute(op.Database, op.Table) {
 						continue
+					}
+					if gobRepairColumns, err := gobUint8NilRepair(op.Columns); err != nil {
+						ma.Logger.Error("gob repair []uint8(nil): ", err)
+						return
+					} else {
+						op.Columns = gobRepairColumns
 					}
 					if err := ma.OnDMLDelete(op); err != nil {
 						return
@@ -150,6 +162,20 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					if ma.GtidSkip || ma.ReplicateNotExecute(op.Database, op.Table) {
 						continue
 					}
+					if gobRepairColumns, err := gobUint8NilRepair(op.AfterColumns); err != nil {
+						ma.Logger.Error("gob repair []uint8(nil): ", err)
+						return
+					} else {
+						op.AfterColumns = gobRepairColumns
+					}
+
+					if gobRepairColumns, err := gobUint8NilRepair(op.AfterColumns); err != nil {
+						ma.Logger.Error("gob repair []uint8(nil): ", err)
+						return
+					} else {
+						op.BeforeColumns = gobRepairColumns
+					}
+
 					if err := ma.OnDMLUpdate(op); err != nil {
 						return
 					}
