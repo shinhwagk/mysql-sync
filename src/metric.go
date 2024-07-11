@@ -133,7 +133,7 @@ func (md *MetricDirector) set(name string, value uint, labelPair map[string]stri
 		for name, _ := range labelPair {
 			labelNames = append(labelNames, name)
 		}
-		md.registerMetric(name, "counter", labelNames)
+		md.registerMetric(name, "gauge", labelNames)
 	}
 	labelValues = append(labelValues, md.ReplName)
 	if md.DestName != nil {
