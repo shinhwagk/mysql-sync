@@ -164,7 +164,7 @@ func (bext *BinlogExtract) handleEventWriteRows(e *replication.RowsEvent, eh *re
 			mod.Columns = append(mod.Columns, modmlc)
 		}
 		bext.toMoCh(mod)
-		bext.metricCh <- MetricUnit{Name: MetricReplDMLInsertTimes, Value: 1}
+		bext.metricCh <- MetricUnit{Name: MetricReplDMLInsertTimes, Value: 1, LabelPair: map[string]string{"database": string(e.Table.Schema), "table": string(e.Table.Table)}}
 	}
 	return nil
 }
@@ -182,7 +182,7 @@ func (bext *BinlogExtract) handleEventDeleteRows(e *replication.RowsEvent, eh *r
 			mod.Columns = append(mod.Columns, MysqlOperationDMLColumn{ColumnName: string(e.Table.ColumnName[i]), ColumnType: e.Table.ColumnType[i], ColumnValue: row[i], ColumnValueIsNil: row[i] == nil})
 		}
 		bext.toMoCh(mod)
-		bext.metricCh <- MetricUnit{Name: MetricReplDMLDeleteTimes, Value: 1}
+		bext.metricCh <- MetricUnit{Name: MetricReplDMLDeleteTimes, Value: 1, LabelPair: map[string]string{"database": string(e.Table.Schema), "table": string(e.Table.Table)}}
 	}
 	return nil
 }
@@ -206,7 +206,7 @@ func (bext *BinlogExtract) handleEventUpdateRows(e *replication.RowsEvent, eh *r
 			mod.AfterColumns = append(mod.AfterColumns, MysqlOperationDMLColumn{ColumnName: string(e.Table.ColumnName[i]), ColumnType: e.Table.ColumnType[i], ColumnValue: after_value[i], ColumnValueIsNil: after_value[i] == nil})
 		}
 		bext.toMoCh(mod)
-		bext.metricCh <- MetricUnit{Name: MetricReplDMLUpdateTimes, Value: 1}
+		bext.metricCh <- MetricUnit{Name: MetricReplDMLUpdateTimes, Value: 1, LabelPair: map[string]string{"database": string(e.Table.Schema), "table": string(e.Table.Table)}}
 	}
 	return nil
 }

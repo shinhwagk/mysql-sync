@@ -36,9 +36,9 @@ const (
 )
 
 type MetricUnit struct {
-	Name  uint
-	Value uint
-	Dest  *string
+	Name      uint
+	Value     uint
+	LabelPair map[string]string
 }
 
 type PrometheusMetric struct {
@@ -96,40 +96,54 @@ func NewMetricDestDirector(logLevel int, subsystem string, replName string, dest
 	}
 }
 
-func (md *MetricDirector) inc(name string, value uint, dest *string) {
+func (md *MetricDirector) inc(name string, value uint, labelPair map[string]string) {
+	var labelNames []string
+	var labelValues []string
 	if _, exists := md.metrics[name]; !exists {
-		labelNames := make([]string, 0, 2)
 		labelNames = append(labelNames, "repl")
-		if dest != nil {
+		if md.DestName != nil {
 			labelNames = append(labelNames, "dest")
+		}
+		for name, _ := range labelPair {
+			labelNames = append(labelNames, name)
 		}
 		md.registerMetric(name, "counter", labelNames)
 	}
-	var labelValues []string
 	labelValues = append(labelValues, md.ReplName)
-	if dest != nil {
-		labelValues = append(labelValues, *dest)
+	if md.DestName != nil {
+		labelValues = append(labelValues, *md.DestName)
 	}
-	metric, _ := md.metrics[name]
+	for _, value := range labelPair {
+		labelValues = append(labelValues, value)
+	}
+
+	metric := md.metrics[name]
 	counter, _ := metric.PromCollector.(*prometheus.CounterVec)
 	counter.WithLabelValues(labelValues...).Add(float64(value))
 }
 
-func (md *MetricDirector) set(name string, value uint, dest *string) {
+func (md *MetricDirector) set(name string, value uint, labelPair map[string]string) {
+	var labelNames []string
+	var labelValues []string
 	if _, exists := md.metrics[name]; !exists {
-		labelNames := make([]string, 0, 2)
 		labelNames = append(labelNames, "repl")
-		if dest != nil {
+		if md.DestName != nil {
 			labelNames = append(labelNames, "dest")
 		}
-		md.registerMetric(name, "gauge", labelNames)
+		for name, _ := range labelPair {
+			labelNames = append(labelNames, name)
+		}
+		md.registerMetric(name, "counter", labelNames)
 	}
-	var labelValues []string
 	labelValues = append(labelValues, md.ReplName)
-	if dest != nil {
-		labelValues = append(labelValues, *dest)
+	if md.DestName != nil {
+		labelValues = append(labelValues, *md.DestName)
 	}
-	metric, _ := md.metrics[name]
+	for _, value := range labelPair {
+		labelValues = append(labelValues, value)
+	}
+
+	metric := md.metrics[name]
 	gauge, _ := metric.PromCollector.(*prometheus.GaugeVec)
 	gauge.WithLabelValues(labelValues...).Set(float64(value))
 }
@@ -151,48 +165,48 @@ func (md *MetricDirector) Start(ctx context.Context, addr string) {
 		case metric := <-md.metricCh:
 			switch metric.Name {
 			case MetricDestDMLInsertTimes:
-				md.inc("dml_insert_times", metric.Value, md.DestName)
+				md.inc("dml_insert_times", metric.Value, metric.LabelPair)
 			case MetricDestDMLDeleteTimes:
-				md.inc("dml_delete_times", metric.Value, md.DestName)
+				md.inc("dml_delete_times", metric.Value, metric.LabelPair)
 			case MetricDestDMLUpdateTimes:
-				md.inc("dml_update_times", metric.Value, md.DestName)
+				md.inc("dml_update_times", metric.Value, metric.LabelPair)
 			case MetricDestTrx:
-				md.inc("trx", metric.Value, md.DestName)
+				md.inc("trx", metric.Value, metric.LabelPair)
 			case MetricDestMergeTrx:
-				md.inc("merge_trx", metric.Value, md.DestName)
+				md.inc("merge_trx", metric.Value, metric.LabelPair)
 			case MetricDestDDLDatabaseTimes:
-				md.inc("ddl_database_times", metric.Value, md.DestName)
+				md.inc("ddl_database_times", metric.Value, metric.LabelPair)
 			case MetricDestDDLTableTimes:
-				md.inc("ddl_table_times", metric.Value, md.DestName)
+				md.inc("ddl_table_times", metric.Value, metric.LabelPair)
 			case MetricDestDelay:
-				md.set("delay", metric.Value, md.DestName)
+				md.set("delay", metric.Value, metric.LabelPair)
 			case MetricTCPClientReceiveOperations:
-				md.inc("tcp_client_receive_operations", metric.Value, md.DestName)
+				md.inc("tcp_client_receive_operations", metric.Value, metric.LabelPair)
 			case MetricApplierOperations:
-				md.inc("applier_operations", metric.Value, md.DestName)
+				md.inc("applier_operations", metric.Value, metric.LabelPair)
 
 			case MetricReplDelay:
-				md.set("delay", metric.Value, nil)
+				md.set("delay", metric.Value, metric.LabelPair)
 			case MetricTCPServerSendDelay:
-				md.set("tcp_server_send_delay", metric.Value, metric.Dest)
+				md.set("tcp_server_send_delay", metric.Value, metric.LabelPair)
 			case MetricReplTrx:
-				md.inc("trx", metric.Value, nil)
+				md.inc("trx", metric.Value, metric.LabelPair)
 			case MetricExtractOperations:
-				md.inc("extract_operations", metric.Value, nil)
+				md.inc("extract_operations", metric.Value, metric.LabelPair)
 			case MetricTCPServerOutgoing:
-				md.inc("tcp_server_outgoing_bytes", metric.Value, metric.Dest)
+				md.inc("tcp_server_outgoing_bytes", metric.Value, metric.LabelPair)
 			case MetricTCPServerSendOperations:
-				md.inc("tcp_server_send_operations", metric.Value, metric.Dest)
+				md.inc("tcp_server_send_operations", metric.Value, metric.LabelPair)
 			case MetricReplDMLInsertTimes:
-				md.inc("dml_insert_times", metric.Value, &md.ReplName)
+				md.inc("dml_insert_times", metric.Value, metric.LabelPair)
 			case MetricReplDMLDeleteTimes:
-				md.inc("dml_delete_times", metric.Value, &md.ReplName)
+				md.inc("dml_delete_times", metric.Value, metric.LabelPair)
 			case MetricReplDMLUpdateTimes:
-				md.inc("dml_update_times", metric.Value, &md.ReplName)
+				md.inc("dml_update_times", metric.Value, metric.LabelPair)
 			case MetricReplDDLDatabaseTimes:
-				md.inc("ddl_database_times", metric.Value, &md.ReplName)
+				md.inc("ddl_database_times", metric.Value, metric.LabelPair)
 			case MetricReplDDLTableTimes:
-				md.inc("ddl_table_times", metric.Value, &md.ReplName)
+				md.inc("ddl_table_times", metric.Value, metric.LabelPair)
 			}
 		}
 	}

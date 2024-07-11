@@ -133,7 +133,7 @@ func (tsc *TCPServerClient) receivedSignal() {
 			tsc.State = ClientFree
 			tsc.SendError = nil
 			elapsed := time.Since(tsc.SendTimestamp).Milliseconds()
-			tsc.metricCh <- MetricUnit{MetricTCPServerSendDelay, uint(elapsed), &tsc.Name}
+			tsc.metricCh <- MetricUnit{Name: MetricTCPServerSendDelay, Value: uint(elapsed)}
 			tsc.Logger.Debug("Client received batch(%d), elapsed ms(%d) successfully.", ack.BatchID, elapsed)
 		} else {
 			tsc.Logger.Error("Not received batch(%d), %d", tsc.SendBatchID, ack.BatchID)
@@ -180,8 +180,8 @@ func (tsc *TCPServerClient) ClientPush() {
 		tsc.SendError = err
 	} else {
 		tsc.Logger.Info("Push batch(%d) mos(%d) bytes(%d) ok.", signal1.BatchID, len(tsc.SendMos), tsc.encoderBuffer.Len())
-		tsc.metricCh <- MetricUnit{MetricTCPServerSendOperations, uint(len(tsc.SendMos)), &tsc.Name}
-		tsc.metricCh <- MetricUnit{MetricTCPServerOutgoing, uint(tsc.encoderBuffer.Len()), &tsc.Name}
+		tsc.metricCh <- MetricUnit{Name: MetricTCPServerSendOperations, Value: uint(len(tsc.SendMos))}
+		tsc.metricCh <- MetricUnit{Name: MetricTCPServerOutgoing, Value: uint(tsc.encoderBuffer.Len())}
 		tsc.encoderBuffer.Reset()
 		tsc.SendTimestamp = time.Now()
 	}
