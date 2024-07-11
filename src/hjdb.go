@@ -9,11 +9,12 @@ import (
 )
 
 type HJDBResponse struct {
-	State   *string          `json:"state"` //ok, err
-	Data    *map[string]uint `json:"data"`
-	ErrMsg  *string          `json:"errmsg"`
-	ErrCode *string          `json:"errcode"`
+	State   *string         `json:"state"` //ok, err
+	Data    map[string]uint `json:"data"`
+	ErrMsg  *string         `json:"errmsg"`
+	ErrCode *string         `json:"errcode"`
 }
+
 type HJDB struct {
 	Logger *Logger
 	Addr   string
