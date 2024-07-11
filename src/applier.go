@@ -132,6 +132,8 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 						return
 					}
 					ma.metricCh <- MetricUnit{Name: MetricDestDMLInsertTimes, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
+					ma.metricCh <- MetricUnit{Name: MetricDestDMLDeleteTimes, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
+					ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdateTimes, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 				} else {
 					ma.Logger.Error("execute DML: last state is '%s'", ma.State)
 					return
@@ -152,6 +154,8 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 						return
 					}
 					ma.metricCh <- MetricUnit{Name: MetricDestDMLDeleteTimes, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
+					ma.metricCh <- MetricUnit{Name: MetricDestDMLInsertTimes, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
+					ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdateTimes, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 				} else {
 					ma.Logger.Error("execute DML: last state is '%s'", ma.State)
 					return
@@ -180,6 +184,8 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 						return
 					}
 					ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdateTimes, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
+					ma.metricCh <- MetricUnit{Name: MetricDestDMLInsertTimes, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
+					ma.metricCh <- MetricUnit{Name: MetricDestDMLDeleteTimes, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 				} else {
 					ma.Logger.Error("execute DML: last state is '%s'", ma.State)
 					return
