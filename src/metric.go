@@ -97,24 +97,24 @@ func NewMetricDestDirector(logLevel int, subsystem string, replName string, dest
 	}
 }
 
-func (md *MetricDirector) inc(name string, value uint, labelPair map[string]string) {
-	var labelNames []string
-	var labelValues []string
-	var keys []string
+func (md *MetricDirector) prepareMetric(metricType, name string, labelPair map[string]string) ([]string, []string) {
+	keys := make([]string, 0, len(labelPair))
 	for key := range labelPair {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
 
-	if _, exists := md.metrics[name]; !exists {
-		labelNames = append(labelNames, "repl")
-		if md.DestName != nil {
-			labelNames = append(labelNames, "dest")
-		}
-		labelNames = append(labelNames, keys...)
-		md.registerMetric("counter", name, labelNames)
+	labelNames := []string{"repl"}
+	if md.DestName != nil {
+		labelNames = append(labelNames, "dest")
 	}
-	labelValues = append(labelValues, md.ReplName)
+	labelNames = append(labelNames, keys...)
+
+	if _, exists := md.metrics[name]; !exists {
+		md.registerMetric(metricType, name, labelNames)
+	}
+
+	labelValues := []string{md.ReplName}
 	if md.DestName != nil {
 		labelValues = append(labelValues, *md.DestName)
 	}
@@ -122,36 +122,18 @@ func (md *MetricDirector) inc(name string, value uint, labelPair map[string]stri
 		labelValues = append(labelValues, labelPair[key])
 	}
 
+	return labelNames, labelValues
+}
+
+func (md *MetricDirector) inc(name string, value uint, labelPair map[string]string) {
+	_, labelValues := md.prepareMetric("counter", name, labelPair)
 	metric := md.metrics[name]
 	counter, _ := metric.PromCollector.(*prometheus.CounterVec)
 	counter.WithLabelValues(labelValues...).Add(float64(value))
 }
 
 func (md *MetricDirector) set(name string, value uint, labelPair map[string]string) {
-	var labelNames []string
-	var labelValues []string
-	var keys []string
-	for key := range labelPair {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-
-	if _, exists := md.metrics[name]; !exists {
-		labelNames = append(labelNames, "repl")
-		if md.DestName != nil {
-			labelNames = append(labelNames, "dest")
-		}
-		labelNames = append(labelNames, keys...)
-		md.registerMetric("gauge", name, labelNames)
-	}
-	labelValues = append(labelValues, md.ReplName)
-	if md.DestName != nil {
-		labelValues = append(labelValues, *md.DestName)
-	}
-	for _, key := range keys {
-		labelValues = append(labelValues, labelPair[key])
-	}
-
+	_, labelValues := md.prepareMetric("gauge", name, labelPair)
 	metric := md.metrics[name]
 	gauge, _ := metric.PromCollector.(*prometheus.GaugeVec)
 	gauge.WithLabelValues(labelValues...).Set(float64(value))
