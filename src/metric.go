@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -99,22 +100,26 @@ func NewMetricDestDirector(logLevel int, subsystem string, replName string, dest
 func (md *MetricDirector) inc(name string, value uint, labelPair map[string]string) {
 	var labelNames []string
 	var labelValues []string
+	var keys []string
+	for key := range labelPair {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
 	if _, exists := md.metrics[name]; !exists {
 		labelNames = append(labelNames, "repl")
 		if md.DestName != nil {
 			labelNames = append(labelNames, "dest")
 		}
-		for name, _ := range labelPair {
-			labelNames = append(labelNames, name)
-		}
+		labelNames = append(labelNames, keys...)
 		md.registerMetric("counter", name, labelNames)
 	}
 	labelValues = append(labelValues, md.ReplName)
 	if md.DestName != nil {
 		labelValues = append(labelValues, *md.DestName)
 	}
-	for _, value := range labelPair {
-		labelValues = append(labelValues, value)
+	for _, key := range keys {
+		labelValues = append(labelValues, labelPair[key])
 	}
 
 	metric := md.metrics[name]
@@ -125,22 +130,26 @@ func (md *MetricDirector) inc(name string, value uint, labelPair map[string]stri
 func (md *MetricDirector) set(name string, value uint, labelPair map[string]string) {
 	var labelNames []string
 	var labelValues []string
+	var keys []string
+	for key := range labelPair {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
 	if _, exists := md.metrics[name]; !exists {
 		labelNames = append(labelNames, "repl")
 		if md.DestName != nil {
 			labelNames = append(labelNames, "dest")
 		}
-		for name, _ := range labelPair {
-			labelNames = append(labelNames, name)
-		}
+		labelNames = append(labelNames, keys...)
 		md.registerMetric("gauge", name, labelNames)
 	}
 	labelValues = append(labelValues, md.ReplName)
 	if md.DestName != nil {
 		labelValues = append(labelValues, *md.DestName)
 	}
-	for _, value := range labelPair {
-		labelValues = append(labelValues, value)
+	for _, key := range keys {
+		labelValues = append(labelValues, labelPair[key])
 	}
 
 	metric := md.metrics[name]
