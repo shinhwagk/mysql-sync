@@ -107,7 +107,7 @@ func (md *MetricDirector) inc(name string, value uint, labelPair map[string]stri
 		for name, _ := range labelPair {
 			labelNames = append(labelNames, name)
 		}
-		md.registerMetric(name, "counter", labelNames)
+		md.registerMetric("counter", name, labelNames)
 	}
 	labelValues = append(labelValues, md.ReplName)
 	if md.DestName != nil {
@@ -133,7 +133,7 @@ func (md *MetricDirector) set(name string, value uint, labelPair map[string]stri
 		for name, _ := range labelPair {
 			labelNames = append(labelNames, name)
 		}
-		md.registerMetric(name, "gauge", labelNames)
+		md.registerMetric("gauge", name, labelNames)
 	}
 	labelValues = append(labelValues, md.ReplName)
 	if md.DestName != nil {
@@ -212,7 +212,7 @@ func (md *MetricDirector) Start(ctx context.Context, addr string) {
 	}
 }
 
-func (md *MetricDirector) registerMetric(name string, metricType string, labelNames []string) {
+func (md *MetricDirector) registerMetric(metricType string, name string, labelNames []string) {
 	if _, exists := md.metrics[name]; !exists {
 		var collector prometheus.Collector
 		if metricType == "gauge" {
