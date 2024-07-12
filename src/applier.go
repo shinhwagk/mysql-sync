@@ -173,7 +173,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 						op.AfterColumns = gobRepairColumns
 					}
 
-					if gobRepairColumns, err := gobUint8NilRepair(op.AfterColumns); err != nil {
+					if gobRepairColumns, err := gobUint8NilRepair(op.BeforeColumns); err != nil {
 						ma.Logger.Error("gob repair []uint8(nil): ", err)
 						return
 					} else {
