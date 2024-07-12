@@ -432,22 +432,8 @@ func BuildDMLInsertQuery(datbaseName string, tableName string, columns []MysqlOp
 	var placeholders []string
 
 	for _, col := range columns {
-		keys = append(keys, col.ColumnName)
-		// important
-		// []uint8{} -> gob -> []uint8(nil)
-		// 252 == tinyblob tinytext blob text mediumblob mediumtext longblob longtext
-		if col.ColumnType == 252 && !col.ColumnValueIsNil {
-			if colVal, ok := col.ColumnValue.([]byte); ok && colVal == nil {
-				params = append(params, []uint8{})
-			} else if !ok {
-				errMsg := fmt.Sprintf("DEBUG: %s %d %#v %#v %#v %#v %#v\n", col.ColumnName, col.ColumnType, col.ColumnValue, col.ColumnValueIsNil, col.ColumnValue == nil, col.ColumnType == 252, !col.ColumnValueIsNil)
-				panic(errMsg)
-			} else {
-				params = append(params, col.ColumnValue)
-			}
-		} else {
-			params = append(params, col.ColumnValue)
-		}
+		keys = append(keys, "`"+col.ColumnName+"`")
+		params = append(params, col.ColumnValue)
 		placeholders = append(placeholders, "?")
 	}
 
