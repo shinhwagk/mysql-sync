@@ -77,8 +77,8 @@ func (gss *GtidSets) QueryGtidSetsMapFromHJDB(replName string, destName string) 
 		}
 		return nil, fmt.Errorf(*hjdbResp.ErrMsg)
 	} else {
-		gss.Logger.Info("Query gtidsets from hjdb: %v", *hjdbResp.Data)
-		return *hjdbResp.Data, nil
+		gss.Logger.Info("Query gtidsets from hjdb: %v", hjdbResp.Data)
+		return hjdbResp.Data, nil
 	}
 }
 
