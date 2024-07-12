@@ -6,7 +6,8 @@ COPY go.sum .
 COPY src/ .
 COPY vendor vendor
 
-# RUN go mod download
+RUN go mod tidy
+RUN go mod vendor
 RUN go build -ldflags="-s -w" -o mysqlsync ./*.go
 
 FROM golang:1.22.4
