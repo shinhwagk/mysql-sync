@@ -9,7 +9,7 @@ import (
 type MysqlSyncConfig struct {
 	Replication ReplicationConfig  `yaml:"replication"`
 	Destination DestinationsConfig `yaml:"destination"`
-	HJDB        HJDBConfig         `yaml:"hjdb"`
+	Consul      ConsulConfig       `yaml:"consul"`
 }
 
 type ReplicationConfig struct {
@@ -66,7 +66,7 @@ type SettingsConfig struct {
 	CacheSize int `yaml:"cache"`
 }
 
-type HJDBConfig struct {
+type ConsulConfig struct {
 	Addr string `yaml:"addr"`
 	// DB   string `yaml:"db"`
 	// LogLevel int    `yaml:"loglevel"`

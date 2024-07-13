@@ -15,7 +15,6 @@ services:
       ARGS_TARGET_PORT: 3306
       ARGS_TARGET_USER: root
       ARGS_TARGET_PASSWORD: root_password
-
   db1:
     image: mysql:8.0.36
     environment:
@@ -33,7 +32,6 @@ services:
       - --sync-binlog=0
       - --binlog-row-metadata=FULL
       # - --binlog-order-commits
-
   db2:
     image: mysql:8.0.36
     environment:
@@ -72,10 +70,10 @@ services:
   #   image: actiontech/dtle
   #   ports:
   #     - 4646:4646
-  hjdb:
-    image: shinhwagk/hjdb:bun-0.7.6
-    volumes:
-      - ../example/hjdb:/var/lib/hjdb
+  # hjdb:
+  #   image: shinhwagk/hjdb:bun-0.7.6
+  #   volumes:
+  #     - ../example/hjdb:/var/lib/hjdb
   # prometheus:
   #   image: prom/prometheus:v2.52.0
   #   ports:

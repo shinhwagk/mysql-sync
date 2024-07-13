@@ -2,40 +2,40 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
+
+	"github.com/hashicorp/consul/api"
 )
 
-func NewGtidSets(addr string, replName string, destName string) *GtidSets {
+func NewGtidSets(logLevel int,addr string, replName string, destName string) *GtidSets {
+	logger := NewLogger(logLevel, "gtidsets")
+
+	config := api.DefaultConfig()
+	config.Address = addr
+	client, err := api.NewClient(config)
+	if err != nil {
+		logger.Error("%s", err)
+	}
+
 	gss := &GtidSets{
-		Logger:      NewLogger(0, "gtidsets"),
-		HJDB:        NewHJDB(1, addr),
+		Logger:      logger,
+		ConsulKV:    client.KV(),
+		ReplName:    replName,
+		DestName:    destName,
 		GtidSetsMap: make(map[string]uint),
-
-		ReplName: replName,
-		DestName: destName,
-
-		HJDBDB:  "mysqlsync_" + replName,
-		HJDBSCH: "dest_" + destName,
-		HJDBTAB: "gtidsets",
 	}
 
 	return gss
 }
 
 type GtidSets struct {
-	Logger *Logger
-
-	HJDB *HJDB
-
+	Logger      *Logger
+	ConsulKV    *api.KV
+	ReplName    string
+	DestName    string
 	GtidSetsMap map[string]uint
-
-	ReplName string
-	DestName string
-
-	HJDBDB  string
-	HJDBSCH string
-	HJDBTAB string
 }
 
 func (gss *GtidSets) InitStartupGtidSetsMap(initGtidSetsRangeStr string) error {
@@ -62,45 +62,34 @@ func (gss *GtidSets) InitStartupGtidSetsMap(initGtidSetsRangeStr string) error {
 }
 
 func (gss *GtidSets) QueryGtidSetsMapFromHJDB(replName string, destName string) (map[string]uint, error) {
-	db := "mysqlsync_" + gss.ReplName
-	sch := "dest_" + gss.DestName
-	tab := "gtidsets"
-	hjdbResp, err := gss.HJDB.Query(db, sch, tab)
+	kvPath := fmt.Sprintf("mysqlsync/%s/%s/gtidsets", gss.ReplName, gss.DestName)
+	p, _, err := gss.ConsulKV.Get(kvPath, nil)
 	if err != nil {
+		gss.Logger.Error("获取键值时发生错误: %s", err)
 		return nil, err
 	}
 
-	if *hjdbResp.State == "err" {
-		if hjdbResp.ErrCode != nil && (*hjdbResp.ErrCode == "HJDB-001" || *hjdbResp.ErrCode == "HJDB-002" || *hjdbResp.ErrCode == "HJDB-005") {
-			gss.Logger.Warning("hjdb-err: %s", *hjdbResp.ErrMsg)
-			return make(map[string]uint), nil
-		}
-		return nil, fmt.Errorf(*hjdbResp.ErrMsg)
+	if p == nil {
+		return make(map[string]uint), nil
 	} else {
-		gss.Logger.Info("Query gtidsets from hjdb: %v", hjdbResp.Data)
-		return hjdbResp.Data, nil
+		if gsm, err := GetGtidSetsMapFromGtidSetsRangeStr(string(p.Value)); err != nil {
+			return nil, err
+		} else {
+			return gsm, nil
+		}
 	}
 }
 
 // gtid sets map gssm
 func (gss *GtidSets) PersistGtidSetsMaptToHJDB() error {
-	db := "mysqlsync_" + gss.ReplName
-	sch := "dest_" + gss.DestName
-	tab := "gtidsets"
+	kvPath := fmt.Sprintf("mysqlsync/%s/%s/gtidsets", gss.ReplName, gss.DestName)
+	p := &api.KVPair{Key: kvPath, Value: []byte(GetGtidSetsRangeStrFromGtidSetsMap(gss.GtidSetsMap))}
 
-	hjdbResp, err := gss.HJDB.Update(db, sch, tab, gss.GtidSetsMap)
+	_, err := gss.ConsulKV.Put(p, nil)
 	if err != nil {
-		gss.Logger.Error("hjdb update: %s", err)
+		log.Fatalf("写入Consul键值对失败: %s", err)
 		return err
 	}
-
-	if *hjdbResp.State == "err" {
-		gss.Logger.Error("hjdb resp err: %s", *hjdbResp.ErrMsg)
-		return fmt.Errorf(*hjdbResp.ErrMsg + "\n")
-	} else {
-		gss.Logger.Debug("Persist gtidsets map '%v' complate.", gss.GtidSetsMap)
-	}
-
 	return nil
 }
 

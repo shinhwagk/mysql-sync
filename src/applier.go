@@ -450,6 +450,32 @@ func BuildDMLDeleteQuery(datbaseName string, tableName string, columns []MysqlOp
 	return sql, whereParams
 }
 
+func GenerateConditionAndValues(primaryKeys []uint64, columns []MysqlOperationDMLColumn) (string, []interface{}) {
+	var placeholder string
+	var primary_values []interface{}
+
+	if len(primaryKeys) >= 1 {
+		parts := make([]string, len(primaryKeys))
+		for i, k := range primaryKeys {
+			parts[i] = fmt.Sprintf("`%s` = ?", columns[k].ColumnName)
+			primary_values = append(primary_values, columns[k].ColumnValue)
+
+		}
+		placeholder = strings.Join(parts, " AND ")
+	} else {
+		parts := make([]string, len(columns))
+		for i, c := range columns {
+			parts[i] = fmt.Sprintf("`%s` = ?", c.ColumnName)
+			primary_values = append(primary_values, c.ColumnValue)
+		}
+		placeholder = strings.Join(parts, " AND ")
+		// for _, k := range primaryKeys {
+		// 	primary_values = append(primary_values, columns[k].ColumnValue)
+		// }
+	}
+	return placeholder, primary_values
+}
+
 // func BuildDMLUpdateQuery(datbaseName string, tableName string, columns []MysqlOperationDMLColumn, primaryKey []uint64) (string, []interface{}) {
 // 	wherePlaceholder, whereParams := GenerateConditionAndValues(primaryKey, columns)
 

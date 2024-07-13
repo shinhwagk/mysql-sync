@@ -27,7 +27,7 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) {
 
 	replName := dest.msc.Replication.Name
 	destConf := dest.msc.Destination.Destinations[dest.Name]
-	hjdbAddr := dest.msc.HJDB.Addr
+	consulAddr := dest.msc.Consul.Addr
 	tcpAddr := dest.msc.Destination.TCPAddr
 
 	metricCh := make(chan MetricUnit)
@@ -40,7 +40,7 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) {
 	defer close(moCh)
 
 	// gtidsets must first init.
-	gtidSets := NewGtidSets(hjdbAddr, replName, dest.Name)
+	gtidSets := NewGtidSets(destConf.LogLevel, consulAddr, replName, dest.Name)
 	err := gtidSets.InitStartupGtidSetsMap(destConf.Sync.InitGtidSetsRangeStr)
 	if err != nil {
 		return

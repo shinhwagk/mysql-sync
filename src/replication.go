@@ -42,7 +42,7 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 
 	destGtidSetss := make([]map[string]uint, 0, len(repl.msc.Destination.Destinations))
 	for destName, dc := range repl.msc.Destination.Destinations {
-		gss := NewGtidSets(repl.msc.HJDB.Addr, repl.msc.Replication.Name, destName)
+		gss := NewGtidSets(repl.msc.Replication.LogLevel, repl.msc.Consul.Addr, repl.msc.Replication.Name, destName)
 		if err := gss.InitStartupGtidSetsMap(dc.Sync.InitGtidSetsRangeStr); err != nil {
 			return
 		}

@@ -37,5 +37,5 @@ destination:
       loglevel: 1
       prom:
         export: 9093
-hjdb:
-  addr: hjdb:8000
+consul:
+  addr: 192.168.2.251:8500
