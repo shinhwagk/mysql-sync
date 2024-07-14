@@ -62,10 +62,17 @@ services:
       - --max-connections=3000
       - --innodb-flush-log-at-trx-commit=1
       - --sync-binlog=1
-  # dtle-consul:
-  #   image: consul:1.15.4
-  #   ports:
-  #     - 8500:8500
+  consul:
+    image: hashicorp/consul:1.19.1
+    ports:
+      - 8500:8500
+  nomad:
+    image: hashicorp/nomad:1.8.1
+    ports:
+      - 4646:4646
+      - 4647:4647
+      - 4648:4648
+    command: agent -dev -bind=0.0.0.0
   # dtle:
   #   image: actiontech/dtle
   #   ports:

@@ -2,7 +2,10 @@ job "mysqlsync-${repl.name}" {
   region = "dc1"
   datacenters = ${jsonencode(all_datacenters)}
   group "repl-${repl.name}" {
-    datacenters = ${jsonencode(repl.nomad.datacenters)}
+    constraint {
+      attribute = "$${node.datacenter}"
+      value     = "${repl.nomad.datacenter}"
+    }
     network {
       mode = "bridge"
     }
@@ -13,12 +16,12 @@ job "mysqlsync-${repl.name}" {
         sidecar_service {}
       }
     }
-    template {
-      data        = "{{ key \"${config_key}\" }}"
-      destination = "local/config.yml"
-    }
     task "repl-${repl.name}" {
       driver = "docker"
+      template {
+        data        = "{{ key \"${config_key}\" }}"
+        destination = "local/config.yml"
+      }
       config {
         image = "${repl.nomad.image}"
         args  = "-repl"
@@ -31,7 +34,10 @@ job "mysqlsync-${repl.name}" {
   }
 %{ for dest_name in dest_keys ~}
   group "dest_${dest_name}" {
-    datacenters = ${jsonencode(dests[dest_name].nomad.datacenters)}
+    constraint {
+      attribute = "$${node.datacenter}"
+      value     = "${dests[dest_name].nomad.datacenter}"
+    }
     service {
       connect {
         sidecar_service {
@@ -44,11 +50,11 @@ job "mysqlsync-${repl.name}" {
         }
       }
     }
-    template {
-      data        = "{{ key \"${config_key}\" }}"
-      destination = "local/config.yml"
-    }
     task "dest_${dest_name}" {
+      template {
+        data        = "{{ key \"${config_key}\" }}"
+        destination = "local/config.yml"
+      }
       driver = "docker"
       config {
         image = "${dests[dest_name].nomad.image}"
