@@ -1,0 +1,50 @@
+replication:
+  nomad:
+    datacenters: ["tn1"]
+    image: shinhwagk/mysqlsync:11
+  name: "xxxx"
+  tcpaddr: "0.0.0.0:9998"
+  serverid: 9999
+  host: "db1"
+  port: 3306
+  user: "root"
+  password: "root_password"
+  loglevel: 1
+  settings:
+    cache: 1000
+  prom:
+    export: 9091
+destination:
+  tcpaddr: "127.0.0.1:9998"
+  cache: 1000
+  destinations:
+    db2:
+      nomad:
+        datacenters: ["tn"]
+        image: shinhwagk/mysqlsync:11
+      mysql:
+        dsn: "root:root_password@tcp(db2:3306)/?autocommit=false&time_zone='%2B00:00'"
+        skip_errors: 1007,1008,1050,1051,1054,1060,1061,1068,1091,1146
+        foreign_key_checks: true
+      sync:
+        replicate:
+          do_db: test
+          ignore_tab: test.year_table
+        gtidsets: ""
+      prom:
+        export: 9092
+      loglevel: 1
+    db3:
+      nomad:
+        datacenters: ["tn"]
+        image: shinhwagk/mysqlsync:11
+      mysql:
+        dsn: "root:root_password@tcp(db3:3306)/?autocommit=false&time_zone='%2B00:00'"
+        skip_errors: 1007,1008,1050,1051,1054,1060,1061,1068,1091,1146
+      sync:
+        gtidsets: ""
+      loglevel: 1
+      prom:
+        export: 9093
+consul:
+  addr: consul.service.consul:8500
