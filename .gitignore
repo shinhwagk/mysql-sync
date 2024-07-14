@@ -4,3 +4,4 @@ __pycache__
 .DS_Store
 *.vsix
 example/hjdb/**/gtidsets.json
+terraform/nomad-jobs
