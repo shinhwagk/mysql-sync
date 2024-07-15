@@ -16,5 +16,5 @@
 			]
 		}
 	},
-	// "postCreateCommand": "/workspace/scripts/initContainer.centos.go.sh"
+	"postCreateCommand": "/workspace/scripts/initContainer.centos.go.sh"
 }

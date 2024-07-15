@@ -19,7 +19,8 @@ destination:
       mysql:
         dsn: "root:root_password@tcp(db2:3306)/?autocommit=false&time_zone='%2B00:00'"
         skip_errors: 1007,1008,1050,1051,1054,1060,1061,1068,1091,1146
-        foreign_key_checks: true
+        session_params: 
+          foreign_key_checks: off
       sync:
         replicate:
           do_db: test
@@ -38,4 +39,4 @@ destination:
       prom:
         export: 9093
 consul:
-  addr: 192.168.2.251:8500
+  addr: consul:8500

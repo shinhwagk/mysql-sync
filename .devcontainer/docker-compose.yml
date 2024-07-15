@@ -66,13 +66,6 @@ services:
     image: hashicorp/consul:1.19.1
     ports:
       - 8500:8500
-  nomad:
-    image: hashicorp/nomad:1.8.1
-    ports:
-      - 4646:4646
-      - 4647:4647
-      - 4648:4648
-    command: agent -dev -bind=0.0.0.0
   # dtle:
   #   image: actiontech/dtle
   #   ports:

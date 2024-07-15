@@ -10,10 +10,11 @@ import (
 )
 
 type MysqlClient struct {
-	db         *sql.DB
-	tx         *sql.Tx
-	Logger     *Logger
-	SkipErrors []uint16
+	db            *sql.DB
+	tx            *sql.Tx
+	Logger        *Logger
+	SkipErrors    []uint16
+	SessionParams map[string]string
 }
 
 func NewMysqlClient(logLevel int, dmc DestinationMysqlConfig) (*MysqlClient, error) {
@@ -26,10 +27,13 @@ func NewMysqlClient(logLevel int, dmc DestinationMysqlConfig) (*MysqlClient, err
 		return nil, err
 	}
 
-	if dmc.foreignKeyChecks != nil && !*dmc.foreignKeyChecks {
-		if _, err = db.Exec("SET foreign_key_checks = 0"); err != nil {
-			return nil, err
-		}
+	db.SetConnMaxLifetime(time.Minute * 10)
+	db.SetMaxIdleConns(1)
+	db.SetMaxOpenConns(2)
+
+	sessionParams := map[string]string{"time_zone": "+00:00"}
+	for pk, pv := range dmc.SessionParams {
+		sessionParams[pk] = pv
 	}
 
 	skipErrors, err := ConvertStringToUint16Slice(dmc.SkipErrors)
@@ -37,15 +41,12 @@ func NewMysqlClient(logLevel int, dmc DestinationMysqlConfig) (*MysqlClient, err
 		return nil, err
 	}
 
-	db.SetConnMaxLifetime(time.Minute * 1)
-	db.SetMaxIdleConns(1)
-	db.SetMaxOpenConns(2)
-
 	myclient := &MysqlClient{
-		db:         db,
-		tx:         nil,
-		Logger:     Logger,
-		SkipErrors: skipErrors,
+		db:            db,
+		tx:            nil,
+		Logger:        Logger,
+		SkipErrors:    skipErrors,
+		SessionParams: sessionParams,
 	}
 
 	return myclient, nil
@@ -77,6 +78,15 @@ func (mc *MysqlClient) Begin() error {
 		if mc.tx, err = mc.db.Begin(); err != nil {
 			mc.Logger.Error("execute Begin: %s", err.Error())
 			return err
+		} else {
+			for pk, pv := range mc.SessionParams {
+				query := fmt.Sprintf("SET SESSION %s = '%s'", pk, pv)
+				mc.Logger.Debug("execute Begin: init session parameter '%s'", query)
+				if _, err := mc.tx.Exec(query); err != nil {
+					mc.Logger.Error("execute Begin: init session parameter '%s' %s", query, err)
+					return err
+				}
+			}
 		}
 	} else {
 		err := fmt.Errorf("execute Begin: tx is not nil")

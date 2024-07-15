@@ -65,7 +65,7 @@ func (gss *GtidSets) QueryGtidSetsMapFromHJDB(replName string, destName string) 
 	kvPath := fmt.Sprintf("mysqlsync/%s/%s/gtidsets", gss.ReplName, gss.DestName)
 	p, _, err := gss.ConsulKV.Get(kvPath, nil)
 	if err != nil {
-		gss.Logger.Error("获取键值时发生错误: %s", err)
+		gss.Logger.Error("get consul kv: %s", err)
 		return nil, err
 	}
 
