@@ -254,6 +254,7 @@ func (md *MetricDirector) StartHTTPServer(ctx context.Context, addr string) {
 			</body>
 			</html>`))
 	})
+
 	go func() {
 		<-ctx.Done()
 		if err := srv.Shutdown(context.Background()); err != nil {
