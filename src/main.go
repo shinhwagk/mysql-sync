@@ -27,9 +27,7 @@ func main() {
 	if *repl && *dest {
 		logger.Error("--repl and --dest cannot be used together.")
 		os.Exit(1)
-	}
-
-	if *repl {
+	} else if *repl {
 		replication := NewReplication(*config)
 		replication.start(ctx, cancel)
 		cancel()
@@ -38,7 +36,6 @@ func main() {
 			logger.Error("'name' parameter is required when 'dest' is specified.")
 			os.Exit(1)
 		}
-
 		destination := NewDestination(*config, *destName)
 		destination.Start(ctx, cancel)
 		cancel()
