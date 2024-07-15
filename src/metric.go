@@ -32,7 +32,8 @@ const (
 	MetricReplDDLTableTimes
 	MetricTCPServerSendDelay
 	MetricReplTrx
-	MetricApplierOperations
+	MetricDestApplierOperations
+	// MetricDestApplierSkipOperations
 	MetricTCPClientReceiveOperations
 )
 
@@ -173,8 +174,10 @@ func (md *MetricDirector) Start(ctx context.Context, addr string) {
 				md.set("delay", metric.Value, metric.LabelPair)
 			case MetricTCPClientReceiveOperations:
 				md.inc("tcp_client_receive_operations", metric.Value, metric.LabelPair)
-			case MetricApplierOperations:
+			case MetricDestApplierOperations:
 				md.inc("applier_operations", metric.Value, metric.LabelPair)
+			// case MetricDestApplierSkipOperations:
+			// 	md.inc("applier_skip_operations", metric.Value, metric.LabelPair)
 
 			case MetricReplDelay:
 				md.set("delay", metric.Value, metric.LabelPair)

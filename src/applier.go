@@ -85,6 +85,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				ma.Logger.Info("mysql operation channel closed.")
 				return
 			}
+			ma.metricCh <- MetricUnit{Name: MetricDestApplierOperations, Value: 1}
 			switch op := oper.(type) {
 			case MysqlOperationDDLDatabase:
 				if ma.State == StateGTID {
@@ -224,7 +225,6 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 			case MysqlOperationBegin:
 				if ma.State == StateGTID {
 					ma.State = StateBEGIN
-
 					if ma.GtidSkip {
 						continue
 					}
@@ -239,7 +239,6 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				ma.Logger.Error("unknow operation.")
 				return
 			}
-			ma.metricCh <- MetricUnit{Name: MetricApplierOperations, Value: 1}
 		}
 	}
 }
