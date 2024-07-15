@@ -9,7 +9,7 @@ import (
 	"github.com/hashicorp/consul/api"
 )
 
-func NewGtidSets(logLevel int,addr string, replName string, destName string) *GtidSets {
+func NewGtidSets(logLevel int, addr string, replName string, destName string) *GtidSets {
 	logger := NewLogger(logLevel, "gtidsets")
 
 	config := api.DefaultConfig()
