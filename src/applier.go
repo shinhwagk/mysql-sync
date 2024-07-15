@@ -98,6 +98,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					if err := ma.OnDDLDatabase(op); err != nil {
 						return
 					}
+					ma.metricCh <- MetricUnit{Name: MetricDestDDLDatabaseTimes, Value: 1}
 				} else {
 					ma.Logger.Error("execute DDL(database): last state is '%s'", ma.State)
 					return
@@ -113,6 +114,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					if err := ma.OnDDLTable(op); err != nil {
 						return
 					}
+					ma.metricCh <- MetricUnit{Name: MetricDestDDLTableTimes, Value: 1}
 				} else {
 					ma.Logger.Error("execute DDL(table): last state is '%s'", ma.State)
 					return
@@ -173,14 +175,12 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					} else {
 						op.AfterColumns = gobRepairColumns
 					}
-
 					if gobRepairColumns, err := gobUint8NilRepair(op.BeforeColumns); err != nil {
 						ma.Logger.Error("gob repair []uint8(nil): ", err)
 						return
 					} else {
 						op.BeforeColumns = gobRepairColumns
 					}
-
 					if err := ma.OnDMLUpdate(op); err != nil {
 						return
 					}
@@ -306,8 +306,6 @@ func (ma *MysqlApplier) OnDDLDatabase(op MysqlOperationDDLDatabase) error {
 		return err
 	}
 
-	ma.metricCh <- MetricUnit{Name: MetricDestDDLDatabaseTimes, Value: 1}
-
 	ma.Checkpoint(op.Timestamp)
 
 	return nil
@@ -324,8 +322,6 @@ func (ma *MysqlApplier) OnDDLTable(op MysqlOperationDDLTable) error {
 		ma.Logger.Error("OnDDLTable: %s", err)
 		return err
 	}
-
-	ma.metricCh <- MetricUnit{Name: MetricDestDDLTableTimes, Value: 1}
 
 	ma.Checkpoint(op.Timestamp)
 
