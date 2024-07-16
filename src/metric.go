@@ -65,16 +65,14 @@ type MetricDirector struct {
 
 func NewMetricReplDirector(logLevel int, subsystem string, replName string, metricCh <-chan MetricUnit) *MetricDirector {
 	return &MetricDirector{
-		Name:     "replication",
-		Logger:   NewLogger(logLevel, "metric director"),
-		metrics:  make(map[string]*PrometheusMetric),
-		metricCh: metricCh,
-
+		Name:          "replication",
+		Logger:        NewLogger(logLevel, "metric-director"),
+		metrics:       make(map[string]*PrometheusMetric),
+		metricCh:      metricCh,
 		PromNamespace: "mysqlsync",
 		PromSubsystem: subsystem,
 		PromRegistry:  prometheus.NewRegistry(),
-
-		ReplName: replName,
+		ReplName:      replName,
 	}
 }
 
