@@ -24,8 +24,8 @@ type Signal2 struct {
 }
 
 const (
-	ClientFree = "free"
-	ClientBusy = "busy"
+	ClientFree int = iota
+	ClientBusy
 )
 
 type TCPServerClient struct {
@@ -44,7 +44,7 @@ type TCPServerClient struct {
 	decoder           *gob.Decoder
 
 	SendBatchID uint
-	State       string
+	State       int
 
 	SendError     error
 	SendMos       []MysqlOperation
