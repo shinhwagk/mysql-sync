@@ -27,16 +27,12 @@ func init() {
 type TCPServer struct {
 	Logger        *Logger
 	listenAddress string
-
-	ctx    context.Context
-	cancel context.CancelFunc
-
-	moCh     <-chan MysqlOperation
-	metricCh chan<- MetricUnit
-
-	Clients map[string]*TCPServerClient
-
-	BatchID uint
+	ctx           context.Context
+	cancel        context.CancelFunc
+	moCh          <-chan MysqlOperation
+	metricCh      chan<- MetricUnit
+	Clients       map[string]*TCPServerClient
+	BatchID       uint
 }
 
 func NewTCPServer(logLevel int, listenAddress string, clientNames []string, moCh <-chan MysqlOperation, metricCh chan<- MetricUnit) *TCPServer {
