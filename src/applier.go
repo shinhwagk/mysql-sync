@@ -375,7 +375,7 @@ func (ma *MysqlApplier) OnHeartbeat(op MysqlOperationHeartbeat) error {
 }
 
 func (ma *MysqlApplier) SkipCommitCheckpoint() {
-	ma.Checkpoint(ma.LastCheckpointTimestamp)
+	ma.Checkpoint()
 }
 
 func (ma *MysqlApplier) MergeCommit() error {
@@ -386,7 +386,7 @@ func (ma *MysqlApplier) MergeCommit() error {
 			return err
 		}
 
-		ma.Checkpoint(ma.LastCheckpointTimestamp)
+		ma.Checkpoint()
 
 		ma.metricCh <- MetricUnit{Name: MetricDestMergeTrx, Value: 1}
 		ma.AllowCommit = false
@@ -395,12 +395,12 @@ func (ma *MysqlApplier) MergeCommit() error {
 	return nil
 }
 
-func (ma *MysqlApplier) Checkpoint(timestamp uint32) error {
+func (ma *MysqlApplier) Checkpoint() error {
 	if err := ma.GtidSets.PersistGtidSetsMaptToHJDB(); err == nil {
 		if trx, ok := ma.GtidSets.GetTrxIdOfServerUUID(ma.LastGtidServerUUID); ok {
 			ma.Logger.Info("Checkpoint GTID: %s:%d", ma.LastGtidServerUUID, trx)
 		}
-		ma.metricCh <- MetricUnit{Name: MetricDestCheckpointDelay, Value: uint(time.Now().Unix() - int64(timestamp))}
+		ma.metricCh <- MetricUnit{Name: MetricDestCheckpointDelay, Value: uint(time.Now().Unix() - int64(ma.LastCheckpointTimestamp))}
 	}
 
 	return nil
