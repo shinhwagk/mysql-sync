@@ -19,10 +19,8 @@ type BinlogExtract struct {
 	Logger             *Logger
 	binlogSyncer       *replication.BinlogSyncer
 	binlogSyncerConfig replication.BinlogSyncerConfig
-
-	moCh chan<- MysqlOperation
-
-	metricCh chan<- MetricUnit
+	moCh               chan<- MysqlOperation
+	metricCh           chan<- MetricUnit
 }
 
 func NewBinlogExtract(logLevel int, config ReplicationConfig, moCh chan<- MysqlOperation, metricCh chan<- MetricUnit) *BinlogExtract {
