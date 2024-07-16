@@ -44,27 +44,23 @@ type MetricUnit struct {
 }
 
 type PrometheusMetric struct {
-	MetricName   string
-	MetricType   string // gauge, counter
-	MetricValue  uint
-	MetricLabels []string
-
+	MetricName    string
+	MetricType    string // gauge, counter
+	MetricValue   uint
+	MetricLabels  []string
 	PromCollector prometheus.Collector
 }
 
 type MetricDirector struct {
-	Name     string
-	Logger   *Logger
-	metrics  map[string]*PrometheusMetric
-	metricCh <-chan MetricUnit
-
-	// prometheus
+	Name          string
+	Logger        *Logger
+	metrics       map[string]*PrometheusMetric
+	metricCh      <-chan MetricUnit
 	PromNamespace string
 	PromSubsystem string
 	PromRegistry  *prometheus.Registry
-
-	ReplName string
-	DestName *string
+	ReplName      string
+	DestName      *string
 }
 
 func NewMetricReplDirector(logLevel int, subsystem string, replName string, metricCh <-chan MetricUnit) *MetricDirector {
