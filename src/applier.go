@@ -18,42 +18,32 @@ const (
 
 func NewMysqlApplier(logLevel int, gtidSets *GtidSets, mysqlClient *MysqlClient, replicate *Replicate, metricCh chan<- MetricUnit) *MysqlApplier {
 	return &MysqlApplier{
-		Logger: NewLogger(logLevel, "mysql-applier"),
-
-		GtidSets: gtidSets,
-
-		mysqlClient: mysqlClient,
-		replicate:   replicate,
-
+		Logger:                  NewLogger(logLevel, "mysql-applier"),
+		GtidSets:                gtidSets,
+		mysqlClient:             mysqlClient,
+		replicate:               replicate,
 		LastGtidServerUUID:      "",
 		LastCommitted:           0,
 		LastCheckpointTimestamp: 0,
 		AllowCommit:             false,
-
-		metricCh: metricCh,
-
-		GtidSkip: false,
-
-		State: StateNULL,
+		metricCh:                metricCh,
+		GtidSkip:                false,
+		State:                   StateNULL,
 	}
 }
 
 type MysqlApplier struct {
-	Logger      *Logger
-	mysqlClient *MysqlClient
-	replicate   *Replicate
-	GtidSets    *GtidSets
-
+	Logger                  *Logger
+	mysqlClient             *MysqlClient
+	replicate               *Replicate
+	GtidSets                *GtidSets
 	LastGtidServerUUID      string
 	LastCommitted           int64
 	LastCheckpointTimestamp uint32
 	AllowCommit             bool
-
-	metricCh chan<- MetricUnit
-
-	GtidSkip bool
-
-	State string
+	metricCh                chan<- MetricUnit
+	GtidSkip                bool
+	State                   string
 }
 
 func (ma *MysqlApplier) ReplicateNotExecute(schemaContext string, tableName string) bool {
