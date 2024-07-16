@@ -78,17 +78,15 @@ func NewMetricReplDirector(logLevel int, subsystem string, replName string, metr
 
 func NewMetricDestDirector(logLevel int, subsystem string, replName string, destName string, metricCh <-chan MetricUnit) *MetricDirector {
 	return &MetricDirector{
-		Name:     "destination",
-		Logger:   NewLogger(logLevel, "metric director"),
-		metrics:  make(map[string]*PrometheusMetric),
-		metricCh: metricCh,
-
+		Name:          "destination",
+		Logger:        NewLogger(logLevel, "metric director"),
+		metrics:       make(map[string]*PrometheusMetric),
+		metricCh:      metricCh,
 		PromNamespace: "mysqlsync",
 		PromSubsystem: subsystem,
 		PromRegistry:  prometheus.NewRegistry(),
-
-		ReplName: replName,
-		DestName: &destName,
+		ReplName:      replName,
+		DestName:      &destName,
 	}
 }
 
