@@ -81,34 +81,32 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				ma.LastCheckpointTimestamp = op.Timestamp
 				if ma.State == StateGTID {
 					ma.State = StateDDL
-					if ma.GtidSkip || ma.ReplicateNotExecute(op.Schema, "") {
-						ma.SkipCommitCheckpoint()
-						continue
+					if !(ma.GtidSkip || ma.ReplicateNotExecute(op.Schema, "")) {
+						if err := ma.OnDDLDatabase(op); err != nil {
+							return
+						}
+						ma.metricCh <- MetricUnit{Name: MetricDestDDLDatabaseTimes, Value: 1}
 					}
-					if err := ma.OnDDLDatabase(op); err != nil {
-						return
-					}
-					ma.metricCh <- MetricUnit{Name: MetricDestDDLDatabaseTimes, Value: 1}
 				} else {
 					ma.Logger.Error("execute DDL(database): last state is '%s'", ma.State)
 					return
 				}
+				ma.Checkpoint()
 			case MysqlOperationDDLTable:
 				ma.LastCheckpointTimestamp = op.Timestamp
 				if ma.State == StateGTID {
 					ma.State = StateDDL
-					if ma.GtidSkip || ma.ReplicateNotExecute(op.Schema, op.Table) {
-						ma.SkipCommitCheckpoint()
-						continue
+					if !(ma.GtidSkip || ma.ReplicateNotExecute(op.Schema, op.Table)) {
+						if err := ma.OnDDLTable(op); err != nil {
+							return
+						}
+						ma.metricCh <- MetricUnit{Name: MetricDestDDLTableTimes, Value: 1}
 					}
-					if err := ma.OnDDLTable(op); err != nil {
-						return
-					}
-					ma.metricCh <- MetricUnit{Name: MetricDestDDLTableTimes, Value: 1}
 				} else {
 					ma.Logger.Error("execute DDL(table): last state is '%s'", ma.State)
 					return
 				}
+				ma.Checkpoint()
 			case MysqlOperationDMLInsert:
 				if ma.State == StateBEGIN || ma.State == StateDML {
 					ma.State = StateDML
@@ -294,8 +292,6 @@ func (ma *MysqlApplier) OnDDLDatabase(op MysqlOperationDDLDatabase) error {
 		return err
 	}
 
-	ma.Checkpoint(op.Timestamp)
-
 	return nil
 }
 
@@ -310,8 +306,6 @@ func (ma *MysqlApplier) OnDDLTable(op MysqlOperationDDLTable) error {
 		ma.Logger.Error("OnDDLTable: %s", err)
 		return err
 	}
-
-	ma.Checkpoint(op.Timestamp)
 
 	return nil
 }
@@ -372,10 +366,6 @@ func (ma *MysqlApplier) OnHeartbeat(op MysqlOperationHeartbeat) error {
 		return err
 	}
 	return nil
-}
-
-func (ma *MysqlApplier) SkipCommitCheckpoint() {
-	ma.Checkpoint()
 }
 
 func (ma *MysqlApplier) MergeCommit() error {
