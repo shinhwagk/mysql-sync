@@ -78,9 +78,9 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 			ma.metricCh <- MetricUnit{Name: MetricDestApplierOperations, Value: 1}
 			switch op := oper.(type) {
 			case MysqlOperationDDLDatabase:
+				ma.LastCheckpointTimestamp = op.Timestamp
 				if ma.State == StateGTID {
 					ma.State = StateDDL
-					ma.LastCheckpointTimestamp = op.Timestamp
 					if ma.GtidSkip || ma.ReplicateNotExecute(op.Schema, "") {
 						ma.SkipCommitCheckpoint()
 						continue
@@ -94,9 +94,9 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					return
 				}
 			case MysqlOperationDDLTable:
+				ma.LastCheckpointTimestamp = op.Timestamp
 				if ma.State == StateGTID {
 					ma.State = StateDDL
-					ma.LastCheckpointTimestamp = op.Timestamp
 					if ma.GtidSkip || ma.ReplicateNotExecute(op.Schema, op.Table) {
 						ma.SkipCommitCheckpoint()
 						continue
@@ -182,13 +182,9 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					return
 				}
 			case MysqlOperationXid:
+				ma.LastCheckpointTimestamp = op.Timestamp
 				if ma.State == StateDML || ma.State == StateBEGIN {
 					ma.State = StateXID
-					ma.LastCheckpointTimestamp = op.Timestamp
-					if ma.GtidSkip {
-						ma.SkipCommitCheckpoint()
-						continue
-					}
 					if err := ma.OnXID(op); err != nil {
 						return
 					}
@@ -212,6 +208,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					return
 				}
 				ma.State = StateNULL
+				ma.metricCh <- MetricUnit{Name: MetricDestDelay, Value: uint(time.Now().Unix() - int64(op.Timestamp))}
 			case MysqlOperationBegin:
 				if ma.State == StateGTID {
 					ma.State = StateBEGIN
@@ -373,14 +370,11 @@ func (ma *MysqlApplier) OnHeartbeat(op MysqlOperationHeartbeat) error {
 	if err := ma.MergeCommit(); err != nil {
 		return err
 	}
-	ma.metricCh <- MetricUnit{Name: MetricDestDelay, Value: uint(time.Now().Unix() - int64(op.Timestamp))}
 	return nil
 }
 
 func (ma *MysqlApplier) SkipCommitCheckpoint() {
-	if ma.GtidSkip {
-		ma.Checkpoint(ma.LastCheckpointTimestamp)
-	}
+	ma.Checkpoint(ma.LastCheckpointTimestamp)
 }
 
 func (ma *MysqlApplier) MergeCommit() error {
