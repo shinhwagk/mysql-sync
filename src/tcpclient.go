@@ -62,9 +62,8 @@ func NewTCPClient(logLevel int, serverAddress string, destName string, moCh chan
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &TCPClient{
-		ctx:    ctx,
-		cancel: cancel,
-
+		ctx:               ctx,
+		cancel:            cancel,
 		Logger:            logger,
 		ServerAddress:     serverAddress,
 		conn:              conn,
@@ -72,10 +71,8 @@ func NewTCPClient(logLevel int, serverAddress string, destName string, moCh chan
 		decoder:           decoder,
 		decoderZstdReader: zstdReader,
 		metricCh:          metricCh,
-
-		BatchID: 0,
-
-		moCh: moCh,
+		BatchID:           0,
+		moCh:              moCh,
 	}, nil
 }
 
