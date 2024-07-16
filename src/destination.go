@@ -32,6 +32,7 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) {
 
 	metricCh := make(chan MetricUnit)
 	defer close(metricCh)
+
 	cacheSize := 1000
 	if dest.msc.Destination.CacheSize > cacheSize {
 		cacheSize = dest.msc.Destination.CacheSize
@@ -46,28 +47,13 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) {
 		return
 	}
 
-	metricDirector := NewMetricDestDirector(destConf.LogLevel, "destination", replName, dest.Name, metricCh)
-	tcpClient, err := NewTCPClient(destConf.LogLevel, tcpAddr, dest.Name, moCh, metricCh, GetGtidSetsRangeStrFromGtidSetsMap(gtidSets.GtidSetsMap))
-	if err != nil {
-		tcpClient.Logger.Error("NewTCPClient: %s", err)
-		return
-	}
-
-	mysqlClient, err := NewMysqlClient(destConf.LogLevel, destConf.Mysql)
-	if err != nil {
-		mysqlClient.Logger.Error("NewMysqlClient: %s", err)
-		return
-	}
-	defer mysqlClient.Close()
-
-	replicateFilter := NewReplicateFilter(destConf.Sync.Replicate)
-	mysqlApplier := NewMysqlApplier(destConf.LogLevel, gtidSets, mysqlClient, replicateFilter, metricCh)
-
 	ctxMa, cancelMa := context.WithCancel(context.Background())
 	ctxTc, cancelTc := context.WithCancel(context.Background())
 	ctxMd, cancelMd := context.WithCancel(context.Background())
 
 	go func() {
+		defer cancelMd()
+		defer cancel()
 		promExportPort := 9092
 		if destConf.Prometheus != nil {
 			if destConf.Prometheus.ExportPort != 0 {
@@ -77,21 +63,34 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) {
 				return
 			}
 		}
+		metricDirector := NewMetricDestDirector(destConf.LogLevel, "destination", replName, dest.Name, metricCh)
 		metricDirector.Start(ctx, fmt.Sprintf("0.0.0.0:%d", promExportPort))
-		cancel()
-		cancelMd()
 	}()
 
 	go func() {
+		defer cancelMa()
+		defer cancel()
+		replicateFilter := NewReplicateFilter(destConf.Sync.Replicate)
+		mysqlClient, err := NewMysqlClient(destConf.LogLevel, destConf.Mysql)
+		if err != nil {
+			dest.Logger.Error("NewMysqlClient: %s", err)
+			return
+		}
+		defer mysqlClient.Close()
+		mysqlApplier := NewMysqlApplier(destConf.LogLevel, gtidSets, mysqlClient, replicateFilter, metricCh)
 		mysqlApplier.Start(ctx, moCh)
-		cancel()
-		cancelMa()
+
 	}()
 
 	go func() {
+		defer cancelTc()
+		defer cancel()
+		tcpClient, err := NewTCPClient(destConf.LogLevel, tcpAddr, dest.Name, moCh, metricCh, GetGtidSetsRangeStrFromGtidSetsMap(gtidSets.GtidSetsMap))
+		if err != nil {
+			dest.Logger.Error("NewTCPClient: %s", err)
+			return
+		}
 		tcpClient.Start(ctx)
-		cancel()
-		cancelTc()
 	}()
 
 	<-ctxMd.Done()

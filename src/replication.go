@@ -26,7 +26,6 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 	defer close(metricCh)
 
 	destStartGtidSetsStrCh := make(chan DestStartGtidSetsRangeStr)
-	defer close(destStartGtidSetsStrCh)
 
 	cacheSize := 1000
 	if repl.msc.Replication.Settings != nil && repl.msc.Replication.Settings.CacheSize > cacheSize {
@@ -61,7 +60,6 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 				return
 			}
 		}
-
 		metricDirector := NewMetricReplDirector(repl.msc.Replication.LogLevel, "replication", repl.msc.Replication.Name, metricCh)
 		metricDirector.Start(ctx, fmt.Sprintf("0.0.0.0:%d", promExportPort))
 		cancel()
@@ -99,6 +97,7 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 
 		initGtidSetsRangeStr := GetGtidSetsRangeStrFromGtidSetsMap(MergeGtidSetss(gtidSetss))
 		repl.Logger.Info("Init gtidsets range string:'%s'", initGtidSetsRangeStr)
+		close(destStartGtidSetsStrCh)
 
 		extract := NewBinlogExtract(repl.msc.Replication.LogLevel, repl.msc.Replication, moCh, metricCh)
 		extract.Start(ctx, initGtidSetsRangeStr)

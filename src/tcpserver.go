@@ -251,8 +251,8 @@ func (ts *TCPServer) handleClients(listener net.Listener) {
 
 	var wg sync.WaitGroup
 	defer wg.Wait()
-	defer ts.cancel()
-	for {
+
+	for i := 0; i < len(ts.Clients); i++ {
 		conn, err := listener.Accept()
 		if err != nil {
 			ts.Logger.Error("Accepting: %s", err.Error())
@@ -292,4 +292,5 @@ func (ts *TCPServer) handleClients(listener net.Listener) {
 		}
 		break
 	}
+	ts.Logger.Info("All clients are ready.")
 }
