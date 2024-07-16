@@ -46,15 +46,12 @@ func NewTCPServer(logLevel int, listenAddress string, clientNames []string, moCh
 	return &TCPServer{
 		Logger:        NewLogger(logLevel, "tcp server"),
 		listenAddress: listenAddress,
-
-		ctx:    ctx,
-		cancel: cancel,
-
-		moCh:     moCh,
-		metricCh: metricCh,
-
-		Clients: clients,
-		BatchID: 0,
+		ctx:           ctx,
+		cancel:        cancel,
+		moCh:          moCh,
+		metricCh:      metricCh,
+		Clients:       clients,
+		BatchID:       0,
 	}
 }
 
