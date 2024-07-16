@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/gob"
 	"net"
+	"strings"
 	"sync"
 	"time"
 )
@@ -33,9 +34,10 @@ type TCPServer struct {
 	metricCh      chan<- MetricUnit
 	Clients       map[string]*TCPServerClient
 	BatchID       uint
+	dsgsrsCh      chan<- DestStartGtidSetsRangeStr
 }
 
-func NewTCPServer(logLevel int, listenAddress string, clientNames []string, moCh <-chan MysqlOperation, metricCh chan<- MetricUnit) *TCPServer {
+func NewTCPServer(logLevel int, listenAddress string, clientNames []string, moCh <-chan MysqlOperation, metricCh chan<- MetricUnit, destStartGtidSetsStrCh chan<- DestStartGtidSetsRangeStr) *TCPServer {
 	clients := make(map[string]*TCPServerClient)
 
 	for _, name := range clientNames {
@@ -52,6 +54,7 @@ func NewTCPServer(logLevel int, listenAddress string, clientNames []string, moCh
 		metricCh:      metricCh,
 		Clients:       clients,
 		BatchID:       0,
+		dsgsrsCh:      destStartGtidSetsStrCh,
 	}
 }
 
@@ -264,7 +267,9 @@ func (ts *TCPServer) handleClients(listener net.Listener) {
 			}
 		}
 
-		clientName := scanner.Text()
+		initClientInfo := strings.Split(scanner.Text(), "@")
+		clientName := initClientInfo[0]
+		ts.dsgsrsCh <- DestStartGtidSetsRangeStr{DestName: clientName, GtidSetsStr: initClientInfo[1]}
 
 		if client, exists := ts.Clients[clientName]; exists {
 			if client == nil {

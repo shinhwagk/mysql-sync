@@ -25,6 +25,9 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 	metricCh := make(chan MetricUnit)
 	defer close(metricCh)
 
+	destStartGtidSetsStrCh := make(chan DestStartGtidSetsRangeStr)
+	defer close(destStartGtidSetsStrCh)
+
 	cacheSize := 1000
 	if repl.msc.Replication.Settings != nil && repl.msc.Replication.Settings.CacheSize > cacheSize {
 		cacheSize = repl.msc.Replication.Settings.CacheSize
@@ -40,22 +43,9 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 		return
 	}
 
-	destGtidSetss := make([]map[string]uint, 0, len(repl.msc.Destination.Destinations))
-	for destName, dc := range repl.msc.Destination.Destinations {
-		gss := NewGtidSets(repl.msc.Replication.LogLevel, repl.msc.Consul.Addr, repl.msc.Replication.Name, destName)
-		if err := gss.InitStartupGtidSetsMap(dc.Sync.InitGtidSetsRangeStr); err != nil {
-			return
-		}
-		destGtidSetss = append(destGtidSetss, gss.GtidSetsMap)
+	for destName := range repl.msc.Destination.Destinations {
 		destNames = append(destNames, destName)
-		repl.Logger.Info("Dest:%s, checkpoint: %v", destName, gss.GtidSetsMap)
 	}
-	initGtidSetsRangeStr := GetGtidSetsRangeStrFromGtidSetsMap(MergeGtidSetss(destGtidSetss))
-	repl.Logger.Info("Init gtidsets range string:'%s'", initGtidSetsRangeStr)
-
-	metricDirector := NewMetricReplDirector(repl.msc.Replication.LogLevel, "replication", repl.msc.Replication.Name, metricCh)
-	tcpServer := NewTCPServer(repl.msc.Replication.LogLevel, repl.msc.Replication.TCPAddr, destNames, moCh, metricCh)
-	extract := NewBinlogExtract(repl.msc.Replication.LogLevel, repl.msc.Replication, moCh, metricCh)
 
 	ctxMd, cancelMd := context.WithCancel(context.Background())
 	ctxTs, cancelTs := context.WithCancel(context.Background())
@@ -71,21 +61,47 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 				return
 			}
 		}
+
+		metricDirector := NewMetricReplDirector(repl.msc.Replication.LogLevel, "replication", repl.msc.Replication.Name, metricCh)
 		metricDirector.Start(ctx, fmt.Sprintf("0.0.0.0:%d", promExportPort))
 		cancel()
 		cancelMd()
 	}()
 
 	go func() {
+		tcpServer := NewTCPServer(repl.msc.Replication.LogLevel, repl.msc.Replication.TCPAddr, destNames, moCh, metricCh, destStartGtidSetsStrCh)
 		tcpServer.Start(ctx)
 		cancel()
 		cancelTs()
 	}()
 
 	go func() {
+		defer cancelEx()
+		defer cancel()
+		destGtidSetss := make(map[string]map[string]uint)
+		gtidSetss := make([]map[string]uint, 0, len(repl.msc.Destination.Destinations))
+		for i := 0; i < len(destNames); i++ {
+			gtidSetsStr := <-destStartGtidSetsStrCh
+			if gss, err := GetGtidSetsMapFromGtidSetsRangeStr(gtidSetsStr.GtidSetsStr); err != nil {
+				repl.Logger.Error("Convert gtidsets map to str error: %s", err)
+				return
+			} else {
+				if _, exists := destGtidSetss[gtidSetsStr.DestName]; exists {
+					repl.Logger.Error("Dest '%s' gtidset exist '%#v'.", gtidSetsStr.DestName, gss)
+					return
+				} else {
+					destGtidSetss[gtidSetsStr.DestName] = gss
+					gtidSetss = append(gtidSetss, gss)
+				}
+			}
+			repl.Logger.Info("Receive init client info: %s@%s", gtidSetsStr.DestName, gtidSetsStr.GtidSetsStr)
+		}
+
+		initGtidSetsRangeStr := GetGtidSetsRangeStrFromGtidSetsMap(MergeGtidSetss(gtidSetss))
+		repl.Logger.Info("Init gtidsets range string:'%s'", initGtidSetsRangeStr)
+
+		extract := NewBinlogExtract(repl.msc.Replication.LogLevel, repl.msc.Replication, moCh, metricCh)
 		extract.Start(ctx, initGtidSetsRangeStr)
-		cancel()
-		cancelEx()
 	}()
 
 	<-ctxMd.Done()

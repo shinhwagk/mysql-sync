@@ -47,7 +47,7 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) {
 	}
 
 	metricDirector := NewMetricDestDirector(destConf.LogLevel, "destination", replName, dest.Name, metricCh)
-	tcpClient, err := NewTCPClient(destConf.LogLevel, tcpAddr, dest.Name, moCh, metricCh)
+	tcpClient, err := NewTCPClient(destConf.LogLevel, tcpAddr, dest.Name, moCh, metricCh, GetGtidSetsRangeStrFromGtidSetsMap(gtidSets.GtidSetsMap))
 	if err != nil {
 		tcpClient.Logger.Error("NewTCPClient: %s", err)
 		return

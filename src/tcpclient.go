@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/gob"
+	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -37,9 +38,10 @@ type TCPClient struct {
 	decoderZstdReader *zstd.Decoder
 	BatchID           uint
 	moCh              chan<- MysqlOperation
+	// StartGtidSets     string
 }
 
-func NewTCPClient(logLevel int, serverAddress string, destName string, moCh chan<- MysqlOperation, metricCh chan<- MetricUnit) (*TCPClient, error) {
+func NewTCPClient(logLevel int, serverAddress string, destName string, moCh chan<- MysqlOperation, metricCh chan<- MetricUnit, startGtidSets string) (*TCPClient, error) {
 	logger := NewLogger(logLevel, "tcp client")
 	conn, err := net.Dial("tcp", serverAddress)
 	if err != nil {
@@ -47,8 +49,12 @@ func NewTCPClient(logLevel int, serverAddress string, destName string, moCh chan
 		return nil, err
 	}
 
-	if _, err := conn.Write([]byte(destName + "\n")); err != nil {
+	initClientInfo := fmt.Sprintf("%s@%s", destName, startGtidSets)
+
+	if _, err := conn.Write([]byte(initClientInfo + "\n")); err != nil {
 		logger.Error("register: %s", err)
+	} else {
+		logger.Info("Send init client info: %s", initClientInfo)
 	}
 
 	encoder := gob.NewEncoder(conn)
@@ -73,6 +79,7 @@ func NewTCPClient(logLevel int, serverAddress string, destName string, moCh chan
 		metricCh:          metricCh,
 		BatchID:           0,
 		moCh:              moCh,
+		// StartGtidSets:     startGtidSets,
 	}, nil
 }
 

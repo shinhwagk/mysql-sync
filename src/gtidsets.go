@@ -38,6 +38,11 @@ type GtidSets struct {
 	GtidSetsMap map[string]uint
 }
 
+type DestStartGtidSetsRangeStr struct {
+	DestName    string
+	GtidSetsStr string
+}
+
 func (gss *GtidSets) InitStartupGtidSetsMap(initGtidSetsRangeStr string) error {
 	hjdbGtidSetsMap, err := gss.QueryGtidSetsMapFromHJDB(gss.ReplName, gss.DestName)
 
