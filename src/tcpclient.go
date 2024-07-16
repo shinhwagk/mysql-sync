@@ -26,21 +26,17 @@ func init() {
 }
 
 type TCPClient struct {
-	ctx    context.Context
-	cancel context.CancelFunc
-
-	Logger        *Logger
-	ServerAddress string
-	metricCh      chan<- MetricUnit
-
+	ctx               context.Context
+	cancel            context.CancelFunc
+	Logger            *Logger
+	ServerAddress     string
+	metricCh          chan<- MetricUnit
 	conn              net.Conn
 	encoder           *gob.Encoder
 	decoder           *gob.Decoder
 	decoderZstdReader *zstd.Decoder
-
-	BatchID uint
-
-	moCh chan<- MysqlOperation
+	BatchID           uint
+	moCh              chan<- MysqlOperation
 }
 
 func NewTCPClient(logLevel int, serverAddress string, destName string, moCh chan<- MysqlOperation, metricCh chan<- MetricUnit) (*TCPClient, error) {
