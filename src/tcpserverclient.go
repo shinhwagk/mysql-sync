@@ -29,30 +29,22 @@ const (
 )
 
 type TCPServerClient struct {
-	Logger *Logger
-
-	Name string
-
-	ctx    context.Context
-	cancel context.CancelFunc
-
-	conn net.Conn
-
+	Logger            *Logger
+	Name              string
+	ctx               context.Context
+	cancel            context.CancelFunc
+	conn              net.Conn
 	encoder           *gob.Encoder
 	encoderBuffer     *bytes.Buffer
 	encoderZstdWriter *zstd.Encoder
 	decoder           *gob.Decoder
-
-	SendBatchID uint
-	State       int
-
-	SendError     error
-	SendMos       []MysqlOperation
-	SendTimestamp time.Time
-
-	metricCh chan<- MetricUnit
-
-	Dead bool
+	SendBatchID       uint
+	State             int
+	SendError         error
+	SendMos           []MysqlOperation
+	SendTimestamp     time.Time
+	metricCh          chan<- MetricUnit
+	Dead              bool
 }
 
 func NewTcpServerClient(logLevel int, name string, metricCh chan<- MetricUnit, conn net.Conn) (*TCPServerClient, error) {
