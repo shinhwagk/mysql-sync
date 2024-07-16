@@ -208,7 +208,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					return
 				}
 				ma.State = StateNULL
-				ma.metricCh <- MetricUnit{Name: MetricDestDelay, Value: uint(time.Now().Unix() - int64(op.Timestamp))}
+				ma.metricCh <- MetricUnit{Name: MetricDestCheckpointDelay, Value: uint(time.Now().Unix() - int64(op.Timestamp))}
 			case MysqlOperationBegin:
 				if ma.State == StateGTID {
 					ma.State = StateBEGIN
@@ -226,6 +226,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				ma.Logger.Error("unknow operation.")
 				return
 			}
+			ma.metricCh <- MetricUnit{Name: MetricDestApplierDelay, Value: uint(time.Now().Unix() - int64(oper.GetTimestamp()))}
 		}
 	}
 }
@@ -399,7 +400,7 @@ func (ma *MysqlApplier) Checkpoint(timestamp uint32) error {
 		if trx, ok := ma.GtidSets.GetTrxIdOfServerUUID(ma.LastGtidServerUUID); ok {
 			ma.Logger.Info("Checkpoint GTID: %s:%d", ma.LastGtidServerUUID, trx)
 		}
-		ma.metricCh <- MetricUnit{Name: MetricDestDelay, Value: uint(time.Now().Unix() - int64(timestamp))}
+		ma.metricCh <- MetricUnit{Name: MetricDestCheckpointDelay, Value: uint(time.Now().Unix() - int64(timestamp))}
 	}
 
 	return nil

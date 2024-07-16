@@ -11,7 +11,8 @@ import (
 )
 
 const (
-	MetricDestDelay uint = iota
+	MetricDestCheckpointDelay uint = iota
+	MetricDestApplierDelay
 	MetricDestDMLInsertTimes
 	MetricDestDMLUpdateTimes
 	MetricDestDMLDeleteTimes
@@ -162,8 +163,10 @@ func (md *MetricDirector) Start(ctx context.Context, addr string) {
 				md.inc("ddl_database_times", metric.Value, metric.LabelPair)
 			case MetricDestDDLTableTimes:
 				md.inc("ddl_table_times", metric.Value, metric.LabelPair)
-			case MetricDestDelay:
-				md.set("delay", metric.Value, metric.LabelPair)
+			case MetricDestCheckpointDelay:
+				md.set("ckeckpoint_delay", metric.Value, metric.LabelPair)
+			case MetricDestApplierDelay:
+				md.set("applier_delay", metric.Value, metric.LabelPair)
 			case MetricTCPClientReceiveOperations:
 				md.inc("tcp_client_receive_operations", metric.Value, metric.LabelPair)
 			case MetricDestApplierOperations:
