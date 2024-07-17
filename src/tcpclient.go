@@ -100,8 +100,8 @@ func (tc *TCPClient) receiveOperations() {
 		if sig.BatchID == tc.BatchID+1 && len(sig.Mos) == sig.Count {
 			for _, oper := range sig.Mos {
 				tc.moCh <- oper
-				tc.metricCh <- MetricUnit{Name: MetricTCPClientReceiveOperations, Value: 1}
 			}
+			tc.metricCh <- MetricUnit{Name: MetricTCPClientReceiveOperations, Value: uint(sig.Count)}
 			tc.Logger.Debug("Receive Batch: %d, mo count: %d from tcp server.", sig.BatchID, len(sig.Mos))
 
 			if err := tc.encoder.Encode(Signal2{BatchID: sig.BatchID}); err != nil {
