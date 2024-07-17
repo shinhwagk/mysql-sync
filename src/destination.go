@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 )
 
 func NewDestination(msc MysqlSyncConfig, destName string) *Destination {
@@ -60,7 +59,7 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) {
 			dest.Logger.Error("prometheus export port %d.", destConf.Prometheus.ExportPort)
 			return
 		}
-		metricDirector := NewMetricDestDirector(destConf.LogLevel, fmt.Sprintf("0.0.0.0:%d", promExportPort), "destination", replName, dest.Name, metricCh)
+		metricDirector := NewMetricDestDirector(destConf.LogLevel, promExportPort, "destination", replName, dest.Name, metricCh)
 		metricDirector.Start(ctx)
 	}()
 

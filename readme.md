@@ -34,7 +34,7 @@ replication:
   settings: # option
     cache: 1000
   prom: # option
-    export: 9091
+    export: 9091 # default 9092
 destination:
   tcpaddr: "127.0.0.1:9998"
   cache: 1000 # option
@@ -53,7 +53,7 @@ destination:
           ignore_db: # option
         gtidsets: ""
       prom: # option
-        export: 9092
+        export: 9092 # default 9092
       loglevel: 1
     db3:
       mysql:

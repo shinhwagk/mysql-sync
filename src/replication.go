@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 )
 
 func NewReplication(msc MysqlSyncConfig) *Replication {
@@ -59,7 +58,7 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 			repl.Logger.Error("prometheus export port %d.", repl.msc.Replication.Prometheus.ExportPort)
 			return
 		}
-		metricDirector := NewMetricReplDirector(repl.msc.Replication.LogLevel, fmt.Sprintf("0.0.0.0:%d", promExportPort), "replication", repl.msc.Replication.Name, metricCh)
+		metricDirector := NewMetricReplDirector(repl.msc.Replication.LogLevel, promExportPort, "replication", repl.msc.Replication.Name, metricCh)
 		metricDirector.Start(ctx)
 	}()
 

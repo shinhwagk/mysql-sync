@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"sort"
 
@@ -52,44 +53,44 @@ type PrometheusMetric struct {
 }
 
 type MetricDirector struct {
-	Name          string
-	Logger        *Logger
-	metrics       map[string]*PrometheusMetric
-	metricCh      <-chan MetricUnit
-	PromAddr      string
-	PromNamespace string
-	PromSubsystem string
-	PromRegistry  *prometheus.Registry
-	ReplName      string
-	DestName      *string
+	Name           string
+	Logger         *Logger
+	metrics        map[string]*PrometheusMetric
+	metricCh       <-chan MetricUnit
+	PromExportPort int
+	PromNamespace  string
+	PromSubsystem  string
+	PromRegistry   *prometheus.Registry
+	ReplName       string
+	DestName       *string
 }
 
-func NewMetricReplDirector(logLevel int, promAddr string, subsystem string, replName string, metricCh <-chan MetricUnit) *MetricDirector {
+func NewMetricReplDirector(logLevel int, promExportPort int, subsystem string, replName string, metricCh <-chan MetricUnit) *MetricDirector {
 	return &MetricDirector{
-		Name:          "replication",
-		Logger:        NewLogger(logLevel, "metric-director"),
-		metrics:       make(map[string]*PrometheusMetric),
-		metricCh:      metricCh,
-		PromAddr:      promAddr,
-		PromNamespace: "mysqlsync",
-		PromSubsystem: subsystem,
-		PromRegistry:  prometheus.NewRegistry(),
-		ReplName:      replName,
+		Name:           "replication",
+		Logger:         NewLogger(logLevel, "metric-director"),
+		metrics:        make(map[string]*PrometheusMetric),
+		metricCh:       metricCh,
+		PromExportPort: promExportPort,
+		PromNamespace:  "mysqlsync",
+		PromSubsystem:  subsystem,
+		PromRegistry:   prometheus.NewRegistry(),
+		ReplName:       replName,
 	}
 }
 
-func NewMetricDestDirector(logLevel int, promAddr string, subsystem string, replName string, destName string, metricCh <-chan MetricUnit) *MetricDirector {
+func NewMetricDestDirector(logLevel int, promExportPort int, subsystem string, replName string, destName string, metricCh <-chan MetricUnit) *MetricDirector {
 	return &MetricDirector{
-		Name:          "destination",
-		Logger:        NewLogger(logLevel, "metric director"),
-		metrics:       make(map[string]*PrometheusMetric),
-		metricCh:      metricCh,
-		PromAddr:      promAddr,
-		PromNamespace: "mysqlsync",
-		PromSubsystem: subsystem,
-		PromRegistry:  prometheus.NewRegistry(),
-		ReplName:      replName,
-		DestName:      &destName,
+		Name:           "destination",
+		Logger:         NewLogger(logLevel, "metric director"),
+		metrics:        make(map[string]*PrometheusMetric),
+		metricCh:       metricCh,
+		PromExportPort: promExportPort,
+		PromNamespace:  "mysqlsync",
+		PromSubsystem:  subsystem,
+		PromRegistry:   prometheus.NewRegistry(),
+		ReplName:       replName,
+		DestName:       &destName,
 	}
 }
 
@@ -140,7 +141,7 @@ func (md *MetricDirector) Start(ctx context.Context) {
 	defer md.Logger.Info("Closed.")
 
 	go func() {
-		md.StartHTTPServer(ctx, md.PromAddr)
+		md.StartHTTPServer(ctx, fmt.Sprintf("0.0.0.0:%d", md.PromExportPort))
 	}()
 
 	for {
