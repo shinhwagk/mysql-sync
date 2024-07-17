@@ -57,6 +57,7 @@ type MetricDirector struct {
 	Logger        *Logger
 	metrics       map[string]*PrometheusMetric
 	metricCh      <-chan MetricUnit
+	PromAddr      string
 	PromNamespace string
 	PromSubsystem string
 	PromRegistry  *prometheus.Registry
@@ -64,12 +65,13 @@ type MetricDirector struct {
 	DestName      *string
 }
 
-func NewMetricReplDirector(logLevel int, subsystem string, replName string, metricCh <-chan MetricUnit) *MetricDirector {
+func NewMetricReplDirector(logLevel int, promAddr string, subsystem string, replName string, metricCh <-chan MetricUnit) *MetricDirector {
 	return &MetricDirector{
 		Name:          "replication",
 		Logger:        NewLogger(logLevel, "metric-director"),
 		metrics:       make(map[string]*PrometheusMetric),
 		metricCh:      metricCh,
+		PromAddr:      promAddr,
 		PromNamespace: "mysqlsync",
 		PromSubsystem: subsystem,
 		PromRegistry:  prometheus.NewRegistry(),
@@ -77,12 +79,13 @@ func NewMetricReplDirector(logLevel int, subsystem string, replName string, metr
 	}
 }
 
-func NewMetricDestDirector(logLevel int, subsystem string, replName string, destName string, metricCh <-chan MetricUnit) *MetricDirector {
+func NewMetricDestDirector(logLevel int, promAddr string, subsystem string, replName string, destName string, metricCh <-chan MetricUnit) *MetricDirector {
 	return &MetricDirector{
 		Name:          "destination",
 		Logger:        NewLogger(logLevel, "metric director"),
 		metrics:       make(map[string]*PrometheusMetric),
 		metricCh:      metricCh,
+		PromAddr:      promAddr,
 		PromNamespace: "mysqlsync",
 		PromSubsystem: subsystem,
 		PromRegistry:  prometheus.NewRegistry(),
@@ -133,12 +136,12 @@ func (md *MetricDirector) set(name string, value uint, labelPair map[string]stri
 	gauge.WithLabelValues(labelValues...).Set(float64(value))
 }
 
-func (md *MetricDirector) Start(ctx context.Context, addr string) {
+func (md *MetricDirector) Start(ctx context.Context) {
 	md.Logger.Info("Started.")
 	defer md.Logger.Info("Closed.")
 
 	go func() {
-		md.StartHTTPServer(ctx, addr)
+		md.StartHTTPServer(ctx, md.PromAddr)
 	}()
 
 	for {

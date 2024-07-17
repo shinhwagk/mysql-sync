@@ -63,8 +63,8 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) {
 				return
 			}
 		}
-		metricDirector := NewMetricDestDirector(destConf.LogLevel, "destination", replName, dest.Name, metricCh)
-		metricDirector.Start(ctx, fmt.Sprintf("0.0.0.0:%d", promExportPort))
+		metricDirector := NewMetricDestDirector(destConf.LogLevel, fmt.Sprintf("0.0.0.0:%d", promExportPort), "destination", replName, dest.Name, metricCh)
+		metricDirector.Start(ctx)
 	}()
 
 	go func() {

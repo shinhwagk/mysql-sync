@@ -60,8 +60,8 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 				return
 			}
 		}
-		metricDirector := NewMetricReplDirector(repl.msc.Replication.LogLevel, "replication", repl.msc.Replication.Name, metricCh)
-		metricDirector.Start(ctx, fmt.Sprintf("0.0.0.0:%d", promExportPort))
+		metricDirector := NewMetricReplDirector(repl.msc.Replication.LogLevel, fmt.Sprintf("0.0.0.0:%d", promExportPort), "replication", repl.msc.Replication.Name, metricCh)
+		metricDirector.Start(ctx)
 		cancel()
 		cancelMd()
 	}()

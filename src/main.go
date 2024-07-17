@@ -26,7 +26,6 @@ func main() {
 
 	if *repl && *dest {
 		logger.Error("--repl and --dest cannot be used together.")
-		os.Exit(1)
 	} else if *repl {
 		replication := NewReplication(*config)
 		replication.start(ctx, cancel)
@@ -34,12 +33,13 @@ func main() {
 	} else if *dest {
 		if *destName == "" {
 			logger.Error("'name' parameter is required when 'dest' is specified.")
-			os.Exit(1)
+		} else {
+			destination := NewDestination(*config, *destName)
+			destination.Start(ctx, cancel)
+			cancel()
 		}
-		destination := NewDestination(*config, *destName)
-		destination.Start(ctx, cancel)
-		cancel()
 	} else {
 		logger.Info("No specific mode activated")
 	}
+	os.Exit(1)
 }
