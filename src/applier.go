@@ -16,7 +16,7 @@ const (
 	StateGTID  = "gtid"
 )
 
-func NewMysqlApplier(logLevel int, gtidSets *GtidSets, mysqlClient *MysqlClient, replicate *Replicate, mergeCommit bool, metricCh chan<- MetricUnit) *MysqlApplier {
+func NewMysqlApplier(logLevel int, gtidSets *GtidSets, mysqlClient *MysqlClient, replicate *Replicate, metricCh chan<- MetricUnit) *MysqlApplier {
 	return &MysqlApplier{
 		Logger:                  NewLogger(logLevel, "mysql-applier"),
 		GtidSets:                gtidSets,
@@ -29,7 +29,6 @@ func NewMysqlApplier(logLevel int, gtidSets *GtidSets, mysqlClient *MysqlClient,
 		metricCh:                metricCh,
 		GtidSkip:                false,
 		State:                   StateNULL,
-		MergeCommit:             mergeCommit,
 	}
 }
 
@@ -45,7 +44,6 @@ type MysqlApplier struct {
 	metricCh                chan<- MetricUnit
 	GtidSkip                bool
 	State                   string
-	MergeCommit             bool
 }
 
 func (ma *MysqlApplier) ReplicateNotExecute(schemaContext string, tableName string) bool {
@@ -79,6 +77,10 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				if ma.State == StateGTID {
 					ma.State = StateDDL
 					if !(ma.GtidSkip || ma.ReplicateNotExecute(op.Schema, "")) {
+						// Submit dml before ddl execution
+						if err := ma.MergeCommit(); err != nil {
+							return
+						}
 						if err := ma.OnDDLDatabase(op); err != nil {
 							return
 						}
@@ -94,6 +96,9 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				if ma.State == StateGTID {
 					ma.State = StateDDL
 					if !(ma.GtidSkip || ma.ReplicateNotExecute(op.Schema, op.Table)) {
+						if err := ma.MergeCommit(); err != nil {
+							return
+						}
 						if err := ma.OnDDLTable(op); err != nil {
 							return
 						}
@@ -141,8 +146,8 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					if err := ma.OnDMLDelete(op); err != nil {
 						return
 					}
-					ma.metricCh <- MetricUnit{Name: MetricDestDMLDeleteTimes, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 					ma.metricCh <- MetricUnit{Name: MetricDestDMLInsertTimes, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
+					ma.metricCh <- MetricUnit{Name: MetricDestDMLDeleteTimes, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 					ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdateTimes, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 				} else {
 					ma.Logger.Error("execute DML: last state is '%s'", ma.State)
@@ -169,9 +174,9 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					if err := ma.OnDMLUpdate(op); err != nil {
 						return
 					}
-					ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdateTimes, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 					ma.metricCh <- MetricUnit{Name: MetricDestDMLInsertTimes, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 					ma.metricCh <- MetricUnit{Name: MetricDestDMLDeleteTimes, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
+					ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdateTimes, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 				} else {
 					ma.Logger.Error("execute DML: last state is '%s'", ma.State)
 					return
@@ -180,6 +185,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				ma.LastCheckpointTimestamp = op.Timestamp
 				if ma.State == StateDML || ma.State == StateBEGIN {
 					ma.State = StateXID
+					ma.AllowCommit = true
 					if err := ma.OnXID(op); err != nil {
 						return
 					}
@@ -210,8 +216,12 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					if ma.GtidSkip {
 						continue
 					}
-					if err := ma.OnBegin(op); err != nil {
-						return
+					if !ma.AllowCommit {
+						if err := ma.OnBegin(op); err != nil {
+							return
+						}
+					} else {
+						ma.Logger.Debug("Skip begin because merge commit.")
 					}
 				} else {
 					ma.Logger.Error("operation(begin): last state is '%s'", ma.State)
@@ -279,10 +289,6 @@ func (ma *MysqlApplier) OnDMLUpdate(op MysqlOperationDMLUpdate) error {
 }
 
 func (ma *MysqlApplier) OnDDLDatabase(op MysqlOperationDDLDatabase) error {
-	if err := ma.Commit(); err != nil {
-		return err
-	}
-
 	ma.Logger.Debug("OnDDLDatabase -- query: '%s'", op.Query)
 
 	if err := ma.mysqlClient.ExecuteOnDatabase(op.Query); err != nil {
@@ -294,10 +300,6 @@ func (ma *MysqlApplier) OnDDLDatabase(op MysqlOperationDDLDatabase) error {
 }
 
 func (ma *MysqlApplier) OnDDLTable(op MysqlOperationDDLTable) error {
-	if err := ma.Commit(); err != nil {
-		return err
-	}
-
 	ma.Logger.Debug("OnDDLTable -- SchemaContext: %s, Database: %s, Query: %s", op.SchemaContext, op.Schema, op.Query)
 
 	if err := ma.mysqlClient.ExecuteOnTable(op.SchemaContext, op.Query); err != nil {
@@ -310,25 +312,15 @@ func (ma *MysqlApplier) OnDDLTable(op MysqlOperationDDLTable) error {
 
 func (ma *MysqlApplier) OnXID(op MysqlOperationXid) error {
 	ma.Logger.Debug("OnXID")
-	ma.AllowCommit = true
-
-	if !ma.MergeCommit {
-		if err := ma.Commit(); err != nil {
-			return err
-		}
-	}
 
 	return nil
 }
 
 func (ma *MysqlApplier) OnBegin(op MysqlOperationBegin) error {
 	ma.Logger.Debug("OnBegin")
-	if !ma.AllowCommit {
-		if err := ma.mysqlClient.Begin(); err != nil {
-			return err
-		}
-	} else {
-		ma.Logger.Debug("Skip begin because merge commit.")
+
+	if err := ma.mysqlClient.Begin(); err != nil {
+		return err
 	}
 
 	return nil
@@ -350,7 +342,7 @@ func (ma *MysqlApplier) OnGTID(op MysqlOperationGTID) error {
 	}
 
 	if ma.LastCommitted != op.LastCommitted {
-		if err := ma.Commit(); err != nil {
+		if err := ma.MergeCommit(); err != nil {
 			return err
 		}
 		ma.LastCommitted = op.LastCommitted
@@ -366,19 +358,19 @@ func (ma *MysqlApplier) OnGTID(op MysqlOperationGTID) error {
 
 func (ma *MysqlApplier) OnHeartbeat(op MysqlOperationHeartbeat) error {
 	ma.Logger.Debug("OnHeartbeat")
-	if err := ma.Commit(); err != nil {
+	if err := ma.MergeCommit(); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (ma *MysqlApplier) Commit() error {
+func (ma *MysqlApplier) MergeCommit() error {
 	if ma.AllowCommit {
-		ma.Logger.Debug("MergeCommit")
 		if err := ma.mysqlClient.Commit(); err != nil {
-			ma.Logger.Error("MergeCommit: %", err)
+			ma.Logger.Error("Merge commit: %", err)
 			return err
 		}
+		ma.Logger.Debug("Merge commit complate.")
 
 		ma.Checkpoint()
 

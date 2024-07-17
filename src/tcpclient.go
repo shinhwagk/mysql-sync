@@ -42,7 +42,7 @@ type TCPClient struct {
 }
 
 func NewTCPClient(logLevel int, serverAddress string, destName string, moCh chan<- MysqlOperation, metricCh chan<- MetricUnit, startGtidSets string) (*TCPClient, error) {
-	logger := NewLogger(logLevel, "tcp client")
+	logger := NewLogger(logLevel, "tcp-client")
 	conn, err := net.Dial("tcp", serverAddress)
 	if err != nil {
 		logger.Error("Connection: %s", err.Error())

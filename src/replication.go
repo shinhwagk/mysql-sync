@@ -25,6 +25,7 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 	defer close(metricCh)
 
 	destStartGtidSetsStrCh := make(chan DestStartGtidSetsRangeStr)
+	defer close(destStartGtidSetsStrCh)
 
 	cacheSize := 1000
 	if repl.msc.Replication.Settings != nil && repl.msc.Replication.Settings.CacheSize > cacheSize {
@@ -77,25 +78,27 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 		destGtidSetss := make(map[string]map[string]uint)
 		gtidSetss := make([]map[string]uint, 0, len(repl.msc.Destination.Destinations))
 		for i := 0; i < len(destNames); i++ {
-			gtidSetsStr := <-destStartGtidSetsStrCh
-			if gss, err := GetGtidSetsMapFromGtidSetsRangeStr(gtidSetsStr.GtidSetsStr); err != nil {
-				repl.Logger.Error("Convert gtidsets map to str error: %s", err)
+			select {
+			case <-ctx.Done():
 				return
-			} else {
-				if _, exists := destGtidSetss[gtidSetsStr.DestName]; exists {
-					repl.Logger.Error("Dest '%s' gtidset exist '%#v'.", gtidSetsStr.DestName, gss)
+			case gtidSetsStr := <-destStartGtidSetsStrCh:
+				if gss, err := GetGtidSetsMapFromGtidSetsRangeStr(gtidSetsStr.GtidSetsStr); err != nil {
+					repl.Logger.Error("Convert gtidsets map to str error: %s", err)
 					return
 				} else {
-					destGtidSetss[gtidSetsStr.DestName] = gss
-					gtidSetss = append(gtidSetss, gss)
+					if _, exists := destGtidSetss[gtidSetsStr.DestName]; exists {
+						repl.Logger.Error("Dest '%s' gtidset exist '%#v'.", gtidSetsStr.DestName, gss)
+						return
+					} else {
+						destGtidSetss[gtidSetsStr.DestName] = gss
+						gtidSetss = append(gtidSetss, gss)
+					}
 				}
+				repl.Logger.Info("Receive init client info: %s@%s", gtidSetsStr.DestName, gtidSetsStr.GtidSetsStr)
 			}
-			repl.Logger.Info("Receive init client info: %s@%s", gtidSetsStr.DestName, gtidSetsStr.GtidSetsStr)
 		}
-
 		initGtidSetsRangeStr := GetGtidSetsRangeStrFromGtidSetsMap(MergeGtidSetss(gtidSetss))
 		repl.Logger.Info("Init gtidsets range string:'%s'", initGtidSetsRangeStr)
-		close(destStartGtidSetsStrCh)
 
 		extract := NewBinlogExtract(repl.msc.Replication.LogLevel, repl.msc.Replication, initGtidSetsRangeStr, moCh, metricCh)
 		extract.Start(ctx)

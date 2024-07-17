@@ -76,7 +76,7 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) {
 			return
 		}
 		defer mysqlClient.Close()
-		mysqlApplier := NewMysqlApplier(destConf.LogLevel, gtidSets, mysqlClient, replicateFilter, destConf.Sync.MergeCommit, metricCh)
+		mysqlApplier := NewMysqlApplier(destConf.LogLevel, gtidSets, mysqlClient, replicateFilter, metricCh)
 		mysqlApplier.Start(ctx, moCh)
 
 	}()

@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 
@@ -70,7 +69,7 @@ func (gss *GtidSets) QueryGtidSetsMapFromHJDB(replName string, destName string) 
 	kvPath := fmt.Sprintf("mysqlsync/%s/%s/gtidsets", gss.ReplName, gss.DestName)
 	p, _, err := gss.ConsulKV.Get(kvPath, nil)
 	if err != nil {
-		gss.Logger.Error("get consul kv: %s", err)
+		gss.Logger.Error("Read consul kv: %s", err)
 		return nil, err
 	}
 
@@ -89,10 +88,8 @@ func (gss *GtidSets) QueryGtidSetsMapFromHJDB(replName string, destName string) 
 func (gss *GtidSets) PersistGtidSetsMaptToHJDB() error {
 	kvPath := fmt.Sprintf("mysqlsync/%s/%s/gtidsets", gss.ReplName, gss.DestName)
 	p := &api.KVPair{Key: kvPath, Value: []byte(GetGtidSetsRangeStrFromGtidSetsMap(gss.GtidSetsMap))}
-
-	_, err := gss.ConsulKV.Put(p, nil)
-	if err != nil {
-		log.Fatalf("写入Consul键值对失败: %s", err)
+	if _, err := gss.ConsulKV.Put(p, nil); err != nil {
+		gss.Logger.Error("Write consul kv: %s", err)
 		return err
 	}
 	return nil

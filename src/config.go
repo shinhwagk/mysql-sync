@@ -47,7 +47,6 @@ type DestinationMysqlConfig struct {
 type DestinationSyncConfig struct {
 	Replicate            *DestinationReplicateConfig `yaml:"replicate"`
 	InitGtidSetsRangeStr string                      `yaml:"gtidsets"`
-	MergeCommit          bool                        `yaml:"merge_commit"`
 }
 
 type PrometheusConfig struct {
