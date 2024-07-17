@@ -19,7 +19,7 @@ destination:
       mysql:
         dsn: "root:root_password@tcp(db2:3306)/?autocommit=false&time_zone='%2B00:00'"
         skip_errors: 1007,1008,1050,1051,1054,1060,1061,1068,1091,1146
-        session_params: 
+        session_params:
           foreign_key_checks: off
       sync:
         replicate:

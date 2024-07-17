@@ -34,6 +34,7 @@ func NewBinlogExtract(logLevel int, config ReplicationConfig, startSyncGtidsets 
 		Charset:         "utf8mb4",
 		HeartbeatPeriod: time.Millisecond * 100,
 		ReadTimeout:     time.Minute * 10,
+		EventCacheCount: 10,
 	}
 
 	return &BinlogExtract{
