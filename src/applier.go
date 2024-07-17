@@ -75,7 +75,6 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				ma.Logger.Info("mysql operation channel closed.")
 				return
 			}
-			ma.metricCh <- MetricUnit{Name: MetricDestApplierOperations, Value: 1}
 			switch op := oper.(type) {
 			case MysqlOperationDDLDatabase:
 				ma.LastCheckpointTimestamp = op.Timestamp
@@ -225,6 +224,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				return
 			}
 			ma.metricCh <- MetricUnit{Name: MetricDestApplierDelay, Value: uint(time.Now().Unix() - int64(oper.GetTimestamp()))}
+			ma.metricCh <- MetricUnit{Name: MetricDestApplierOperations, Value: 1}
 		}
 	}
 }

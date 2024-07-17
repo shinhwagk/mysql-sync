@@ -20,7 +20,7 @@ const (
 	MetricDestDDLTableTimes
 	MetricDestTrx
 	MetricDestMergeTrx
-	MetricExtractOperations
+	MetricDestApplierOperations
 
 	MetricTCPServerSendOperations
 	MetricTCPServerOutgoing
@@ -31,9 +31,9 @@ const (
 	MetricReplDMLDeleteTimes
 	MetricReplDDLDatabaseTimes
 	MetricReplDDLTableTimes
+	MetricReplExtractOperations
 	MetricTCPServerSendDelay
 	MetricReplTrx
-	MetricDestApplierOperations
 	// MetricDestApplierSkipOperations
 	MetricTCPClientReceiveOperations
 )
@@ -183,7 +183,7 @@ func (md *MetricDirector) Start(ctx context.Context) {
 				md.set("tcp_server_send_delay", metric.Value, metric.LabelPair)
 			case MetricReplTrx:
 				md.inc("trx", metric.Value, metric.LabelPair)
-			case MetricExtractOperations:
+			case MetricReplExtractOperations:
 				md.inc("extract_operations", metric.Value, metric.LabelPair)
 			case MetricTCPServerOutgoing:
 				md.inc("tcp_server_outgoing_bytes", metric.Value, metric.LabelPair)
