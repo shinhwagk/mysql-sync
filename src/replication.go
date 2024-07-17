@@ -99,8 +99,8 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 		repl.Logger.Info("Init gtidsets range string:'%s'", initGtidSetsRangeStr)
 		close(destStartGtidSetsStrCh)
 
-		extract := NewBinlogExtract(repl.msc.Replication.LogLevel, repl.msc.Replication, moCh, metricCh)
-		extract.Start(ctx, initGtidSetsRangeStr)
+		extract := NewBinlogExtract(repl.msc.Replication.LogLevel, repl.msc.Replication, initGtidSetsRangeStr, moCh, metricCh)
+		extract.Start(ctx)
 	}()
 
 	<-ctxMd.Done()

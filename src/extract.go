@@ -17,13 +17,13 @@ import (
 
 type BinlogExtract struct {
 	Logger             *Logger
-	binlogSyncer       *replication.BinlogSyncer
 	binlogSyncerConfig replication.BinlogSyncerConfig
 	moCh               chan<- MysqlOperation
 	metricCh           chan<- MetricUnit
+	StartSyncGtidsets  string
 }
 
-func NewBinlogExtract(logLevel int, config ReplicationConfig, moCh chan<- MysqlOperation, metricCh chan<- MetricUnit) *BinlogExtract {
+func NewBinlogExtract(logLevel int, config ReplicationConfig, startSyncGtidsets string, moCh chan<- MysqlOperation, metricCh chan<- MetricUnit) *BinlogExtract {
 	cfg := replication.BinlogSyncerConfig{
 		ServerID:        uint32(config.ServerID),
 		Flavor:          "mysql",
@@ -38,10 +38,10 @@ func NewBinlogExtract(logLevel int, config ReplicationConfig, moCh chan<- MysqlO
 
 	return &BinlogExtract{
 		Logger:             NewLogger(config.LogLevel, "extract"),
-		binlogSyncer:       nil,
 		binlogSyncerConfig: cfg,
 		moCh:               moCh,
 		metricCh:           metricCh,
+		StartSyncGtidsets:  startSyncGtidsets,
 	}
 }
 
@@ -53,36 +53,31 @@ func (bext *BinlogExtract) toMoCh(mo MysqlOperation) {
 	bext.metricCh <- MetricUnit{Name: MetricReplDelay, Value: uint(time.Now().Unix() - int64(mo.GetTimestamp()))}
 }
 
-func (bext *BinlogExtract) Start(ctx context.Context, gtidsets string) {
+func (bext *BinlogExtract) Start(ctx context.Context) {
 	bext.Logger.Info("Started.")
 	defer bext.Logger.Info("Closed.")
 
-	if bext.binlogSyncer == nil {
-		bext.binlogSyncer = replication.NewBinlogSyncer(bext.binlogSyncerConfig)
-	}
-
-	gtidSet, err := mysql.ParseGTIDSet("mysql", gtidsets)
+	gtidSet, err := mysql.ParseGTIDSet("mysql", bext.StartSyncGtidsets)
 	if err != nil {
 		bext.Logger.Error("ParseGTIDSet: %s", err)
 		return
 	}
 
-	bext.Logger.Info("Start from gtidsets: '%s'.", gtidSet.String())
+	binlogSyncer := replication.NewBinlogSyncer(bext.binlogSyncerConfig)
+	bext.Logger.Info("binlogSyncer ready.")
 
-	streamer, err := bext.binlogSyncer.StartSyncGTID(gtidSet)
+	streamer, err := binlogSyncer.StartSyncGTID(gtidSet)
 	if err != nil {
-		bext.Logger.Error("start sync: %s", err)
+		bext.Logger.Error("Start streamer: %s", err)
 		return
 	}
-
-	bext.Logger.Info("binlogSyncer ready.")
+	bext.Logger.Info("Start streamer from gtidsets: '%s'.", gtidSet.String())
 
 	for {
 		ev, err := streamer.GetEvent(ctx)
 
 		if err != nil {
-			bext.binlogSyncer.Close()
-			bext.binlogSyncer = nil
+			binlogSyncer.Close()
 			if err == context.DeadlineExceeded {
 				bext.Logger.Error("Event fetch timed out: %s", err)
 				return
