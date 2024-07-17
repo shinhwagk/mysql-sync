@@ -49,6 +49,8 @@ destination:
         replicate: # option
           do_db: test
           ignore_tab: test.year_table
+          do_table: # option
+          ignore_db: # option
         gtidsets: ""
       prom: # option
         export: 9092
