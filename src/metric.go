@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"sort"
-	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -146,7 +145,7 @@ func (md *MetricDirector) Start(ctx context.Context) {
 
 	for {
 		select {
-		case <-time.After(time.Millisecond * 100):
+		// case <-time.After(time.Millisecond * 100):
 		case <-ctx.Done():
 			md.Logger.Info("ctx done signal received.")
 			return

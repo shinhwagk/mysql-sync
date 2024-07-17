@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"time"
 )
 
 func NewDestination(msc MysqlSyncConfig, destName string) *Destination {
@@ -100,7 +99,7 @@ Loop:
 		case <-metricCh:
 		case <-ctxMa.Done():
 			break Loop
-		case <-time.After(time.Millisecond * 10):
+			// case <-time.After(time.Millisecond * 10):
 		}
 	}
 
@@ -110,7 +109,7 @@ Loop:
 		case <-metricCh:
 		case <-ctxTc.Done():
 			return
-		case <-time.After(time.Millisecond * 10):
+			// case <-time.After(time.Millisecond * 10):
 		}
 	}
 }

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"time"
 )
 
 func NewReplication(msc MysqlSyncConfig) *Replication {
@@ -35,13 +34,12 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 	moCh := make(chan MysqlOperation, cacheSize)
 	defer close(moCh)
 
-	destNames := []string{}
-
 	if len(repl.msc.Destination.Destinations) == 0 {
-		repl.Logger.Error("dest number 0")
+		repl.Logger.Error("dest number is 0.")
 		return
 	}
 
+	destNames := []string{}
 	for destName := range repl.msc.Destination.Destinations {
 		destNames = append(destNames, destName)
 	}
@@ -110,7 +108,7 @@ Loop:
 		case <-metricCh:
 		case <-ctxTs.Done():
 			break Loop
-		case <-time.After(time.Millisecond * 10):
+			// case <-time.After(time.Millisecond * 10):
 		}
 	}
 
@@ -120,7 +118,7 @@ Loop:
 		case <-metricCh:
 		case <-ctxEx.Done():
 			return
-		case <-time.After(time.Millisecond * 10):
+			// case <-time.After(time.Millisecond * 10):
 		}
 	}
 }

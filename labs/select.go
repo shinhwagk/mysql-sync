@@ -6,52 +6,44 @@ import (
 	"time"
 )
 
-func Start(ctx context.Context, xxx chan string) {
-	timer := time.NewTimer(100 * time.Millisecond)
-	for {
-		fmt.Println("xxxxx")
-		select {
-
-		case <-ctx.Done():
-			return
-		case x, ok := <-xxx:
-			if !ok {
-				return
-			}
-			fmt.Println(ok)
-			fmt.Println(x)
-			timer.Reset(2 * time.Second)
-
-		case <-timer.C:
-			timer.Reset(2 * time.Second)
-			fmt.Println("No data received for 5 minutes, stopping.")
-		}
-
-	}
-
-}
 func main() {
-
-	mdCtx, _ := context.WithCancel(context.Background())
-
-	sch := make(chan string)
-
-	go func() {
-		Start(mdCtx, sch)
-		fmt.Println("stop")
-	}()
+	moCh := make(chan int)
+	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
 		for {
-			sch <- "yyyyyy"
-			time.Sleep(time.Second * 11)
+			fmt.Println("assssssss")
+			select {
+			case oper, ok := <-moCh:
+				if !ok {
+					fmt.Println("moCh closed")
+					return
+				}
+				fmt.Println("Received from moCh:", oper)
+			case <-ctx.Done():
+				fmt.Println("Context cancelled")
+				return
+			}
+			fmt.Println("xxxxxxxxx")
 		}
 	}()
 
-	time.Sleep(time.Second * 101)
-	close(sch)
-	fmt.Println("xxx1111xx")
+	// Simulate sending data to moCh
+	go func() {
+		time.Sleep(11 * time.Second)
+		moCh <- 1
+		time.Sleep(2 * time.Second)
+		moCh <- 2
 
-	time.Sleep(time.Second * 1000)
+		// Optionally cancel the context to see context cancellation handling
+		// cancel()
 
+		// Close the channel after use
+		time.Sleep(3 * time.Second)
+		close(moCh)
+	}()
+
+	// Wait to see the output
+	time.Sleep(10 * time.Second)
+	cancel() // Clean up the context
 }

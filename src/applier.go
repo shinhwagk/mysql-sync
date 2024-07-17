@@ -56,7 +56,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 
 	for {
 		select {
-		case <-time.After(time.Millisecond * 100):
+		// case <-time.After(time.Millisecond * 100):
 		case <-ctx.Done():
 			ma.Logger.Info("ctx done signal received.")
 			if err := ma.mysqlClient.Rollback(); err != nil {
@@ -70,11 +70,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				ma.mysqlClient.Logger.Info("mysql connect close complate.")
 			}
 			return
-		case oper, ok := <-moCh:
-			if !ok {
-				ma.Logger.Info("mysql operation channel closed.")
-				return
-			}
+		case oper := <-moCh:
 			switch op := oper.(type) {
 			case MysqlOperationDDLDatabase:
 				ma.LastCheckpointTimestamp = op.Timestamp
