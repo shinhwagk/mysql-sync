@@ -31,26 +31,26 @@ replication:
   user: "root"
   password: "root_password"
   loglevel: 1
-  settings:
+  settings: # option
     cache: 1000
-  prom:
+  prom: # option
     export: 9091
 destination:
   tcpaddr: "127.0.0.1:9998"
-  cache: 1000
+  cache: 1000 # option
   destinations:
-    db2: # custom dest name
+    db2:
       mysql:
         dsn: "root:root_password@tcp(db2:3306)/"
-        skip_errors: 1007,1008,1050,1051,1054,1060,1061,1068,1091,1146
-        session_params: # map[string]string
+        skip_errors: 1007,1008,1050,1051,1054,1060,1061,1068,1091,1146 # option
+        session_params: # option
           foreign_key_checks: off
       sync:
-        replicate:
+        replicate: # option
           do_db: test
           ignore_tab: test.year_table
         gtidsets: ""
-      prom:
+      prom: # option
         export: 9092
       loglevel: 1
     db3:
