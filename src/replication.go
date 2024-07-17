@@ -26,10 +26,7 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 	destStartGtidSetsStrCh := make(chan DestStartGtidSetsRangeStr)
 	defer close(destStartGtidSetsStrCh)
 
-	cacheSize := 1000
-	if repl.msc.Replication.Settings.CacheSize > cacheSize {
-		cacheSize = repl.msc.Replication.Settings.CacheSize
-	}
+	cacheSize := max(repl.msc.Replication.Settings.CacheSize, 1000)
 	repl.Logger.Info("Settings cache size: %d", cacheSize)
 	moCh := make(chan MysqlOperation, cacheSize)
 	defer close(moCh)

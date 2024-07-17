@@ -31,10 +31,7 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) {
 	metricCh := make(chan MetricUnit)
 	defer close(metricCh)
 
-	cacheSize := 1000
-	if dest.msc.Destination.CacheSize > cacheSize {
-		cacheSize = dest.msc.Destination.CacheSize
-	}
+	cacheSize := max(dest.msc.Destination.CacheSize, 1000)
 	moCh := make(chan MysqlOperation, cacheSize)
 	defer close(moCh)
 
