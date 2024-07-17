@@ -113,7 +113,7 @@ func (tsc *TCPServerClient) receivedSignal() {
 		var ack Signal2
 		if err := tsc.decoder.Decode(&ack); err != nil {
 			if err == io.EOF {
-				tsc.Logger.Info("Tcp client close.")
+				tsc.Logger.Info("Tcp conn close.")
 			} else {
 				tsc.Logger.Error("Decoding message: %s", err.Error())
 			}
