@@ -16,7 +16,7 @@ const (
 	StateGTID  = "gtid"
 )
 
-func NewMysqlApplier(logLevel int, gtidSets *GtidSets, mysqlClient *MysqlClient, replicate *Replicate, metricCh chan<- MetricUnit) *MysqlApplier {
+func NewMysqlApplier(logLevel int, gtidSets *GtidSets, mysqlClient *MysqlClient, replicate *Replicate, mergeCommit bool, metricCh chan<- MetricUnit) *MysqlApplier {
 	return &MysqlApplier{
 		Logger:                  NewLogger(logLevel, "mysql-applier"),
 		GtidSets:                gtidSets,
@@ -29,6 +29,7 @@ func NewMysqlApplier(logLevel int, gtidSets *GtidSets, mysqlClient *MysqlClient,
 		metricCh:                metricCh,
 		GtidSkip:                false,
 		State:                   StateNULL,
+		MergeCommit:             mergeCommit,
 	}
 }
 
@@ -44,6 +45,7 @@ type MysqlApplier struct {
 	metricCh                chan<- MetricUnit
 	GtidSkip                bool
 	State                   string
+	MergeCommit             bool
 }
 
 func (ma *MysqlApplier) ReplicateNotExecute(schemaContext string, tableName string) bool {
@@ -277,7 +279,7 @@ func (ma *MysqlApplier) OnDMLUpdate(op MysqlOperationDMLUpdate) error {
 }
 
 func (ma *MysqlApplier) OnDDLDatabase(op MysqlOperationDDLDatabase) error {
-	if err := ma.MergeCommit(); err != nil {
+	if err := ma.Commit(); err != nil {
 		return err
 	}
 
@@ -292,7 +294,7 @@ func (ma *MysqlApplier) OnDDLDatabase(op MysqlOperationDDLDatabase) error {
 }
 
 func (ma *MysqlApplier) OnDDLTable(op MysqlOperationDDLTable) error {
-	if err := ma.MergeCommit(); err != nil {
+	if err := ma.Commit(); err != nil {
 		return err
 	}
 
@@ -309,6 +311,12 @@ func (ma *MysqlApplier) OnDDLTable(op MysqlOperationDDLTable) error {
 func (ma *MysqlApplier) OnXID(op MysqlOperationXid) error {
 	ma.Logger.Debug("OnXID")
 	ma.AllowCommit = true
+
+	if !ma.MergeCommit {
+		if err := ma.Commit(); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -342,7 +350,7 @@ func (ma *MysqlApplier) OnGTID(op MysqlOperationGTID) error {
 	}
 
 	if ma.LastCommitted != op.LastCommitted {
-		if err := ma.MergeCommit(); err != nil {
+		if err := ma.Commit(); err != nil {
 			return err
 		}
 		ma.LastCommitted = op.LastCommitted
@@ -358,13 +366,13 @@ func (ma *MysqlApplier) OnGTID(op MysqlOperationGTID) error {
 
 func (ma *MysqlApplier) OnHeartbeat(op MysqlOperationHeartbeat) error {
 	ma.Logger.Debug("OnHeartbeat")
-	if err := ma.MergeCommit(); err != nil {
+	if err := ma.Commit(); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (ma *MysqlApplier) MergeCommit() error {
+func (ma *MysqlApplier) Commit() error {
 	if ma.AllowCommit {
 		ma.Logger.Debug("MergeCommit")
 		if err := ma.mysqlClient.Commit(); err != nil {

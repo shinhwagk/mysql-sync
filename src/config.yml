@@ -26,6 +26,7 @@ destination:
           do_db: test
           ignore_tab: test.year_table
         gtidsets: ""
+        # merge_commit: true
       prom:
         export: 9092
       loglevel: 1
@@ -35,6 +36,7 @@ destination:
         skip_errors: 1007,1008,1050,1051,1054,1060,1061,1068,1091,1146
       sync:
         gtidsets: ""
+        # merge_commit: true
       loglevel: 1
       prom:
         export: 9093
