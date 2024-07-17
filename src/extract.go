@@ -60,7 +60,7 @@ func (bext *BinlogExtract) Start(ctx context.Context) {
 
 	gtidSet, err := mysql.ParseGTIDSet("mysql", bext.StartSyncGtidsets)
 	if err != nil {
-		bext.Logger.Error("ParseGTIDSet: %s", err)
+		bext.Logger.Error("ParseGTIDSet: %s.", err)
 		return
 	}
 
@@ -69,7 +69,7 @@ func (bext *BinlogExtract) Start(ctx context.Context) {
 
 	streamer, err := binlogSyncer.StartSyncGTID(gtidSet)
 	if err != nil {
-		bext.Logger.Error("Start streamer: %s", err)
+		bext.Logger.Error("Start streamer: %s.", err)
 		return
 	}
 	bext.Logger.Info("Start streamer from gtidsets: '%s'.", gtidSet.String())
@@ -80,12 +80,12 @@ func (bext *BinlogExtract) Start(ctx context.Context) {
 		if err != nil {
 			binlogSyncer.Close()
 			if err == context.DeadlineExceeded {
-				bext.Logger.Error("Event fetch timed out: %s", err)
+				bext.Logger.Error("Event fetch timed out: %s.", err)
 				return
 			} else if err == context.Canceled {
 				return
 			}
-			bext.Logger.Error("error event " + err.Error())
+			bext.Logger.Error("Event %s.", err)
 			return
 		}
 
@@ -93,30 +93,20 @@ func (bext *BinlogExtract) Start(ctx context.Context) {
 		case *replication.RowsEvent:
 			switch ev.Header.EventType {
 			case replication.WRITE_ROWS_EVENTv0, replication.WRITE_ROWS_EVENTv1, replication.WRITE_ROWS_EVENTv2:
-				if err := bext.handleEventWriteRows(e, ev.Header); err != nil {
-					bext.Logger.Error("error event " + err.Error())
-					return
-				}
+				bext.handleEventWriteRows(e, ev.Header)
 			case replication.UPDATE_ROWS_EVENTv0, replication.UPDATE_ROWS_EVENTv1, replication.UPDATE_ROWS_EVENTv2:
-				if err := bext.handleEventUpdateRows(e, ev.Header); err != nil {
-					bext.Logger.Error("error event " + err.Error())
-					return
-				}
+				bext.handleEventUpdateRows(e, ev.Header)
 			case replication.DELETE_ROWS_EVENTv0, replication.DELETE_ROWS_EVENTv1, replication.DELETE_ROWS_EVENTv2:
-				if err := bext.handleEventDeleteRows(e, ev.Header); err != nil {
-					bext.Logger.Error("error event " + err.Error())
-					return
-				}
-			}
+				bext.handleEventDeleteRows(e, ev.Header)
 		case *replication.TableMapEvent:
 		case *replication.GTIDEvent:
 			if err := bext.handleEventGtid(e, ev.Header); err != nil {
-				bext.Logger.Error("error event " + err.Error())
+				bext.Logger.Error("event: %s.", err)
 				return
 			}
 		case *replication.QueryEvent:
 			if err := bext.handleQueryEvent(e, ev.Header); err != nil {
-				bext.Logger.Error("error event " + err.Error())
+				bext.Logger.Error("event: %s.", err)
 				return
 			}
 		case *replication.XIDEvent:
@@ -207,14 +197,14 @@ func (bext *BinlogExtract) handleEventUpdateRows(e *replication.RowsEvent, eh *r
 
 func (bext *BinlogExtract) handleEventGtid(e *replication.GTIDEvent, eh *replication.EventHeader) error {
 	if gtidNext, err := e.GTIDNext(); err != nil {
-		bext.Logger.Error("Retrieving GTID: %s", err.Error())
+		bext.Logger.Error("Retrieving GTID: %s.", err)
 		return err
 	} else {
 		parts := strings.Split(gtidNext.String(), ":")
 		if len(parts) == 2 {
 			xid, err := strconv.ParseInt(parts[1], 10, 64)
 			if err != nil {
-				bext.Logger.Error("Error converting string to integer: %s", err.Error())
+				bext.Logger.Error("Error converting string to integer: %s.", err)
 				return err
 			} else {
 				bext.toMoCh(MysqlOperationGTID{e.LastCommitted, eh.ServerID, eh.Timestamp, parts[0], xid})

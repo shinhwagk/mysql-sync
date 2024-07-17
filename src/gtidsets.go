@@ -15,7 +15,7 @@ func NewGtidSets(logLevel int, addr string, replName string, destName string) *G
 	config.Address = addr
 	client, err := api.NewClient(config)
 	if err != nil {
-		logger.Error("%s", err)
+		logger.Error("%s.", err)
 	}
 
 	gss := &GtidSets{
@@ -66,7 +66,7 @@ func (gss *GtidSets) InitStartupGtidSetsMap(initGtidSetsRangeStr string) error {
 func (gss *GtidSets) QueryGtidSetsMapFromHJDB() (map[string]uint, error) {
 	p, _, err := gss.ConsulKV.Get(gss.ConsulKVPath, nil)
 	if err != nil {
-		gss.Logger.Error("Read consul kv: %s", err)
+		gss.Logger.Error("Read consul kv: %s.", err)
 		return nil, err
 	}
 
@@ -85,7 +85,7 @@ func (gss *GtidSets) QueryGtidSetsMapFromHJDB() (map[string]uint, error) {
 func (gss *GtidSets) PersistGtidSetsMaptToHJDB() error {
 	p := &api.KVPair{Key: gss.ConsulKVPath, Value: []byte(GetGtidSetsRangeStrFromGtidSetsMap(gss.GtidSetsMap))}
 	if _, err := gss.ConsulKV.Put(p, nil); err != nil {
-		gss.Logger.Error("Write consul kv: %s", err)
+		gss.Logger.Error("Write consul kv: %s.", err)
 		return err
 	}
 	return nil

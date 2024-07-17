@@ -64,7 +64,7 @@ func (ts *TCPServer) Start(ctx context.Context) {
 
 	listener, err := net.Listen("tcp", ts.listenAddress)
 	if err != nil {
-		ts.Logger.Error("Listening: %s", err.Error())
+		ts.Logger.Error("Listening: %s.", err)
 
 	}
 
@@ -97,7 +97,7 @@ func (ts *TCPServer) Start(ctx context.Context) {
 
 		// close listener
 		if err := listener.Close(); err != nil {
-			ts.Logger.Error("Listener Close: %s", err.Error())
+			ts.Logger.Error("Listener Close: %s.", err)
 		} else {
 			ts.Logger.Info("Listener Closed.")
 		}
@@ -254,14 +254,14 @@ func (ts *TCPServer) handleClients(listener net.Listener) {
 	for i := 0; i < len(ts.Clients); i++ {
 		conn, err := listener.Accept()
 		if err != nil {
-			ts.Logger.Error("Accepting: %s", err.Error())
+			ts.Logger.Error("Accepting: %s.", err)
 			break
 		}
 
 		scanner := bufio.NewScanner(conn)
 		if !scanner.Scan() {
 			if err := scanner.Err(); err != nil {
-				ts.Logger.Error("Failed to read client name: %s", err.Error())
+				ts.Logger.Error("Failed to read client name: %s.", err)
 				break
 			}
 		}
@@ -273,7 +273,7 @@ func (ts *TCPServer) handleClients(listener net.Listener) {
 		if client, exists := ts.Clients[clientName]; exists {
 			if client == nil {
 				if ts.Clients[clientName], err = NewTcpServerClient(ts.Logger.Level, clientName, ts.metricCh, conn); err != nil {
-					ts.Logger.Error("Client(%s) Init: %s", clientName, err.Error())
+					ts.Logger.Error("Client(%s) Init: %s.", clientName, err)
 				} else {
 					wg.Add(1)
 					go func() {

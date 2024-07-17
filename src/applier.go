@@ -60,12 +60,12 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 		case <-ctx.Done():
 			ma.Logger.Info("ctx done signal received.")
 			if err := ma.mysqlClient.Rollback(); err != nil {
-				ma.mysqlClient.Logger.Error("mysql connect rollback: %s", err.Error())
+				ma.mysqlClient.Logger.Error("mysql connect rollback: %s.", err)
 			} else {
 				ma.mysqlClient.Logger.Info("mysql connect rollback complate.")
 			}
 			if err := ma.mysqlClient.Close(); err != nil {
-				ma.mysqlClient.Logger.Error("mysql connect close: %s", err.Error())
+				ma.mysqlClient.Logger.Error("mysql connect close: %s.", err)
 			} else {
 				ma.mysqlClient.Logger.Info("mysql connect close complate.")
 			}
@@ -292,7 +292,7 @@ func (ma *MysqlApplier) OnDDLDatabase(op MysqlOperationDDLDatabase) error {
 	ma.Logger.Debug("OnDDLDatabase -- query: '%s'", op.Query)
 
 	if err := ma.mysqlClient.ExecuteOnDatabase(op.Query); err != nil {
-		ma.Logger.Error("OnDDLDatabase: %s", err)
+		ma.Logger.Error("OnDDLDatabase: %s.", err)
 		return err
 	}
 
@@ -303,7 +303,7 @@ func (ma *MysqlApplier) OnDDLTable(op MysqlOperationDDLTable) error {
 	ma.Logger.Debug("OnDDLTable -- SchemaContext: %s, Database: %s, Query: %s", op.SchemaContext, op.Schema, op.Query)
 
 	if err := ma.mysqlClient.ExecuteOnTable(op.SchemaContext, op.Query); err != nil {
-		ma.Logger.Error("OnDDLTable: %s", err)
+		ma.Logger.Error("OnDDLTable: %s.", err)
 		return err
 	}
 
@@ -336,7 +336,7 @@ func (ma *MysqlApplier) OnGTID(op MysqlOperationGTID) error {
 			return nil
 		} else if uint(op.TrxID) >= trx+2 {
 			err := fmt.Errorf("gtid miss '%s:%d'", op.ServerUUID, trx+1)
-			ma.Logger.Error("OnGTID: %s", err.Error())
+			ma.Logger.Error("OnGTID: %s.", err)
 			return err
 		}
 	}

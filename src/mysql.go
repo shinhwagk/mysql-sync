@@ -56,7 +56,7 @@ func (mc *MysqlClient) SkipError(err error) error {
 	if merr, ok := err.(*mysql.MySQLError); ok {
 		for _, v := range mc.SkipErrors {
 			if v == merr.Number {
-				mc.Logger.Error("Skip error: %s.", err.Error())
+				mc.Logger.Error("Skip error: %s.", err)
 				return nil
 			}
 		}
@@ -66,7 +66,7 @@ func (mc *MysqlClient) SkipError(err error) error {
 
 func (mc *MysqlClient) Close() error {
 	if err := mc.db.Close(); err != nil {
-		mc.Logger.Error("Connection close: ", err.Error())
+		mc.Logger.Error("Connection close: %s.", err)
 		return err
 	}
 	return nil
@@ -76,7 +76,7 @@ func (mc *MysqlClient) Begin() error {
 	var err error
 	if mc.tx == nil {
 		if mc.tx, err = mc.db.Begin(); err != nil {
-			mc.Logger.Error("execute Begin: %s", err.Error())
+			mc.Logger.Error("execute Begin: %s.", err)
 			return err
 		} else {
 			for pk, pv := range mc.SessionParams {
@@ -90,7 +90,7 @@ func (mc *MysqlClient) Begin() error {
 		}
 	} else {
 		err := fmt.Errorf("execute Begin: tx is not nil")
-		mc.Logger.Error(err.Error())
+		mc.Logger.Error("%s.", err)
 		return err
 	}
 
@@ -109,7 +109,7 @@ func (mc *MysqlClient) ExecuteDML(query string, args []interface{}) error {
 		}
 	} else {
 		err := fmt.Errorf("execute DML: tx is not nil")
-		mc.Logger.Error(err.Error())
+		mc.Logger.Error("%s.", err)
 		return err
 	}
 
@@ -169,11 +169,11 @@ func (mc *MysqlClient) ExecuteOnDatabase(query string) error {
 func (mc *MysqlClient) Commit() error {
 	if mc.tx == nil {
 		err := fmt.Errorf("execute Commit: tx is 'nil'")
-		mc.Logger.Error(err.Error())
+		mc.Logger.Error("%s.", err)
 		return err
 	} else {
 		if err := mc.tx.Commit(); err != nil {
-			mc.Logger.Error("execute Commit: %s", err)
+			mc.Logger.Error("execute Commit: %s.", err)
 			return err
 		}
 		mc.tx = nil

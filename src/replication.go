@@ -74,7 +74,7 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 				return
 			case gtidSetsStr := <-destStartGtidSetsStrCh:
 				if gss, err := GetGtidSetsMapFromGtidSetsRangeStr(gtidSetsStr.GtidSetsStr); err != nil {
-					repl.Logger.Error("Convert gtidsets map to str error: %s", err)
+					repl.Logger.Error("Convert gtidsets map to str error: %s.", err)
 					return
 				} else {
 					if _, exists := destGtidSetss[gtidSetsStr.DestName]; exists {

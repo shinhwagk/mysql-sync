@@ -81,24 +81,24 @@ func (tsc *TCPServerClient) Cleanup() {
 	defer tsc.Logger.Info("Cleanup closed.")
 
 	if err := tsc.encoderZstdWriter.Close(); err != nil {
-		tsc.Logger.Error("Zstd writer close: %s", err.Error())
+		tsc.Logger.Error("Zstd writer close: %s.", err)
 	}
 	tsc.Logger.Info("Zstd writer closed.")
 
 	if err := tsc.conn.Close(); err != nil {
-		tsc.Logger.Error("Conn close: %s", err.Error())
+		tsc.Logger.Error("Conn close: %s.", err)
 	}
 	tsc.Logger.Info("Conn closed.")
 }
 
 func (tsc *TCPServerClient) sendOperations(s Signal1) error {
 	if err := tsc.encoder.Encode(s); err != nil {
-		tsc.Logger.Error("Encoding message: %s", err.Error())
+		tsc.Logger.Error("Encoding message: %s.", err)
 		return err
 	}
 
 	if err := tsc.encoderZstdWriter.Flush(); err != nil {
-		tsc.Logger.Error("Zstd writer flushing: %s", err.Error())
+		tsc.Logger.Error("Zstd writer flushing: %s.", err)
 		return err
 	}
 
@@ -115,9 +115,9 @@ func (tsc *TCPServerClient) receivedSignal() {
 			if err == io.EOF {
 				tsc.Logger.Info("Tcp conn close.")
 			} else {
-				tsc.Logger.Error("Decoding message: %s", err.Error())
+				tsc.Logger.Error("Decoding message: %s.", err)
 			}
-			tsc.Logger.Error("Received signal: %s", err.Error())
+			tsc.Logger.Error("Received signal: %s.", err)
 			return
 		}
 
@@ -168,7 +168,7 @@ func (tsc *TCPServerClient) ClientPush() {
 	tsc.SendError = nil
 
 	if err := tsc.sendOperations(signal1); err != nil {
-		tsc.Logger.Error("Push mos to client: %s", err.Error())
+		tsc.Logger.Error("Push mos to client: %s.", err)
 		tsc.SendError = err
 	} else {
 		tsc.Logger.Info("Push batch(%d) mos(%d) bytes(%d) ok.", signal1.BatchID, len(tsc.SendMos), tsc.encoderBuffer.Len())

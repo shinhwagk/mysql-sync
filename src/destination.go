@@ -63,7 +63,7 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) {
 		replicateFilter := NewReplicateFilter(destConf.Sync.Replicate)
 		mysqlClient, err := NewMysqlClient(destConf.LogLevel, destConf.Mysql)
 		if err != nil {
-			dest.Logger.Error("NewMysqlClient: %s", err)
+			dest.Logger.Error("NewMysqlClient: %s.", err)
 			return
 		}
 		defer mysqlClient.Close()
@@ -77,7 +77,7 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) {
 		defer cancel()
 		tcpClient, err := NewTCPClient(destConf.LogLevel, tcpAddr, dest.Name, moCh, metricCh, GetGtidSetsRangeStrFromGtidSetsMap(gtidSets.GtidSetsMap))
 		if err != nil {
-			dest.Logger.Error("NewTCPClient: %s", err)
+			dest.Logger.Error("NewTCPClient: %s.", err)
 			return
 		}
 		tcpClient.Start(ctx)

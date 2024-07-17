@@ -256,12 +256,12 @@ func (md *MetricDirector) StartHTTPServer(ctx context.Context, addr string) {
 	go func() {
 		<-ctx.Done()
 		if err := srv.Shutdown(context.Background()); err != nil {
-			md.Logger.Error("HTTP server Shutdown: %s", err.Error())
+			md.Logger.Error("HTTP server Shutdown: %s.", err)
 		}
 	}()
 
 	md.Logger.Info("Prometheus metrics are being served at %s/metrics", addr)
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-		md.Logger.Error("HTTP server ListenAndServe: %s", err)
+		md.Logger.Error("HTTP server ListenAndServe: %s.", err)
 	}
 }

@@ -45,14 +45,14 @@ func NewTCPClient(logLevel int, serverAddress string, destName string, moCh chan
 	logger := NewLogger(logLevel, "tcp-client")
 	conn, err := net.Dial("tcp", serverAddress)
 	if err != nil {
-		logger.Error("Connection: %s", err.Error())
+		logger.Error("Connection: %s.", err)
 		return nil, err
 	}
 
 	initClientInfo := fmt.Sprintf("%s@%s", destName, startGtidSets)
 
 	if _, err := conn.Write([]byte(initClientInfo + "\n")); err != nil {
-		logger.Error("register: %s", err)
+		logger.Error("register: %s.", err)
 	} else {
 		logger.Info("Send init client info: %s", initClientInfo)
 	}
@@ -92,7 +92,7 @@ func (tc *TCPClient) receiveOperations() {
 			} else if err == io.EOF {
 				tc.Logger.Info("tcp server close, eof.")
 			} else {
-				tc.Logger.Error("Error decoding message:" + err.Error())
+				tc.Logger.Error("Error decoding message: %s.", err)
 			}
 			return
 		}
@@ -105,7 +105,7 @@ func (tc *TCPClient) receiveOperations() {
 			tc.Logger.Debug("Receive Batch: %d, mo count: %d from tcp server.", sig.BatchID, len(sig.Mos))
 
 			if err := tc.encoder.Encode(Signal2{BatchID: sig.BatchID}); err != nil {
-				tc.Logger.Error("Send signal: %s", err.Error())
+				tc.Logger.Error("Send signal: %s.", err)
 				return
 			}
 			tc.Logger.Debug("Send signal 'Batch: %d' success.", sig.BatchID)
@@ -150,6 +150,6 @@ func (tc *TCPClient) Cleanup() {
 	tc.decoderZstdReader.Close()
 
 	if err := tc.conn.Close(); err != nil {
-		tc.Logger.Error("Close connection: %s", err.Error())
+		tc.Logger.Error("Close connection: %s.", err)
 	}
 }
