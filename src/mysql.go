@@ -21,8 +21,8 @@ func NewMysqlClient(logLevel int, dmc DestinationMysqlConfig) (*MysqlClient, err
 	Logger := NewLogger(logLevel, "mysql-client")
 
 	Logger.Info("dsn: %s", dmc.Dsn)
-	db, err := sql.Open("mysql", dmc.Dsn)
 
+	db, err := sql.Open("mysql", dmc.Dsn)
 	if err != nil {
 		return nil, err
 	}
@@ -31,10 +31,7 @@ func NewMysqlClient(logLevel int, dmc DestinationMysqlConfig) (*MysqlClient, err
 	db.SetMaxIdleConns(1)
 	db.SetMaxOpenConns(2)
 
-	sessionParams := map[string]string{"time_zone": "+00:00"}
-	for pk, pv := range dmc.SessionParams {
-		sessionParams[pk] = pv
-	}
+	dmc.SessionParams["time_zone"] = "+00:00"
 
 	skipErrors, err := ConvertStringToUint16Slice(dmc.SkipErrors)
 	if err != nil {
@@ -46,7 +43,7 @@ func NewMysqlClient(logLevel int, dmc DestinationMysqlConfig) (*MysqlClient, err
 		tx:            nil,
 		Logger:        Logger,
 		SkipErrors:    skipErrors,
-		SessionParams: sessionParams,
+		SessionParams: dmc.SessionParams,
 	}
 
 	return myclient, nil
