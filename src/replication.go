@@ -51,9 +51,6 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 		promExportPort := 9092
 		if repl.msc.Replication.Prometheus.ExportPort > 0 {
 			promExportPort = repl.msc.Replication.Prometheus.ExportPort
-		} else {
-			repl.Logger.Error("prometheus export port %d.", repl.msc.Replication.Prometheus.ExportPort)
-			return
 		}
 		metricDirector := NewMetricReplDirector(repl.msc.Replication.LogLevel, promExportPort, "replication", repl.msc.Replication.Name, metricCh)
 		metricDirector.Start(ctx)
