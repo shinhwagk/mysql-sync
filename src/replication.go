@@ -28,7 +28,7 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 	defer close(destStartGtidSetsStrCh)
 
 	cacheSize := 1000
-	if repl.msc.Replication.Settings != nil && repl.msc.Replication.Settings.CacheSize > cacheSize {
+	if repl.msc.Replication.Settings.CacheSize > cacheSize {
 		cacheSize = repl.msc.Replication.Settings.CacheSize
 	}
 	repl.Logger.Info("Settings cache size: %d", cacheSize)
@@ -53,13 +53,11 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 		defer cancelMd()
 		defer cancel()
 		promExportPort := 9092
-		if repl.msc.Replication.Prometheus != nil {
-			if repl.msc.Replication.Prometheus.ExportPort != 0 {
-				promExportPort = repl.msc.Replication.Prometheus.ExportPort
-			} else {
-				repl.Logger.Error("prometheus export port %d.", repl.msc.Replication.Prometheus.ExportPort)
-				return
-			}
+		if repl.msc.Replication.Prometheus.ExportPort > 0 {
+			promExportPort = repl.msc.Replication.Prometheus.ExportPort
+		} else {
+			repl.Logger.Error("prometheus export port %d.", repl.msc.Replication.Prometheus.ExportPort)
+			return
 		}
 		metricDirector := NewMetricReplDirector(repl.msc.Replication.LogLevel, fmt.Sprintf("0.0.0.0:%d", promExportPort), "replication", repl.msc.Replication.Name, metricCh)
 		metricDirector.Start(ctx)

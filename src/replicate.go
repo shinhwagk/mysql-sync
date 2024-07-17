@@ -9,15 +9,13 @@ type Replicate struct {
 	// WildIgnoreTable string
 }
 
-func NewReplicateFilter(config *DestinationReplicateConfig) *Replicate {
+func NewReplicateFilter(config DestinationReplicateConfig) *Replicate {
 	var DoDBs, IgnoreDBs, DoTabs, IgnoreTabs []string
 
-	if config != nil {
-		DoDBs = splitAndClean(config.DoDB)
-		IgnoreDBs = splitAndClean(config.IgnoreDB)
-		DoTabs = splitAndClean(config.DoTable)
-		IgnoreTabs = splitAndClean(config.IgnoreTable)
-	}
+	DoDBs = splitAndClean(config.DoDB)
+	IgnoreDBs = splitAndClean(config.IgnoreDB)
+	DoTabs = splitAndClean(config.DoTable)
+	IgnoreTabs = splitAndClean(config.IgnoreTable)
 
 	IgnoreDBs = append(IgnoreDBs, "mysql")
 	return &Replicate{DoDBs, IgnoreDBs, DoTabs, IgnoreTabs}

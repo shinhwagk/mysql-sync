@@ -114,11 +114,8 @@ func emptyChannel(ch <-chan interface{}) {
 	}
 }
 
-func splitAndClean(s *string) []string {
-	if s == nil {
-		return nil
-	}
-	parts := strings.Split(*s, ",")
+func splitAndClean(s string) []string {
+	parts := strings.Split(s, ",")
 	var results []string
 	for _, part := range parts {
 		cleaned := strings.TrimSpace(part)

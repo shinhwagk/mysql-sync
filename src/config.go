@@ -13,16 +13,16 @@ type MysqlSyncConfig struct {
 }
 
 type ReplicationConfig struct {
-	Name       string            `yaml:"name"`
-	TCPAddr    string            `yaml:"tcpaddr"`
-	ServerID   int               `yaml:"serverid"`
-	Host       string            `yaml:"host"`
-	Port       int               `yaml:"port"`
-	User       string            `yaml:"user"`
-	Password   string            `yaml:"password"`
-	LogLevel   int               `yaml:"loglevel"`
-	Settings   *SettingsConfig   `yaml:"settings"`
-	Prometheus *PrometheusConfig `yaml:"prom"`
+	Name       string           `yaml:"name"`
+	TCPAddr    string           `yaml:"tcpaddr"`
+	ServerID   int              `yaml:"serverid"`
+	Host       string           `yaml:"host"`
+	Port       int              `yaml:"port"`
+	User       string           `yaml:"user"`
+	Password   string           `yaml:"password"`
+	LogLevel   int              `yaml:"loglevel"`
+	Settings   SettingsConfig   `yaml:"settings"`
+	Prometheus PrometheusConfig `yaml:"prom"`
 }
 
 type DestinationsConfig struct {
@@ -35,7 +35,7 @@ type DestinationConfig struct {
 	LogLevel   int                    `yaml:"loglevel"`
 	Mysql      DestinationMysqlConfig `yaml:"mysql"`
 	Sync       DestinationSyncConfig  `yaml:"sync"`
-	Prometheus *PrometheusConfig      `yaml:"prom"`
+	Prometheus PrometheusConfig       `yaml:"prom"`
 }
 
 type DestinationMysqlConfig struct {
@@ -45,8 +45,8 @@ type DestinationMysqlConfig struct {
 }
 
 type DestinationSyncConfig struct {
-	Replicate            *DestinationReplicateConfig `yaml:"replicate"`
-	InitGtidSetsRangeStr string                      `yaml:"gtidsets"`
+	Replicate            DestinationReplicateConfig `yaml:"replicate"`
+	InitGtidSetsRangeStr string                     `yaml:"gtidsets"`
 }
 
 type PrometheusConfig struct {
@@ -54,10 +54,10 @@ type PrometheusConfig struct {
 }
 
 type DestinationReplicateConfig struct {
-	DoDB        *string `yaml:"do_db"`
-	IgnoreDB    *string `yaml:"ignore_db"`
-	DoTable     *string `yaml:"do_table"`
-	IgnoreTable *string `yaml:"ignore_tab"`
+	DoDB        string `yaml:"do_db"`
+	IgnoreDB    string `yaml:"ignore_db"`
+	DoTable     string `yaml:"do_table"`
+	IgnoreTable string `yaml:"ignore_tab"`
 	// WildDoTable     *string
 	// WildIgnoreTable *string
 }
