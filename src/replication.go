@@ -51,6 +51,8 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 	ctxEx, cancelEx := context.WithCancel(context.Background())
 
 	go func() {
+		defer cancelMd()
+		defer cancel()
 		promExportPort := 9092
 		if repl.msc.Replication.Prometheus != nil {
 			if repl.msc.Replication.Prometheus.ExportPort != 0 {
@@ -62,15 +64,13 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 		}
 		metricDirector := NewMetricReplDirector(repl.msc.Replication.LogLevel, fmt.Sprintf("0.0.0.0:%d", promExportPort), "replication", repl.msc.Replication.Name, metricCh)
 		metricDirector.Start(ctx)
-		cancel()
-		cancelMd()
 	}()
 
 	go func() {
+		defer cancelTs()
+		defer cancel()
 		tcpServer := NewTCPServer(repl.msc.Replication.LogLevel, repl.msc.Replication.TCPAddr, destNames, moCh, metricCh, destStartGtidSetsStrCh)
 		tcpServer.Start(ctx)
-		cancel()
-		cancelTs()
 	}()
 
 	go func() {
