@@ -17,7 +17,7 @@ import (
 
 type BinlogExtract struct {
 	Logger             *Logger
-	binlogSyncerConfig replication.BinlogSyncerConfig
+	BinlogSyncerConfig replication.BinlogSyncerConfig
 	moCh               chan<- MysqlOperation
 	metricCh           chan<- MetricUnit
 	StartSyncGtidsets  string
@@ -39,7 +39,7 @@ func NewBinlogExtract(logLevel int, config ReplicationConfig, startSyncGtidsets 
 
 	return &BinlogExtract{
 		Logger:             NewLogger(config.LogLevel, "extract"),
-		binlogSyncerConfig: cfg,
+		BinlogSyncerConfig: cfg,
 		moCh:               moCh,
 		metricCh:           metricCh,
 		StartSyncGtidsets:  startSyncGtidsets,
@@ -64,7 +64,7 @@ func (bext *BinlogExtract) Start(ctx context.Context) {
 		return
 	}
 
-	binlogSyncer := replication.NewBinlogSyncer(bext.binlogSyncerConfig)
+	binlogSyncer := replication.NewBinlogSyncer(bext.BinlogSyncerConfig)
 	bext.Logger.Info("binlogSyncer ready.")
 
 	streamer, err := binlogSyncer.StartSyncGTID(gtidSet)
