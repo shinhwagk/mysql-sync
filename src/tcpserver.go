@@ -74,6 +74,7 @@ func (ts *TCPServer) Start(ctx context.Context) {
 	}()
 
 	var wg sync.WaitGroup
+	defer wg.Wait()
 
 	wg.Add(1)
 	go func() {
@@ -115,8 +116,6 @@ func (ts *TCPServer) Start(ctx context.Context) {
 		ts.handleClients(listener)
 		ts.cancel()
 	}()
-
-	wg.Wait()
 }
 
 func (ts *TCPServer) clientsReady() bool {
