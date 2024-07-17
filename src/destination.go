@@ -49,9 +49,9 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) {
 	go func() {
 		defer cancelMd()
 		defer cancel()
-		promExportPort := destConf.Prometheus.ExportPort
-		if destConf.Prometheus.ExportPort == 0 {
-			promExportPort = 9092
+		promExportPort := 9092
+		if destConf.Prometheus.ExportPort > 0 {
+			promExportPort = destConf.Prometheus.ExportPort
 		}
 		metricDirector := NewMetricDestDirector(destConf.LogLevel, promExportPort, "destination", replName, dest.Name, metricCh)
 		metricDirector.Start(ctx)

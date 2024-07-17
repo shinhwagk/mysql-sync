@@ -48,9 +48,9 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 	go func() {
 		defer cancelMd()
 		defer cancel()
-		promExportPort := repl.msc.Replication.Prometheus.ExportPort
-		if repl.msc.Replication.Prometheus.ExportPort == 0 {
-			promExportPort = 9092
+		promExportPort := 9092
+		if repl.msc.Replication.Prometheus.ExportPort > 0 {
+			promExportPort = repl.msc.Replication.Prometheus.ExportPort
 		}
 		metricDirector := NewMetricReplDirector(repl.msc.Replication.LogLevel, promExportPort, "replication", repl.msc.Replication.Name, metricCh)
 		metricDirector.Start(ctx)
