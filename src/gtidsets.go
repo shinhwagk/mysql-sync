@@ -19,22 +19,20 @@ func NewGtidSets(logLevel int, addr string, replName string, destName string) *G
 	}
 
 	gss := &GtidSets{
-		Logger:      logger,
-		ConsulKV:    client.KV(),
-		ReplName:    replName,
-		DestName:    destName,
-		GtidSetsMap: make(map[string]uint),
+		Logger:       logger,
+		ConsulKV:     client.KV(),
+		ConsulKVPath: fmt.Sprintf("mysqlsync/%s/%s/gtidsets", replName, destName),
+		GtidSetsMap:  make(map[string]uint),
 	}
 
 	return gss
 }
 
 type GtidSets struct {
-	Logger      *Logger
-	ConsulKV    *api.KV
-	ReplName    string
-	DestName    string
-	GtidSetsMap map[string]uint
+	Logger       *Logger
+	ConsulKV     *api.KV
+	ConsulKVPath string
+	GtidSetsMap  map[string]uint
 }
 
 type DestStartGtidSetsRangeStr struct {
@@ -43,7 +41,7 @@ type DestStartGtidSetsRangeStr struct {
 }
 
 func (gss *GtidSets) InitStartupGtidSetsMap(initGtidSetsRangeStr string) error {
-	hjdbGtidSetsMap, err := gss.QueryGtidSetsMapFromHJDB(gss.ReplName, gss.DestName)
+	hjdbGtidSetsMap, err := gss.QueryGtidSetsMapFromHJDB()
 
 	if err != nil {
 		return err
@@ -65,9 +63,8 @@ func (gss *GtidSets) InitStartupGtidSetsMap(initGtidSetsRangeStr string) error {
 	return nil
 }
 
-func (gss *GtidSets) QueryGtidSetsMapFromHJDB(replName string, destName string) (map[string]uint, error) {
-	kvPath := fmt.Sprintf("mysqlsync/%s/%s/gtidsets", gss.ReplName, gss.DestName)
-	p, _, err := gss.ConsulKV.Get(kvPath, nil)
+func (gss *GtidSets) QueryGtidSetsMapFromHJDB() (map[string]uint, error) {
+	p, _, err := gss.ConsulKV.Get(gss.ConsulKVPath, nil)
 	if err != nil {
 		gss.Logger.Error("Read consul kv: %s", err)
 		return nil, err
@@ -86,8 +83,7 @@ func (gss *GtidSets) QueryGtidSetsMapFromHJDB(replName string, destName string) 
 
 // gtid sets map gssm
 func (gss *GtidSets) PersistGtidSetsMaptToHJDB() error {
-	kvPath := fmt.Sprintf("mysqlsync/%s/%s/gtidsets", gss.ReplName, gss.DestName)
-	p := &api.KVPair{Key: kvPath, Value: []byte(GetGtidSetsRangeStrFromGtidSetsMap(gss.GtidSetsMap))}
+	p := &api.KVPair{Key: gss.ConsulKVPath, Value: []byte(GetGtidSetsRangeStrFromGtidSetsMap(gss.GtidSetsMap))}
 	if _, err := gss.ConsulKV.Put(p, nil); err != nil {
 		gss.Logger.Error("Write consul kv: %s", err)
 		return err
