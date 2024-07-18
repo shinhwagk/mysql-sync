@@ -98,6 +98,7 @@ func (bext *BinlogExtract) Start(ctx context.Context) {
 				bext.handleEventUpdateRows(e, ev.Header)
 			case replication.DELETE_ROWS_EVENTv0, replication.DELETE_ROWS_EVENTv1, replication.DELETE_ROWS_EVENTv2:
 				bext.handleEventDeleteRows(e, ev.Header)
+			}
 		case *replication.TableMapEvent:
 		case *replication.GTIDEvent:
 			if err := bext.handleEventGtid(e, ev.Header); err != nil {
@@ -129,7 +130,7 @@ func (bext *BinlogExtract) Start(ctx context.Context) {
 	}
 }
 
-func (bext *BinlogExtract) handleEventWriteRows(e *replication.RowsEvent, eh *replication.EventHeader) error {
+func (bext *BinlogExtract) handleEventWriteRows(e *replication.RowsEvent, eh *replication.EventHeader) {
 	for _, row := range e.Rows {
 		mod := MysqlOperationDMLInsert{
 			Database:   string(e.Table.Schema),
@@ -150,10 +151,9 @@ func (bext *BinlogExtract) handleEventWriteRows(e *replication.RowsEvent, eh *re
 		bext.toMoCh(mod)
 		bext.metricCh <- MetricUnit{Name: MetricReplDMLInsertTimes, Value: 1, LabelPair: map[string]string{"database": string(e.Table.Schema), "table": string(e.Table.Table)}}
 	}
-	return nil
 }
 
-func (bext *BinlogExtract) handleEventDeleteRows(e *replication.RowsEvent, eh *replication.EventHeader) error {
+func (bext *BinlogExtract) handleEventDeleteRows(e *replication.RowsEvent, eh *replication.EventHeader) {
 	for _, row := range e.Rows {
 		mod := MysqlOperationDMLDelete{
 			Database:   string(e.Table.Schema),
@@ -168,10 +168,9 @@ func (bext *BinlogExtract) handleEventDeleteRows(e *replication.RowsEvent, eh *r
 		bext.toMoCh(mod)
 		bext.metricCh <- MetricUnit{Name: MetricReplDMLDeleteTimes, Value: 1, LabelPair: map[string]string{"database": string(e.Table.Schema), "table": string(e.Table.Table)}}
 	}
-	return nil
 }
 
-func (bext *BinlogExtract) handleEventUpdateRows(e *replication.RowsEvent, eh *replication.EventHeader) error {
+func (bext *BinlogExtract) handleEventUpdateRows(e *replication.RowsEvent, eh *replication.EventHeader) {
 	for i := 0; i < len(e.Rows); i += 2 {
 		before_value := e.Rows[i]
 		after_value := e.Rows[i+1]
@@ -192,7 +191,6 @@ func (bext *BinlogExtract) handleEventUpdateRows(e *replication.RowsEvent, eh *r
 		bext.toMoCh(mod)
 		bext.metricCh <- MetricUnit{Name: MetricReplDMLUpdateTimes, Value: 1, LabelPair: map[string]string{"database": string(e.Table.Schema), "table": string(e.Table.Table)}}
 	}
-	return nil
 }
 
 func (bext *BinlogExtract) handleEventGtid(e *replication.GTIDEvent, eh *replication.EventHeader) error {
