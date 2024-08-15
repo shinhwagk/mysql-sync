@@ -69,7 +69,6 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) {
 		defer mysqlClient.Close()
 		mysqlApplier := NewMysqlApplier(destConf.LogLevel, gtidSets, mysqlClient, replicateFilter, metricCh)
 		mysqlApplier.Start(ctx, moCh)
-
 	}()
 
 	go func() {
