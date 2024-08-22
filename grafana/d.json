@@ -122,7 +122,7 @@
                         "uid": "cdp1kz3veskcgc"
                     },
                     "editorMode": "code",
-                    "expr": "clamp_min(mysqlsync_destination_delay{repl=\"${repl}\"} - 1 , 0)",
+                    "expr": "clamp_min(mysqlsync_destination_applier_delay{repl=\"${repl}\"} - 1 , 0)",
                     "instant": false,
                     "legendFormat": "{{repl}} -> {{dest}}",
                     "range": true,
@@ -954,6 +954,18 @@
                                 "value": 632
                             }
                         ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "dbtab"
+                        },
+                        "properties": [
+                            {
+                                "id": "custom.width",
+                                "value": 610
+                            }
+                        ]
                     }
                 ]
             },
@@ -977,8 +989,8 @@
                 "showHeader": true,
                 "sortBy": [
                     {
-                        "desc": false,
-                        "displayName": "foo"
+                        "desc": true,
+                        "displayName": "UPDATE"
                     }
                 ]
             },
@@ -992,7 +1004,7 @@
                     "disableTextWrap": false,
                     "editorMode": "code",
                     "exemplar": false,
-                    "expr": "label_join(mysqlsync_destination_dml_update_times{repl=\"sc_db3_3310\"}, \"foo\", \",\", \"dest\", \"database\", \"table\")",
+                    "expr": "label_join(mysqlsync_destination_dml_update_times{repl=\"$repl\", dest=~\"$dests\"}, \"dbtab\", \",\", \"dest\",\"database\",\"table\")",
                     "format": "table",
                     "fullMetaSearch": false,
                     "includeNullMetadata": true,
@@ -1009,7 +1021,7 @@
                     },
                     "editorMode": "code",
                     "exemplar": false,
-                    "expr": "label_join(mysqlsync_destination_dml_delete_times{repl=\"sc_db3_3310\"}, \"foo\", \",\", \"dest\", \"database\", \"table\")",
+                    "expr": "label_join(mysqlsync_destination_dml_delete_times{repl=\"$repl\", dest=~\"$dests\"}, \"dbtab\", \",\", \"dest\", \"database\", \"table\")",
                     "format": "table",
                     "hide": false,
                     "instant": true,
@@ -1024,7 +1036,7 @@
                     },
                     "editorMode": "code",
                     "exemplar": false,
-                    "expr": "label_join(mysqlsync_destination_dml_insert_times{repl=\"sc_db3_3310\"}, \"foo\", \",\", \"dest\", \"database\", \"table\")",
+                    "expr": "label_join(mysqlsync_destination_dml_insert_times{repl=\"$repl\", dest=~\"$dests\"}, \"dbtab\", \",\", \"dest\", \"database\", \"table\")",
                     "format": "table",
                     "hide": false,
                     "instant": true,
@@ -1033,12 +1045,12 @@
                     "refId": "C"
                 }
             ],
-            "title": "Panel Title",
+            "title": "Table insert/delete/update",
             "transformations": [
                 {
                     "id": "joinByField",
                     "options": {
-                        "byField": "foo",
+                        "byField": "dbtab",
                         "mode": "inner"
                     }
                 },
@@ -1048,10 +1060,10 @@
                         "byVariable": false,
                         "include": {
                             "names": [
-                                "foo",
+                                "dbtab",
                                 "Value #A",
-                                "Value #B",
-                                "Value #C"
+                                "Value #C",
+                                "Value #B"
                             ]
                         }
                     }
@@ -1062,16 +1074,15 @@
                         "excludeByName": {},
                         "includeByName": {},
                         "indexByName": {
-                            "Value": 4,
-                            "database": 2,
-                            "dest": 1,
-                            "repl": 0,
-                            "table": 3
+                            "Value": 2,
+                            "dbtab": 0,
+                            "table": 1
                         },
                         "renameByName": {
                             "Value #A": "UPDATE",
                             "Value #B": "DETLET",
-                            "Value #C": "INSERT"
+                            "Value #C": "INSERT",
+                            "table": ""
                         }
                     }
                 }
@@ -1115,12 +1126,8 @@
             {
                 "current": {
                     "selected": false,
-                    "text": [
-                        "sc_db3_3317"
-                    ],
-                    "value": [
-                        "sc_db3_3317"
-                    ]
+                    "text": "sc_db3_3317",
+                    "value": "sc_db3_3317"
                 },
                 "datasource": {
                     "type": "prometheus",
@@ -1154,6 +1161,6 @@
     "timezone": "browser",
     "title": "MysqlSync",
     "uid": "edp1lh3y5eupse",
-    "version": 75,
+    "version": 81,
     "weekStart": ""
 }
