@@ -39,10 +39,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            mysqlsync-amd64-${{ github.ref_name }}
-            mysqlsync-arm64-${{ github.ref_name }}
+            mysqlsync-amd64-${{ env.VERSION }}
+            mysqlsync-arm64-${{ env.VERSION }}
           tag_name: ${{ env.VERSION }}
-          asset_name: abc
-          tag: abc1
+          asset_name: ${{ env.VERSION }}
+          tag: ${{ env.VERSION }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
