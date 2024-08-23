@@ -42,7 +42,6 @@ jobs:
             mysqlsync-amd64-${{ env.VERSION }}
             mysqlsync-arm64-${{ env.VERSION }}
           tag_name: ${{ env.VERSION }}
-          asset_name: ${{ env.VERSION }}
-          tag: ${{ env.VERSION }}
+          name: Release ${{ env.VERSION }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
