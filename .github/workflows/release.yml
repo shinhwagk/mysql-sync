@@ -29,9 +29,17 @@ jobs:
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -a -ldflags="-s -w" -o mysqlsync-arm64-${VERSION} ./src/*.go
           ls -lrt
 
-      - name: Upload binaries to release
-        uses: svenstaro/upload-release-action@v2
+      # - name: Upload binaries to release
+      #   uses: svenstaro/upload-release-action@v2
+      #   with:
+      #     file: mysqlsync-amd64-${{ env.VERSION }}
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create Release and Upload binaries
+        uses: softprops/action-gh-release@v2
         with:
-          file: mysqlsync-amd64-${{ env.VERSION }}
+          files: |
+            mysqlsync-amd64-${{ github.ref_name }}
+            mysqlsync-arm64-${{ github.ref_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
