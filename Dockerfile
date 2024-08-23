@@ -1,12 +1,25 @@
-FROM python:3.12
+FROM golang:1.22.4 as builder
 
-RUN pip install mysql-connector-python==8.0.29
-RUN pip install mysql-replication==1.0.8
-RUN pip install cryptography
+WORKDIR /build
+COPY go.mod .
+COPY go.sum .
+COPY src/ .
+COPY vendor vendor
 
-COPY entrypoint.sh .
-RUN chmod +x entrypoint.sh
+RUN go mod tidy
+RUN go mod vendor
+# RUN go build -ldflags="-s -w" -o mysqlsync ./*.go
+RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags="-s -w" -o mysqlsync ./*.go
 
-ENTRYPOINT ["/entrypoint.sh"]
-
+FROM scratch
+WORKDIR /app
+COPY --from=builder /build/mysqlsync .
+ENTRYPOINT ["/app/mysqlsync"]
 CMD ["--help"]
+
+# FROM alpine:3.20
+# WORKDIR /app
+# COPY --from=builder /build/mysqlsync /app/mysqlsync
+# # RUN apk add --no-cache ca-certificates
+# ENTRYPOINT ["/app/mysqlsync"]
+# CMD ["--help"]
