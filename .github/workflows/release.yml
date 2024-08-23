@@ -32,8 +32,6 @@ jobs:
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
         with:
-          file: |
-            mysqlsync-amd64-${{ env.VERSION }}
-            mysqlsync-arm64-${{ env.VERSION }}
+          file: mysqlsync-amd64-${{ env.VERSION }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
