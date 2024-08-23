@@ -12,6 +12,6 @@ RUN go build -ldflags="-s -w" -o mysqlsync ./*.go
 
 FROM alpine:3.20
 WORKDIR /app
-COPY --from=builder /build/mysqlsync .
+COPY --from=builder /build/mysqlsync /app/mysqlsync
 ENTRYPOINT ["/app/mysqlsync"]
 CMD ["--help"]
