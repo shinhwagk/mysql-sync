@@ -25,7 +25,6 @@ jobs:
         run: |
           VERSION=${{ env.VERSION }}
           go mod tidy
-          go mod vendor
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -ldflags="-s -w" -o mysqlsync-amd64-${VERSION} ./src/*.go
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -a -ldflags="-s -w" -o mysqlsync-arm64-${VERSION} ./src/*.go
 
