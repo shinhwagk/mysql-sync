@@ -1,0 +1,36 @@
+name: Build and Release Go Application
+
+on:
+  push:
+    paths:
+      - "version"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Get version
+        run: echo "version=$(cat version)" >> $GITHUB_ENV
+
+      - name: Build the Go application
+        run: |
+          go mod tidy
+          go mod vendor
+          CGO_ENABLED=0 GOOS=linux go build -a -ldflags="-s -w" -o mysqlsync ./*.go
+
+      - name: Upload binaries to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: mysqlsync
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
