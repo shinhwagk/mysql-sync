@@ -23,14 +23,18 @@ jobs:
 
       - name: Build the Go application
         run: |
+          VERSION=${{ env.VERSION }}
           go mod tidy
           go mod vendor
-          CGO_ENABLED=0 GOOS=linux go build -a -ldflags="-s -w" -o mysqlsync ./*.go
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -ldflags="-s -w" -o mysqlsync-amd64-${VERSION} ./src/*.go
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -a -ldflags="-s -w" -o mysqlsync-arm64-${VERSION} ./src/*.go
 
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: mysqlsync
+          file: |
+            mysqlsync-amd64-${{ env.VERSION }}
+            mysqlsync-arm64-${{ env.VERSION }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
