@@ -2,16 +2,8 @@
 
 VERSION=`cat version`
 
-function build_image() {
-    plat=$1
-    echo "build platform: ${plat}"
-    docker build -f Dockerfile.go --platform $plat -t shinhwagk/mysql-sync:${VERSION} .
-    docker tag shinhwagk/mysql-sync:${VERSION} shinhwagk/mysql-sync:latest
-
-    docker push shinhwagk/mysql-sync:${VERSION}
-    docker push shinhwagk/mysql-sync:latest
-}
-
-for plat in linux/amd64 linux/arm64; do
-    build_image $plat
-done
+go mod tidy
+echo "building linux/amd64 binaries"
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -ldflags="-s -w" -o "build/mysqlsync-amd64-${VERSION}" ./src/*.go
+echo "building linux/arm64 binaries"
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -a -ldflags="-s -w" -o "build/mysqlsync-arm64-${VERSION}" ./src/*.go

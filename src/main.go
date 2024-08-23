@@ -12,7 +12,7 @@ func main() {
 	config, err := LoadConfig("/etc/mysqlsync/config.yml")
 	if err != nil {
 		logger.Error("Failed to load config: %v", err)
-		return
+		os.Exit(1)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -29,17 +29,17 @@ func main() {
 	} else if *repl {
 		replication := NewReplication(*config)
 		replication.start(ctx, cancel)
-		cancel()
+		return
 	} else if *dest {
 		if *destName == "" {
 			logger.Error("'name' parameter is required when 'dest' is specified.")
 		} else {
 			destination := NewDestination(*config, *destName)
 			destination.Start(ctx, cancel)
-			cancel()
+			return
 		}
 	} else {
-		logger.Info("No specific mode activated")
+		flag.Usage()
 	}
 	os.Exit(1)
 }
