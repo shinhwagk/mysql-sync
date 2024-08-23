@@ -52,6 +52,10 @@ const (
 	defaultTargetPeriod = 5 * time.Second
 	// defaultMaxWaitDuration is the max duration to wait for the token before throwing error.
 	defaultMaxWaitDuration = 30 * time.Second
+	// defaultWaitRetryTimes is the times to retry when waiting for the token.
+	defaultWaitRetryTimes = 10
+	// defaultWaitRetryInterval is the interval to retry when waiting for the token.
+	defaultWaitRetryInterval = 50 * time.Millisecond
 )
 
 const (
@@ -85,9 +89,18 @@ type Config struct {
 	// LTBMaxWaitDuration is the max wait time duration for local token bucket.
 	LTBMaxWaitDuration Duration `toml:"ltb-max-wait-duration" json:"ltb-max-wait-duration"`
 
+	// WaitRetryInterval is the interval to retry when waiting for the token.
+	WaitRetryInterval Duration `toml:"wait-retry-interval" json:"wait-retry-interval"`
+
+	// WaitRetryTimes is the times to retry when waiting for the token.
+	WaitRetryTimes int `toml:"wait-retry-times" json:"wait-retry-times"`
+
 	// RequestUnit is the configuration determines the coefficients of the RRU and WRU cost.
 	// This configuration should be modified carefully.
 	RequestUnit RequestUnitConfig `toml:"request-unit" json:"request-unit"`
+
+	// EnableControllerTraceLog is to control whether resource control client enable trace.
+	EnableControllerTraceLog bool `toml:"enable-controller-trace-log" json:"enable-controller-trace-log,string"`
 }
 
 // DefaultConfig returns the default resource manager controller configuration.
@@ -95,7 +108,10 @@ func DefaultConfig() *Config {
 	return &Config{
 		DegradedModeWaitDuration: NewDuration(defaultDegradedModeWaitDuration),
 		LTBMaxWaitDuration:       NewDuration(defaultMaxWaitDuration),
+		WaitRetryInterval:        NewDuration(defaultWaitRetryInterval),
+		WaitRetryTimes:           defaultWaitRetryTimes,
 		RequestUnit:              DefaultRequestUnitConfig(),
+		EnableControllerTraceLog: false,
 	}
 }
 
@@ -151,6 +167,8 @@ type RUConfig struct {
 
 	// some config for client
 	LTBMaxWaitDuration       time.Duration
+	WaitRetryInterval        time.Duration
+	WaitRetryTimes           int
 	DegradedModeWaitDuration time.Duration
 }
 
@@ -172,6 +190,8 @@ func GenerateRUConfig(config *Config) *RUConfig {
 		WriteBytesCost:           RequestUnit(config.RequestUnit.WriteCostPerByte),
 		CPUMsCost:                RequestUnit(config.RequestUnit.CPUMsCost),
 		LTBMaxWaitDuration:       config.LTBMaxWaitDuration.Duration,
+		WaitRetryInterval:        config.WaitRetryInterval.Duration,
+		WaitRetryTimes:           config.WaitRetryTimes,
 		DegradedModeWaitDuration: config.DegradedModeWaitDuration.Duration,
 	}
 }

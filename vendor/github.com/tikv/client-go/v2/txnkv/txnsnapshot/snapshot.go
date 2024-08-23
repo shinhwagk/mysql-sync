@@ -47,11 +47,11 @@ import (
 	"github.com/pingcap/kvproto/pkg/kvrpcpb"
 	"github.com/pingcap/kvproto/pkg/metapb"
 	"github.com/pkg/errors"
+	"github.com/tikv/client-go/v2/config/retry"
 	tikverr "github.com/tikv/client-go/v2/error"
 	"github.com/tikv/client-go/v2/internal/client"
 	"github.com/tikv/client-go/v2/internal/locate"
 	"github.com/tikv/client-go/v2/internal/logutil"
-	"github.com/tikv/client-go/v2/internal/retry"
 	"github.com/tikv/client-go/v2/internal/unionstore"
 	"github.com/tikv/client-go/v2/kv"
 	"github.com/tikv/client-go/v2/metrics"
@@ -120,10 +120,10 @@ type KVSnapshot struct {
 	scanBatchSize   int
 	readTimeout     time.Duration
 
-	// Cache the result of BatchGet.
-	// The invariance is that calling BatchGet multiple times using the same start ts,
+	// Cache the result of Get and BatchGet.
+	// The invariance is that calling Get or BatchGet multiple times using the same start ts,
 	// the result should not change.
-	// NOTE: This representation here is different from the BatchGet API.
+	// NOTE: This representation here is different from the Get and BatchGet API.
 	// cached use len(value)=0 to represent a key-value entry doesn't exist (a reliable truth from TiKV).
 	// In the BatchGet API, it use no key-value entry to represent non-exist.
 	// It's OK as long as there are no zero-byte values in the protocol.
@@ -153,6 +153,7 @@ type KVSnapshot struct {
 	}
 	sampleStep uint32
 	*util.RequestSource
+	isPipelined bool
 }
 
 // NewTiKVSnapshot creates a snapshot of an TiKV store.
@@ -200,10 +201,25 @@ func (s *KVSnapshot) IsInternal() bool {
 // The map will not contain nonexistent keys.
 // NOTE: Don't modify keys. Some codes rely on the order of keys.
 func (s *KVSnapshot) BatchGet(ctx context.Context, keys [][]byte) (map[string][]byte, error) {
+	return s.BatchGetWithTier(ctx, keys, BatchGetSnapshotTier)
+}
+
+// BatchGet tiers indicate the read tier of the batch get request.
+// BatchGet read keys in regions. The keys location and region error retry mechanism are shared.
+const (
+	// BatchGetSnapshotTier indicates the batch get reads from a snapshot.
+	BatchGetSnapshotTier = 1 << iota
+	// BatchGetBufferTier indicates the batch get reads from the pipelined flushed buffer, only read locks in the current txn.
+	// this only works when the txn is created with a pipelined memdb, unless an error will be returned.
+	BatchGetBufferTier
+)
+
+// BatchGetWithTier gets all the keys' value from kv-server with given tier and returns a map contains key/value pairs.
+func (s *KVSnapshot) BatchGetWithTier(ctx context.Context, keys [][]byte, readTier int) (map[string][]byte, error) {
 	// Check the cached value first.
 	m := make(map[string][]byte)
 	s.mu.RLock()
-	if s.mu.cached != nil {
+	if s.mu.cached != nil && readTier == BatchGetSnapshotTier {
 		tmp := make([][]byte, 0, len(keys))
 		for _, key := range keys {
 			if val, ok := s.mu.cached[string(key)]; ok {
@@ -238,8 +254,9 @@ func (s *KVSnapshot) BatchGet(ctx context.Context, keys [][]byte) (map[string][]
 	s.mu.RUnlock()
 	// Create a map to collect key-values from region servers.
 	var mu sync.Mutex
-	err := s.batchGetKeysByRegions(bo, keys, func(k, v []byte) {
-		if len(v) == 0 {
+	err := s.batchGetKeysByRegions(bo, keys, readTier, func(k, v []byte) {
+		// when read buffer tier, empty value means a delete record, should also collect it.
+		if len(v) == 0 && readTier != BatchGetBufferTier {
 			return
 		}
 
@@ -257,31 +274,12 @@ func (s *KVSnapshot) BatchGet(ctx context.Context, keys [][]byte) (map[string][]
 		return nil, err
 	}
 
-	// Update the cache.
-	s.mu.Lock()
-	if s.mu.cached == nil {
-		s.mu.cached = make(map[string][]byte, len(m))
-	}
-	for _, key := range keys {
-		val := m[string(key)]
-		s.mu.cachedSize += len(key) + len(val)
-		s.mu.cached[string(key)] = val
+	if readTier != BatchGetSnapshotTier {
+		return m, nil
 	}
 
-	const cachedSizeLimit = 10 << 30
-	if s.mu.cachedSize >= cachedSizeLimit {
-		for k, v := range s.mu.cached {
-			if _, needed := m[k]; needed {
-				continue
-			}
-			delete(s.mu.cached, k)
-			s.mu.cachedSize -= len(k) + len(v)
-			if s.mu.cachedSize < cachedSizeLimit {
-				break
-			}
-		}
-	}
-	s.mu.Unlock()
+	// Update the cache.
+	s.UpdateSnapshotCache(keys, m)
 
 	return m, nil
 }
@@ -323,7 +321,7 @@ func appendBatchKeysBySize(b []batchKeys, region locate.RegionVerID, keys [][]by
 	return b
 }
 
-func (s *KVSnapshot) batchGetKeysByRegions(bo *retry.Backoffer, keys [][]byte, collectF func(k, v []byte)) error {
+func (s *KVSnapshot) batchGetKeysByRegions(bo *retry.Backoffer, keys [][]byte, readTier int, collectF func(k, v []byte)) error {
 	defer func(start time.Time) {
 		if s.IsInternal() {
 			metrics.TxnCmdHistogramWithBatchGetInternal.Observe(time.Since(start).Seconds())
@@ -351,7 +349,7 @@ func (s *KVSnapshot) batchGetKeysByRegions(bo *retry.Backoffer, keys [][]byte, c
 		return nil
 	}
 	if len(batches) == 1 {
-		return s.batchGetSingleRegion(bo, batches[0], collectF)
+		return s.batchGetSingleRegion(bo, batches[0], readTier, collectF)
 	}
 	ch := make(chan error)
 	for _, batch1 := range batches {
@@ -359,12 +357,12 @@ func (s *KVSnapshot) batchGetKeysByRegions(bo *retry.Backoffer, keys [][]byte, c
 		go func() {
 			backoffer, cancel := bo.Fork()
 			defer cancel()
-			ch <- s.batchGetSingleRegion(backoffer, batch, collectF)
+			ch <- s.batchGetSingleRegion(backoffer, batch, readTier, collectF)
 		}()
 	}
 	for i := 0; i < len(batches); i++ {
 		if e := <-ch; e != nil {
-			logutil.BgLogger().Debug("snapshot batchGet failed",
+			logutil.BgLogger().Debug("snapshot BatchGetWithTier failed",
 				zap.Error(e),
 				zap.Uint64("txnStartTS", s.version))
 			err = errors.WithStack(e)
@@ -373,11 +371,44 @@ func (s *KVSnapshot) batchGetKeysByRegions(bo *retry.Backoffer, keys [][]byte, c
 	return err
 }
 
-func (s *KVSnapshot) batchGetSingleRegion(bo *retry.Backoffer, batch batchKeys, collectF func(k, v []byte)) error {
+func (s *KVSnapshot) buildBatchGetRequest(keys [][]byte, busyThresholdMs int64, readTier int) (*tikvrpc.Request, error) {
+	ctx := kvrpcpb.Context{
+		Priority:         s.priority.ToPB(),
+		NotFillCache:     s.notFillCache,
+		TaskId:           s.mu.taskID,
+		ResourceGroupTag: s.mu.resourceGroupTag,
+		IsolationLevel:   s.isolationLevel.ToPB(),
+		ResourceControlContext: &kvrpcpb.ResourceControlContext{
+			ResourceGroupName: s.mu.resourceGroupName,
+		},
+		BusyThresholdMs: uint32(busyThresholdMs),
+	}
+	switch readTier {
+	case BatchGetSnapshotTier:
+		req := tikvrpc.NewReplicaReadRequest(tikvrpc.CmdBatchGet, &kvrpcpb.BatchGetRequest{
+			Keys:    keys,
+			Version: s.version,
+		}, s.mu.replicaRead, &s.replicaReadSeed, ctx)
+		return req, nil
+	case BatchGetBufferTier:
+		if !s.isPipelined {
+			return nil, errors.New("only snapshot with pipelined dml can read from buffer")
+		}
+		req := tikvrpc.NewReplicaReadRequest(tikvrpc.CmdBufferBatchGet, &kvrpcpb.BufferBatchGetRequest{
+			Keys:    keys,
+			Version: s.version,
+		}, s.mu.replicaRead, &s.replicaReadSeed, ctx)
+		return req, nil
+	default:
+		return nil, errors.Errorf("unknown read tier %d", readTier)
+	}
+}
+
+func (s *KVSnapshot) batchGetSingleRegion(bo *retry.Backoffer, batch batchKeys, readTier int, collectF func(k, v []byte)) error {
 	cli := NewClientHelper(s.store, &s.resolvedLocks, &s.committedLocks, false)
 	s.mu.RLock()
 	if s.mu.stats != nil {
-		cli.Stats = make(map[tikvrpc.CmdType]*locate.RPCRuntimeStats)
+		cli.Stats = locate.NewRegionRequestRuntimeStats()
 		defer func() {
 			s.mergeRegionRequestStats(cli.Stats)
 		}()
@@ -393,20 +424,10 @@ func (s *KVSnapshot) batchGetSingleRegion(bo *retry.Backoffer, batch batchKeys, 
 	var readType string
 	for {
 		s.mu.RLock()
-		req := tikvrpc.NewReplicaReadRequest(tikvrpc.CmdBatchGet, &kvrpcpb.BatchGetRequest{
-			Keys:    pending,
-			Version: s.version,
-		}, s.mu.replicaRead, &s.replicaReadSeed, kvrpcpb.Context{
-			Priority:         s.priority.ToPB(),
-			NotFillCache:     s.notFillCache,
-			TaskId:           s.mu.taskID,
-			ResourceGroupTag: s.mu.resourceGroupTag,
-			IsolationLevel:   s.isolationLevel.ToPB(),
-			ResourceControlContext: &kvrpcpb.ResourceControlContext{
-				ResourceGroupName: s.mu.resourceGroupName,
-			},
-			BusyThresholdMs: uint32(busyThresholdMs),
-		})
+		req, err := s.buildBatchGetRequest(pending, busyThresholdMs, readTier)
+		if err != nil {
+			return err
+		}
 		req.InputRequestSource = s.GetRequestSource()
 		if readType != "" {
 			req.ReadType = readType
@@ -467,17 +488,32 @@ func (s *KVSnapshot) batchGetSingleRegion(bo *retry.Backoffer, batch batchKeys, 
 			if same {
 				continue
 			}
-			return s.batchGetKeysByRegions(bo, pending, collectF)
+			return s.batchGetKeysByRegions(bo, pending, readTier, collectF)
 		}
 		if resp.Resp == nil {
 			return errors.WithStack(tikverr.ErrBodyMissing)
 		}
-		batchGetResp := resp.Resp.(*kvrpcpb.BatchGetResponse)
 		var (
 			lockedKeys [][]byte
 			locks      []*txnlock.Lock
+
+			keyErr  *kvrpcpb.KeyError
+			pairs   []*kvrpcpb.KvPair
+			details *kvrpcpb.ExecDetailsV2
 		)
-		if keyErr := batchGetResp.GetError(); keyErr != nil {
+		switch v := resp.Resp.(type) {
+		case *kvrpcpb.BatchGetResponse:
+			keyErr = v.GetError()
+			pairs = v.Pairs
+			details = v.GetExecDetailsV2()
+		case *kvrpcpb.BufferBatchGetResponse:
+			keyErr = v.GetError()
+			pairs = v.Pairs
+			details = v.GetExecDetailsV2()
+		default:
+			return errors.Errorf("unknown response %T", v)
+		}
+		if keyErr != nil {
 			// If a response-level error happens, skip reading pairs.
 			lock, err := txnlock.ExtractLockFromKeyErr(keyErr)
 			if err != nil {
@@ -486,7 +522,7 @@ func (s *KVSnapshot) batchGetSingleRegion(bo *retry.Backoffer, batch batchKeys, 
 			lockedKeys = append(lockedKeys, lock.Key)
 			locks = append(locks, lock)
 		} else {
-			for _, pair := range batchGetResp.Pairs {
+			for _, pair := range pairs {
 				keyErr := pair.GetError()
 				if keyErr == nil {
 					collectF(pair.GetKey(), pair.GetValue())
@@ -500,17 +536,17 @@ func (s *KVSnapshot) batchGetSingleRegion(bo *retry.Backoffer, batch batchKeys, 
 				locks = append(locks, lock)
 			}
 		}
-		if batchGetResp.ExecDetailsV2 != nil {
-			readKeys := len(batchGetResp.Pairs)
+		if details != nil {
+			readKeys := len(pairs)
 			var readTime float64
-			if timeDetail := batchGetResp.ExecDetailsV2.GetTimeDetailV2(); timeDetail != nil {
+			if timeDetail := details.GetTimeDetailV2(); timeDetail != nil {
 				readTime = float64(timeDetail.GetKvReadWallTimeNs()) / 1000000000.
-			} else if timeDetail := batchGetResp.ExecDetailsV2.GetTimeDetail(); timeDetail != nil {
+			} else if timeDetail := details.GetTimeDetail(); timeDetail != nil {
 				readTime = float64(timeDetail.GetKvReadWallTimeMs()) / 1000.
 			}
-			readSize := float64(batchGetResp.ExecDetailsV2.GetScanDetailV2().GetProcessedVersionsSize())
+			readSize := float64(details.GetScanDetailV2().GetProcessedVersionsSize())
 			metrics.ObserveReadSLI(uint64(readKeys), readTime, readSize)
-			s.mergeExecDetail(batchGetResp.ExecDetailsV2)
+			s.mergeExecDetail(details)
 		}
 		if len(lockedKeys) > 0 {
 			if resolvingRecordToken == nil {
@@ -536,14 +572,14 @@ func (s *KVSnapshot) batchGetSingleRegion(bo *retry.Backoffer, batch batchKeys, 
 				return err
 			}
 			if msBeforeExpired > 0 {
-				err = bo.BackoffWithMaxSleepTxnLockFast(int(msBeforeExpired), errors.Errorf("batchGet lockedKeys: %d", len(lockedKeys)))
+				err = bo.BackoffWithMaxSleepTxnLockFast(int(msBeforeExpired), errors.Errorf("BatchGetWithTier lockedKeys: %d", len(lockedKeys)))
 				if err != nil {
 					return err
 				}
 			}
 			// Only reduce pending keys when there is no response-level error. Otherwise,
 			// lockedKeys may be incomplete.
-			if batchGetResp.GetError() == nil {
+			if keyErr == nil {
 				pending = lockedKeys
 			}
 			continue
@@ -564,12 +600,29 @@ func (s *KVSnapshot) Get(ctx context.Context, k []byte) ([]byte, error) {
 		}
 	}(time.Now())
 
+	s.mu.RLock()
+	// Check the cached values first.
+	if s.mu.cached != nil {
+		if value, ok := s.mu.cached[string(k)]; ok {
+			atomic.AddInt64(&s.mu.hitCnt, 1)
+			s.mu.RUnlock()
+			if len(value) == 0 {
+				return nil, tikverr.ErrNotExist
+			}
+			return value, nil
+		}
+	}
+	if _, err := util.EvalFailpoint("snapshot-get-cache-fail"); err == nil {
+		if ctx.Value("TestSnapshotCache") != nil {
+			s.mu.RUnlock()
+			panic("cache miss")
+		}
+	}
 	ctx = context.WithValue(ctx, retry.TxnStartKey, s.version)
 	if ctx.Value(util.RequestSourceKey) == nil {
 		ctx = context.WithValue(ctx, util.RequestSourceKey, *s.RequestSource)
 	}
 	bo := retry.NewBackofferWithVars(ctx, getMaxBackoff, s.vars)
-	s.mu.RLock()
 	if s.mu.interceptor != nil {
 		// User has called snapshot.SetRPCInterceptor() to explicitly set an interceptor, we
 		// need to bind it to ctx so that the internal client can perceive and execute
@@ -586,7 +639,8 @@ func (s *KVSnapshot) Get(ctx context.Context, k []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-
+	// Update the cache.
+	s.UpdateSnapshotCache([][]byte{k}, map[string][]byte{string(k): val})
 	if len(val) == 0 {
 		return nil, tikverr.ErrNotExist
 	}
@@ -594,31 +648,16 @@ func (s *KVSnapshot) Get(ctx context.Context, k []byte) ([]byte, error) {
 }
 
 func (s *KVSnapshot) get(ctx context.Context, bo *retry.Backoffer, k []byte) ([]byte, error) {
-	// Check the cached values first.
-	s.mu.RLock()
-	if s.mu.cached != nil {
-		if value, ok := s.mu.cached[string(k)]; ok {
-			atomic.AddInt64(&s.mu.hitCnt, 1)
-			s.mu.RUnlock()
-			return value, nil
-		}
-	}
 	if span := opentracing.SpanFromContext(ctx); span != nil && span.Tracer() != nil {
 		span1 := span.Tracer().StartSpan("tikvSnapshot.get", opentracing.ChildOf(span.Context()))
 		defer span1.Finish()
 		opentracing.ContextWithSpan(ctx, span1)
 	}
-	if _, err := util.EvalFailpoint("snapshot-get-cache-fail"); err == nil {
-		if bo.GetCtx().Value("TestSnapshotCache") != nil {
-			s.mu.RUnlock()
-			panic("cache miss")
-		}
-	}
 
 	cli := NewClientHelper(s.store, &s.resolvedLocks, &s.committedLocks, true)
-
+	s.mu.RLock()
 	if s.mu.stats != nil {
-		cli.Stats = make(map[tikvrpc.CmdType]*locate.RPCRuntimeStats)
+		cli.Stats = locate.NewRegionRequestRuntimeStats()
 		defer func() {
 			s.mergeRegionRequestStats(cli.Stats)
 		}()
@@ -951,8 +990,64 @@ func (s *KVSnapshot) SnapCacheHitCount() int {
 // SnapCacheSize gets the snapshot cache size. Only for test.
 func (s *KVSnapshot) SnapCacheSize() int {
 	s.mu.RLock()
-	defer s.mu.RLock()
+	defer s.mu.RUnlock()
 	return len(s.mu.cached)
+}
+
+// SnapCache gets the copy of snapshot cache. Only for test.
+func (s *KVSnapshot) SnapCache() map[string][]byte {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	cp := make(map[string][]byte, len(s.mu.cached))
+	for k, v := range s.mu.cached {
+		cp[k] = v
+	}
+	return cp
+}
+
+// UpdateSnapshotCache sets the values of cache, for further fast read with same keys.
+func (s *KVSnapshot) UpdateSnapshotCache(keys [][]byte, m map[string][]byte) {
+	// s.version == math.MaxUint64 is used in special transaction, which always read the latest data.
+	// do not cache it to avoid anomaly.
+	if s.version == math.MaxUint64 {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.mu.cached == nil {
+		s.mu.cached = make(map[string][]byte, min(len(keys), 8))
+	}
+	for _, key := range keys {
+		val := m[string(key)]
+		s.mu.cachedSize += len(key) + len(val)
+		s.mu.cachedSize -= len(s.mu.cached[string(key)])
+		s.mu.cached[string(key)] = val
+	}
+
+	const cachedSizeLimit = 10 << 30
+	if s.mu.cachedSize >= cachedSizeLimit {
+		for k, v := range s.mu.cached {
+			if _, needed := m[k]; needed {
+				continue
+			}
+			delete(s.mu.cached, k)
+			s.mu.cachedSize -= len(k) + len(v)
+			if s.mu.cachedSize < cachedSizeLimit {
+				break
+			}
+		}
+	}
+}
+
+// CleanCache cleans the cache for given keys. Only for test.
+func (s *KVSnapshot) CleanCache(keys [][]byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, key := range keys {
+		s.mu.cachedSize -= len(key)
+		s.mu.cachedSize -= len(s.mu.cached[string(key)])
+		delete(s.mu.cached, string(key))
+	}
 }
 
 // SetVars sets variables to the transaction.
@@ -985,25 +1080,17 @@ func (s *KVSnapshot) recordBackoffInfo(bo *retry.Backoffer) {
 	}
 }
 
-func (s *KVSnapshot) mergeRegionRequestStats(stats map[tikvrpc.CmdType]*locate.RPCRuntimeStats) {
+func (s *KVSnapshot) mergeRegionRequestStats(rpcStats *locate.RegionRequestRuntimeStats) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.mu.stats == nil {
 		return
 	}
-	if s.mu.stats.rpcStats.Stats == nil {
-		s.mu.stats.rpcStats.Stats = stats
+	if s.mu.stats.rpcStats == nil {
+		s.mu.stats.rpcStats = rpcStats
 		return
 	}
-	for k, v := range stats {
-		stat, ok := s.mu.stats.rpcStats.Stats[k]
-		if !ok {
-			s.mu.stats.rpcStats.Stats[k] = v
-			continue
-		}
-		stat.Count += v.Count
-		stat.Consume += v.Consume
-	}
+	s.mu.stats.rpcStats.Merge(rpcStats)
 }
 
 // SetKVReadTimeout sets timeout for individual KV read operations under this snapshot
@@ -1025,9 +1112,20 @@ func (s *KVSnapshot) getResolveLockDetail() *util.ResolveLockDetail {
 	return s.mu.stats.resolveLockDetail
 }
 
+// SetPipelined sets the snapshot to pipelined mode.
+func (s *KVSnapshot) SetPipelined(ts uint64) {
+	s.isPipelined = true
+	// In pipelined mode, some locks are flushed into stores during the execution.
+	// If a read request encounters these pipelined locks, it'll be a situation where lock.ts == start_ts.
+	// In order to allow the snapshot to proceed normally, we need to skip these locks.
+	// Otherwise, the transaction will attempt to resolve its own lock, leading to a mutual wait with the primary key TTL.
+	// Currently, we skip these locks by resolvedLocks mechanism.
+	s.resolvedLocks.Put(ts)
+}
+
 // SnapshotRuntimeStats records the runtime stats of snapshot.
 type SnapshotRuntimeStats struct {
-	rpcStats          locate.RegionRequestRuntimeStats
+	rpcStats          *locate.RegionRequestRuntimeStats
 	backoffSleepMS    map[string]int
 	backoffTimes      map[string]int
 	scanDetail        *util.ScanDetail
@@ -1037,11 +1135,9 @@ type SnapshotRuntimeStats struct {
 
 // Clone implements the RuntimeStats interface.
 func (rs *SnapshotRuntimeStats) Clone() *SnapshotRuntimeStats {
-	newRs := SnapshotRuntimeStats{rpcStats: locate.NewRegionRequestRuntimeStats()}
-	if rs.rpcStats.Stats != nil {
-		for k, v := range rs.rpcStats.Stats {
-			newRs.rpcStats.Stats[k] = v
-		}
+	newRs := SnapshotRuntimeStats{}
+	if rs.rpcStats != nil {
+		newRs.rpcStats = rs.rpcStats.Clone()
 	}
 	if len(rs.backoffSleepMS) > 0 {
 		newRs.backoffSleepMS = make(map[string]int)
@@ -1071,9 +1167,9 @@ func (rs *SnapshotRuntimeStats) Clone() *SnapshotRuntimeStats {
 
 // Merge implements the RuntimeStats interface.
 func (rs *SnapshotRuntimeStats) Merge(other *SnapshotRuntimeStats) {
-	if other.rpcStats.Stats != nil {
-		if rs.rpcStats.Stats == nil {
-			rs.rpcStats.Stats = make(map[tikvrpc.CmdType]*locate.RPCRuntimeStats, len(other.rpcStats.Stats))
+	if other.rpcStats != nil {
+		if rs.rpcStats == nil {
+			rs.rpcStats = locate.NewRegionRequestRuntimeStats()
 		}
 		rs.rpcStats.Merge(other.rpcStats)
 	}
@@ -1096,7 +1192,9 @@ func (rs *SnapshotRuntimeStats) Merge(other *SnapshotRuntimeStats) {
 // String implements fmt.Stringer interface.
 func (rs *SnapshotRuntimeStats) String() string {
 	var buf bytes.Buffer
-	buf.WriteString(rs.rpcStats.String())
+	if rs.rpcStats != nil {
+		buf.WriteString(rs.rpcStats.String())
+	}
 	for k, v := range rs.backoffTimes {
 		if buf.Len() > 0 {
 			buf.WriteByte(',')
@@ -1116,4 +1214,18 @@ func (rs *SnapshotRuntimeStats) String() string {
 		buf.WriteString(scanDetail)
 	}
 	return buf.String()
+}
+
+// GetCmdRPCCount returns the count of the corresponding kind of rpc requests
+func (rs *SnapshotRuntimeStats) GetCmdRPCCount(cmd tikvrpc.CmdType) int64 {
+	if rs.rpcStats == nil || len(rs.rpcStats.RPCStats) == 0 {
+		return 0
+	}
+
+	stats, ok := rs.rpcStats.RPCStats[cmd]
+	if !ok {
+		return 0
+	}
+
+	return stats.Count
 }

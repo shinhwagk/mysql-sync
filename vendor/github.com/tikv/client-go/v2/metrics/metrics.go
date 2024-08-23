@@ -50,6 +50,7 @@ var (
 	TiKVCoprocessorHistogram                 *prometheus.HistogramVec
 	TiKVLockResolverCounter                  *prometheus.CounterVec
 	TiKVRegionErrorCounter                   *prometheus.CounterVec
+	TiKVRPCErrorCounter                      *prometheus.CounterVec
 	TiKVTxnWriteKVCountHistogram             *prometheus.HistogramVec
 	TiKVTxnWriteSizeHistogram                *prometheus.HistogramVec
 	TiKVRawkvCmdHistogram                    *prometheus.HistogramVec
@@ -58,6 +59,7 @@ var (
 	TiKVLoadSafepointCounter                 *prometheus.CounterVec
 	TiKVSecondaryLockCleanupFailureCounter   *prometheus.CounterVec
 	TiKVRegionCacheCounter                   *prometheus.CounterVec
+	TiKVLoadRegionCounter                    *prometheus.CounterVec
 	TiKVLoadRegionCacheHistogram             *prometheus.HistogramVec
 	TiKVLocalLatchWaitTimeHistogram          prometheus.Histogram
 	TiKVStatusDuration                       *prometheus.HistogramVec
@@ -100,10 +102,15 @@ var (
 	TiKVGrpcConnectionState                  *prometheus.GaugeVec
 	TiKVAggressiveLockedKeysCounter          *prometheus.CounterVec
 	TiKVStoreSlowScoreGauge                  *prometheus.GaugeVec
+	TiKVFeedbackSlowScoreGauge               *prometheus.GaugeVec
+	TiKVHealthFeedbackOpsCounter             *prometheus.CounterVec
 	TiKVPreferLeaderFlowsGauge               *prometheus.GaugeVec
 	TiKVStaleReadCounter                     *prometheus.CounterVec
 	TiKVStaleReadReqCounter                  *prometheus.CounterVec
 	TiKVStaleReadBytes                       *prometheus.CounterVec
+	TiKVPipelinedFlushLenHistogram           prometheus.Histogram
+	TiKVPipelinedFlushSizeHistogram          prometheus.Histogram
+	TiKVPipelinedFlushDuration               prometheus.Histogram
 )
 
 // Label constants.
@@ -128,6 +135,7 @@ const (
 	LblInternal        = "internal"
 	LblGeneral         = "general"
 	LblDirection       = "direction"
+	LblReason          = "reason"
 )
 
 func initMetrics(namespace, subsystem string, constLabels prometheus.Labels) {
@@ -215,7 +223,16 @@ func initMetrics(namespace, subsystem string, constLabels prometheus.Labels) {
 			Name:        "region_err_total",
 			Help:        "Counter of region errors.",
 			ConstLabels: constLabels,
-		}, []string{LblType, LblScope})
+		}, []string{LblType, LblStore})
+
+	TiKVRPCErrorCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace:   namespace,
+			Subsystem:   subsystem,
+			Name:        "rpc_err_total",
+			Help:        "Counter of rpc errors.",
+			ConstLabels: constLabels,
+		}, []string{LblType, LblStore})
 
 	TiKVTxnWriteKVCountHistogram = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -293,6 +310,14 @@ func initMetrics(namespace, subsystem string, constLabels prometheus.Labels) {
 			Help:        "Counter of region cache.",
 			ConstLabels: constLabels,
 		}, []string{LblType, LblResult})
+
+	TiKVLoadRegionCounter = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace:   namespace,
+		Subsystem:   subsystem,
+		Name:        "load_region_total",
+		Help:        "Counter of loading region.",
+		ConstLabels: constLabels,
+	}, []string{LblType, LblReason})
 
 	TiKVLoadRegionCacheHistogram = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -693,6 +718,24 @@ func initMetrics(namespace, subsystem string, constLabels prometheus.Labels) {
 			ConstLabels: constLabels,
 		}, []string{LblStore})
 
+	TiKVFeedbackSlowScoreGauge = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace:   namespace,
+			Subsystem:   subsystem,
+			Name:        "feedback_slow_score",
+			Help:        "Slow scores of each tikv node that is calculated by TiKV and sent to the client by health feedback",
+			ConstLabels: constLabels,
+		}, []string{LblStore})
+
+	TiKVHealthFeedbackOpsCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace:   namespace,
+			Subsystem:   subsystem,
+			Name:        "health_feedback_ops_counter",
+			Help:        "Counter of operations about TiKV health feedback",
+			ConstLabels: constLabels,
+		}, []string{LblScope, LblType})
+
 	TiKVPreferLeaderFlowsGauge = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace:   namespace,
@@ -726,6 +769,33 @@ func initMetrics(namespace, subsystem string, constLabels prometheus.Labels) {
 			Help:      "Counter of stale read requests bytes",
 		}, []string{LblResult, LblDirection})
 
+	TiKVPipelinedFlushLenHistogram = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "pipelined_flush_len",
+			Help:      "Bucketed histogram of length of pipelined flushed memdb",
+			Buckets:   prometheus.ExponentialBuckets(1000, 2, 16), // 1K ~ 32M
+		})
+
+	TiKVPipelinedFlushSizeHistogram = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "pipelined_flush_size",
+			Help:      "Bucketed histogram of size of pipelined flushed memdb",
+			Buckets:   prometheus.ExponentialBuckets(16*1024*1024, 1.2, 13), // 16M ~ 142M
+		})
+
+	TiKVPipelinedFlushDuration = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "pipelined_flush_duration",
+			Help:      "Flush time of pipelined memdb.",
+			Buckets:   prometheus.ExponentialBuckets(0.0005, 2, 28), // 0.5ms ~ 18h
+		})
+
 	initShortcuts()
 }
 
@@ -755,6 +825,7 @@ func RegisterMetrics() {
 	prometheus.MustRegister(TiKVCoprocessorHistogram)
 	prometheus.MustRegister(TiKVLockResolverCounter)
 	prometheus.MustRegister(TiKVRegionErrorCounter)
+	prometheus.MustRegister(TiKVRPCErrorCounter)
 	prometheus.MustRegister(TiKVTxnWriteKVCountHistogram)
 	prometheus.MustRegister(TiKVTxnWriteSizeHistogram)
 	prometheus.MustRegister(TiKVRawkvCmdHistogram)
@@ -763,6 +834,7 @@ func RegisterMetrics() {
 	prometheus.MustRegister(TiKVLoadSafepointCounter)
 	prometheus.MustRegister(TiKVSecondaryLockCleanupFailureCounter)
 	prometheus.MustRegister(TiKVRegionCacheCounter)
+	prometheus.MustRegister(TiKVLoadRegionCounter)
 	prometheus.MustRegister(TiKVLoadRegionCacheHistogram)
 	prometheus.MustRegister(TiKVLocalLatchWaitTimeHistogram)
 	prometheus.MustRegister(TiKVStatusDuration)
@@ -805,10 +877,15 @@ func RegisterMetrics() {
 	prometheus.MustRegister(TiKVGrpcConnectionState)
 	prometheus.MustRegister(TiKVAggressiveLockedKeysCounter)
 	prometheus.MustRegister(TiKVStoreSlowScoreGauge)
+	prometheus.MustRegister(TiKVFeedbackSlowScoreGauge)
+	prometheus.MustRegister(TiKVHealthFeedbackOpsCounter)
 	prometheus.MustRegister(TiKVPreferLeaderFlowsGauge)
 	prometheus.MustRegister(TiKVStaleReadCounter)
 	prometheus.MustRegister(TiKVStaleReadReqCounter)
 	prometheus.MustRegister(TiKVStaleReadBytes)
+	prometheus.MustRegister(TiKVPipelinedFlushLenHistogram)
+	prometheus.MustRegister(TiKVPipelinedFlushSizeHistogram)
+	prometheus.MustRegister(TiKVPipelinedFlushDuration)
 }
 
 // readCounter reads the value of a prometheus.Counter.

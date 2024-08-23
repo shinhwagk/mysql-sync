@@ -41,6 +41,7 @@ import (
 	"math"
 	"math/rand"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -49,12 +50,12 @@ import (
 	"github.com/pingcap/kvproto/pkg/kvrpcpb"
 	"github.com/pkg/errors"
 	"github.com/tikv/client-go/v2/config"
+	"github.com/tikv/client-go/v2/config/retry"
 	tikverr "github.com/tikv/client-go/v2/error"
 	"github.com/tikv/client-go/v2/internal/client"
 	"github.com/tikv/client-go/v2/internal/latch"
 	"github.com/tikv/client-go/v2/internal/locate"
 	"github.com/tikv/client-go/v2/internal/logutil"
-	"github.com/tikv/client-go/v2/internal/retry"
 	"github.com/tikv/client-go/v2/kv"
 	"github.com/tikv/client-go/v2/metrics"
 	"github.com/tikv/client-go/v2/oracle"
@@ -66,6 +67,7 @@ import (
 	"github.com/tikv/client-go/v2/txnkv/txnsnapshot"
 	"github.com/tikv/client-go/v2/util"
 	pd "github.com/tikv/pd/client"
+	pdhttp "github.com/tikv/pd/client/http"
 	resourceControlClient "github.com/tikv/pd/client/resource_group/controller"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	atomicutil "go.uber.org/atomic"
@@ -78,10 +80,6 @@ const (
 	// DCLabelKey indicates the key of label which represents the dc for Store.
 	DCLabelKey           = "zone"
 	safeTSUpdateInterval = time.Second * 2
-	// Since the default max transaction TTL is 1 hour, we can use this to
-	// clean up the RU runtime stats as well.
-	ruRuntimeStatsCleanThreshold = time.Hour
-	ruRuntimeStatsCleanInterval  = ruRuntimeStatsCleanThreshold / 2
 )
 
 func createEtcdKV(addrs []string, tlsConfig *tls.Config) (*clientv3.Client, error) {
@@ -102,8 +100,9 @@ func createEtcdKV(addrs []string, tlsConfig *tls.Config) (*clientv3.Client, erro
 	return cli, nil
 }
 
-// update oracle's lastTS every 2000ms.
-var oracleUpdateInterval = 2000
+// Update oracle's lastTS every 2000ms by default. Can override at startup with an option to NewKVStore
+// or at runtime by calling SetLowResolutionTimestampUpdateInterval on the oracle
+var defaultOracleUpdateInterval = 2 * time.Second
 
 // KVStore contains methods to interact with a TiKV cluster.
 type KVStore struct {
@@ -115,7 +114,7 @@ type KVStore struct {
 		client Client
 	}
 	pdClient     pd.Client
-	pdHttpClient *util.PDHTTPClient
+	pdHttpClient pdhttp.Client
 	regionCache  *locate.RegionCache
 	lockResolver *txnlock.LockResolver
 	txnLatches   *latch.LatchesScheduler
@@ -137,15 +136,14 @@ type KVStore struct {
 
 	replicaReadSeed uint32 // this is used to load balance followers / learners when replica read is enabled
 
-	// StartTS -> RURuntimeStats, stores the RU runtime stats for certain transaction.
-	ruRuntimeStatsMap sync.Map
-
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 	close  atomicutil.Bool
 	gP     Pool
 }
+
+var _ Storage = (*KVStore)(nil)
 
 // Go run the function in a separate goroutine.
 func (s *KVStore) Go(f func()) error {
@@ -194,10 +192,39 @@ func WithPool(gp Pool) Option {
 	}
 }
 
-// WithPDHTTPClient set the PD HTTP client with the given address and TLS config.
-func WithPDHTTPClient(tlsConf *tls.Config, pdaddrs []string) Option {
+// WithUpdateInterval sets the frequency with which to refresh read timestamps
+// from the PD client. Smaller updateInterval will lead to more HTTP calls to
+// PD and less staleness on reads, and vice versa.
+func WithUpdateInterval(updateInterval time.Duration) Option {
 	return func(o *KVStore) {
-		o.pdHttpClient = util.NewPDHTTPClient(tlsConf, pdaddrs)
+		err := o.oracle.SetLowResolutionTimestampUpdateInterval(updateInterval)
+		if err != nil {
+			panic(err)
+		}
+	}
+}
+
+// WithPDHTTPClient sets the PD HTTP client with the given PD addresses and options.
+// Source is to mark where the HTTP client is created, which is used for metrics and logs.
+func WithPDHTTPClient(
+	source string,
+	pdAddrs []string,
+	opts ...pdhttp.ClientOption,
+) Option {
+	return func(o *KVStore) {
+		if cli := o.GetPDClient(); cli != nil {
+			o.pdHttpClient = pdhttp.NewClientWithServiceDiscovery(
+				source,
+				o.pdClient.GetServiceDiscovery(),
+				opts...,
+			)
+		} else {
+			o.pdHttpClient = pdhttp.NewClient(
+				source,
+				pdAddrs,
+				opts...,
+			)
+		}
 	}
 }
 
@@ -208,19 +235,44 @@ func loadOption(store *KVStore, opt ...Option) {
 	}
 }
 
+const getHealthFeedbackTimeout = time.Second * 2
+
+func requestHealthFeedbackFromKVClient(ctx context.Context, addr string, tikvClient Client) error {
+	// When batch RPC is enabled (`MaxBatchSize` > 0), a `GetHealthFeedback` RPC call will cause TiKV also sending the
+	// health feedback information in via the `BatchCommandsResponse`, which will be handled by the batch client.
+	// Therefore the same information carried in the response don't need to be handled in this case. And as we're
+	// currently not supporting health feedback mechanism without enabling batch RPC, we do not use the information
+	// carried in the `resp` here.
+	resp, err := tikvClient.SendRequest(ctx, addr, tikvrpc.NewRequest(tikvrpc.CmdGetHealthFeedback, &kvrpcpb.GetHealthFeedbackRequest{}), getHealthFeedbackTimeout)
+	if err != nil {
+		return err
+	}
+	regionErr, err := resp.GetRegionError()
+	if err != nil {
+		return err
+	}
+	if regionErr != nil {
+		return errors.Errorf("requested health feedback from store but received region error: %s", regionErr.String())
+	}
+	return nil
+}
+
 // NewKVStore creates a new TiKV store instance.
 func NewKVStore(uuid string, pdClient pd.Client, spkv SafePointKV, tikvclient Client, opt ...Option) (*KVStore, error) {
-	o, err := oracles.NewPdOracle(pdClient, time.Duration(oracleUpdateInterval)*time.Millisecond)
+	o, err := oracles.NewPdOracle(pdClient, defaultOracleUpdateInterval)
 	if err != nil {
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	regionCache := locate.NewRegionCache(pdClient, locate.WithRequestHealthFeedbackCallback(func(ctx context.Context, addr string) error {
+		return requestHealthFeedbackFromKVClient(ctx, addr, tikvclient)
+	}))
 	store := &KVStore{
 		clusterID:       pdClient.GetClusterID(context.TODO()),
 		uuid:            uuid,
 		oracle:          o,
 		pdClient:        pdClient,
-		regionCache:     locate.NewRegionCache(pdClient),
+		regionCache:     regionCache,
 		kv:              spkv,
 		safePoint:       0,
 		spTime:          time.Now(),
@@ -229,14 +281,15 @@ func NewKVStore(uuid string, pdClient pd.Client, spkv SafePointKV, tikvclient Cl
 		cancel:          cancel,
 		gP:              NewSpool(128, 10*time.Second),
 	}
-	store.clientMu.client = client.NewReqCollapse(client.NewInterceptedClient(tikvclient, &store.ruRuntimeStatsMap))
+	store.clientMu.client = client.NewReqCollapse(client.NewInterceptedClient(tikvclient))
+	store.clientMu.client.SetEventListener(regionCache.GetClientEventListener())
+
 	store.lockResolver = txnlock.NewLockResolver(store)
 	loadOption(store, opt...)
 
-	store.wg.Add(3)
+	store.wg.Add(2)
 	go store.runSafePointChecker()
 	go store.safeTSUpdater()
-	go store.ruRuntimeStatsMapCleaner()
 
 	return store, nil
 }
@@ -396,7 +449,17 @@ func (s *KVStore) CurrentTimestamp(txnScope string) (uint64, error) {
 	return startTS, nil
 }
 
-// GetTimestampWithRetry returns the latest timestamp.
+// CurrentAllTSOKeyspaceGroupMinTs returns a minimum timestamp from all TSO keyspace groups.
+func (s *KVStore) CurrentAllTSOKeyspaceGroupMinTs() (uint64, error) {
+	bo := retry.NewBackofferWithVars(context.Background(), transaction.TsoMaxBackoff, nil)
+	startTS, err := s.getAllTSOKeyspaceGroupMinTSWithRetry(bo)
+	if err != nil {
+		return 0, err
+	}
+	return startTS, nil
+}
+
+// GetTimestampWithRetry returns latest timestamp.
 func (s *KVStore) GetTimestampWithRetry(bo *Backoffer, scope string) (uint64, error) {
 	return s.getTimestampWithRetry(bo, scope)
 }
@@ -430,6 +493,29 @@ func (s *KVStore) getTimestampWithRetry(bo *Backoffer, txnScope string) (uint64,
 	}
 }
 
+func (s *KVStore) getAllTSOKeyspaceGroupMinTSWithRetry(bo *Backoffer) (uint64, error) {
+	if span := opentracing.SpanFromContext(bo.GetCtx()); span != nil && span.Tracer() != nil {
+		span1 := span.Tracer().StartSpan("TiKVStore.getAllTSOKeyspaceGroupMinTSWithRetry", opentracing.ChildOf(span.Context()))
+		defer span1.Finish()
+		bo.SetCtx(opentracing.ContextWithSpan(bo.GetCtx(), span1))
+	}
+
+	for {
+		minTS, err := s.oracle.GetAllTSOKeyspaceGroupMinTS(bo.GetCtx())
+		if err == nil {
+			return minTS, nil
+		}
+		// no need to back off
+		if strings.Contains(err.Error(), "Unimplemented") {
+			return 0, err
+		}
+		err = bo.Backoff(retry.BoPDRPC, errors.Errorf("get minimum timestamp failed: %v", err))
+		if err != nil {
+			return 0, err
+		}
+	}
+}
+
 func (s *KVStore) nextReplicaReadSeed() uint32 {
 	return atomic.AddUint32(&s.replicaReadSeed, 1)
 }
@@ -442,6 +528,11 @@ func (s *KVStore) GetOracle() oracle.Oracle {
 // GetPDClient returns the PD client.
 func (s *KVStore) GetPDClient() pd.Client {
 	return s.pdClient
+}
+
+// GetPDHTTPClient returns the PD HTTP client.
+func (s *KVStore) GetPDHTTPClient() pdhttp.Client {
+	return s.pdHttpClient
 }
 
 // SupportDeleteRange gets the storage support delete range or not.
@@ -505,6 +596,15 @@ func (s *KVStore) GetMinSafeTS(txnScope string) uint64 {
 	return 0
 }
 
+func (s *KVStore) setMinSafeTS(txnScope string, safeTS uint64) {
+	// ensure safeTS is not set to max uint64
+	if safeTS == math.MaxUint64 {
+		logutil.AssertWarn(logutil.BgLogger(), "skip setting min-safe-ts to max uint64", zap.String("txnScope", txnScope), zap.Stack("stack"))
+		return
+	}
+	s.minSafeTS.Store(txnScope, safeTS)
+}
+
 // Ctx returns ctx.
 func (s *KVStore) Ctx() context.Context {
 	return s.ctx
@@ -540,18 +640,27 @@ func (s *KVStore) getSafeTS(storeID uint64) (bool, uint64) {
 
 // setSafeTS sets safeTs for store storeID, export for testing
 func (s *KVStore) setSafeTS(storeID, safeTS uint64) {
+	// ensure safeTS is not set to max uint64
+	if safeTS == math.MaxUint64 {
+		logutil.AssertWarn(logutil.BgLogger(), "skip setting safe-ts to max uint64", zap.Uint64("storeID", storeID), zap.Stack("stack"))
+		return
+	}
 	s.safeTSMap.Store(storeID, safeTS)
 }
 
 func (s *KVStore) updateMinSafeTS(txnScope string, storeIDs []uint64) {
 	minSafeTS := uint64(math.MaxUint64)
 	// when there is no store, return 0 in order to let minStartTS become startTS directly
+	// actually storeIDs won't be empty since updateMinSafeTS is only called by updateSafeTS and updateSafeTS builds
+	// txnScopeMap with non-empty values. here we check it to make the logic more robust.
 	if len(storeIDs) < 1 {
-		s.minSafeTS.Store(txnScope, 0)
+		s.setMinSafeTS(txnScope, 0)
+		return
 	}
 	for _, store := range storeIDs {
 		ok, safeTS := s.getSafeTS(store)
 		if ok {
+			// safeTS is guaranteed to be less than math.MaxUint64 (by setSafeTS and its callers)
 			if safeTS != 0 && safeTS < minSafeTS {
 				minSafeTS = safeTS
 			}
@@ -559,7 +668,11 @@ func (s *KVStore) updateMinSafeTS(txnScope string, storeIDs []uint64) {
 			minSafeTS = 0
 		}
 	}
-	s.minSafeTS.Store(txnScope, minSafeTS)
+	// if minSafeTS is still math.MaxUint64, that means all store safe ts are 0, then we set minSafeTS to 0.
+	if minSafeTS == math.MaxUint64 {
+		minSafeTS = 0
+	}
+	s.setMinSafeTS(txnScope, minSafeTS)
 }
 
 func (s *KVStore) safeTSUpdater() {
@@ -598,30 +711,33 @@ func (s *KVStore) updateSafeTS(ctx context.Context) {
 		err                 error
 		storeMinResolvedTSs map[uint64]uint64
 	)
-	storeIDs := make([]string, len(stores))
+	storeIDs := make([]uint64, len(stores))
 	if s.pdHttpClient != nil {
 		for i, store := range stores {
-			storeIDs[i] = strconv.FormatUint(store.StoreID(), 10)
+			storeIDs[i] = store.StoreID()
 		}
-		_, storeMinResolvedTSs, err = s.pdHttpClient.GetMinResolvedTSByStoresIDs(ctx, storeIDs)
+		_, storeMinResolvedTSs, err = s.getMinResolvedTSByStoresIDs(ctx, storeIDs)
 		if err != nil {
 			// If getting the minimum resolved timestamp from PD failed, log the error and need to get it from TiKV.
 			logutil.BgLogger().Debug("get resolved TS from PD failed", zap.Error(err), zap.Any("stores", storeIDs))
 		}
 	}
 
-	for i, store := range stores {
+	for _, store := range stores {
 		storeID := store.StoreID()
 		storeAddr := store.GetAddr()
 		if store.IsTiFlash() {
 			storeAddr = store.GetPeerAddr()
 		}
-		go func(ctx context.Context, wg *sync.WaitGroup, storeID uint64, storeAddr string, storeIDStr string) {
+		go func(ctx context.Context, wg *sync.WaitGroup, storeID uint64, storeAddr string) {
 			defer wg.Done()
 
-			var safeTS uint64
-			// If getting the minimum resolved timestamp from PD failed or returned 0, try to get it from TiKV.
-			if storeMinResolvedTSs == nil || storeMinResolvedTSs[storeID] == 0 || err != nil {
+			var (
+				safeTS     uint64
+				storeIDStr = strconv.FormatUint(storeID, 10)
+			)
+			// If getting the minimum resolved timestamp from PD failed or returned 0/MaxUint64, try to get it from TiKV.
+			if storeMinResolvedTSs == nil || !isValidSafeTS(storeMinResolvedTSs[storeID]) || err != nil {
 				resp, err := tikvClient.SendRequest(
 					ctx, storeAddr, tikvrpc.NewRequest(
 						tikvrpc.CmdStoreSafeTS, &kvrpcpb.StoreSafeTSRequest{
@@ -655,7 +771,7 @@ func (s *KVStore) updateSafeTS(ctx context.Context) {
 			metrics.TiKVSafeTSUpdateCounter.WithLabelValues("success", storeIDStr).Inc()
 			safeTSTime := oracle.GetTimeFromTS(safeTS)
 			metrics.TiKVMinSafeTSGapSeconds.WithLabelValues(storeIDStr).Set(time.Since(safeTSTime).Seconds())
-		}(ctx, wg, storeID, storeAddr, storeIDs[i])
+		}(ctx, wg, storeID, storeAddr)
 	}
 
 	txnScopeMap := make(map[string][]uint64)
@@ -672,6 +788,34 @@ func (s *KVStore) updateSafeTS(ctx context.Context) {
 	wg.Wait()
 }
 
+func (s *KVStore) getMinResolvedTSByStoresIDs(ctx context.Context, storeIDs []uint64) (uint64, map[uint64]uint64, error) {
+	var (
+		minResolvedTS       uint64
+		storeMinResolvedTSs map[uint64]uint64
+		err                 error
+	)
+	minResolvedTS, storeMinResolvedTSs, err = s.pdHttpClient.GetMinResolvedTSByStoresIDs(ctx, storeIDs)
+	if err != nil {
+		return 0, nil, err
+	}
+	if val, e := util.EvalFailpoint("InjectPDMinResolvedTS"); e == nil {
+		injectedTS, ok := val.(int)
+		if !ok {
+			return minResolvedTS, storeMinResolvedTSs, err
+		}
+		minResolvedTS = uint64(injectedTS)
+		logutil.BgLogger().Info("inject min resolved ts", zap.Uint64("ts", uint64(injectedTS)))
+		// Currently we only have a store 1 in the test, so it's OK to inject the same min resolved TS for all stores here.
+		for storeID, v := range storeMinResolvedTSs {
+			if v != 0 && v != math.MaxUint64 {
+				storeMinResolvedTSs[storeID] = uint64(injectedTS)
+				logutil.BgLogger().Info("inject store min resolved ts", zap.Uint64("storeID", storeID), zap.Uint64("ts", uint64(injectedTS)))
+			}
+		}
+	}
+	return minResolvedTS, storeMinResolvedTSs, err
+}
+
 var (
 	skipSafeTSUpdateCounter    = metrics.TiKVSafeTSUpdateCounter.WithLabelValues("skip", "cluster")
 	successSafeTSUpdateCounter = metrics.TiKVSafeTSUpdateCounter.WithLabelValues("success", "cluster")
@@ -684,20 +828,20 @@ func (s *KVStore) updateGlobalTxnScopeTSFromPD(ctx context.Context) bool {
 	isGlobal := config.GetTxnScopeFromConfig() == oracle.GlobalTxnScope
 	// Try to get the minimum resolved timestamp of the cluster from PD.
 	if s.pdHttpClient != nil && isGlobal {
-		clusterMinSafeTS, _, err := s.pdHttpClient.GetMinResolvedTSByStoresIDs(ctx, nil)
+		clusterMinSafeTS, _, err := s.getMinResolvedTSByStoresIDs(ctx, nil)
 		if err != nil {
 			logutil.BgLogger().Debug("get resolved TS from PD failed", zap.Error(err))
-		} else if clusterMinSafeTS != 0 {
+		} else if isValidSafeTS(clusterMinSafeTS) {
 			// Update ts and metrics.
 			preClusterMinSafeTS := s.GetMinSafeTS(oracle.GlobalTxnScope)
-			// If preClusterMinSafeTS is maxUint64, it means that the min safe ts has not been initialized.
+			// preClusterMinSafeTS is guaranteed to be less than math.MaxUint64 (by this method and setMinSafeTS)
 			// related to https://github.com/tikv/client-go/issues/991
-			if preClusterMinSafeTS != math.MaxUint64 && preClusterMinSafeTS > clusterMinSafeTS {
+			if preClusterMinSafeTS > clusterMinSafeTS {
 				skipSafeTSUpdateCounter.Inc()
 				preSafeTSTime := oracle.GetTimeFromTS(preClusterMinSafeTS)
 				clusterMinSafeTSGap.Set(time.Since(preSafeTSTime).Seconds())
 			} else {
-				s.minSafeTS.Store(oracle.GlobalTxnScope, clusterMinSafeTS)
+				s.setMinSafeTS(oracle.GlobalTxnScope, clusterMinSafeTS)
 				successSafeTSUpdateCounter.Inc()
 				safeTSTime := oracle.GetTimeFromTS(clusterMinSafeTS)
 				clusterMinSafeTSGap.Set(time.Since(safeTSTime).Seconds())
@@ -709,42 +853,8 @@ func (s *KVStore) updateGlobalTxnScopeTSFromPD(ctx context.Context) bool {
 	return false
 }
 
-func (s *KVStore) ruRuntimeStatsMapCleaner() {
-	defer s.wg.Done()
-	t := time.NewTicker(ruRuntimeStatsCleanInterval)
-	defer t.Stop()
-	ctx, cancel := context.WithCancel(s.ctx)
-	ctx = util.WithInternalSourceType(ctx, util.InternalTxnGC)
-	defer cancel()
-
-	cleanThreshold := ruRuntimeStatsCleanThreshold
-	if _, e := util.EvalFailpoint("mockFastRURuntimeStatsMapClean"); e == nil {
-		t.Reset(time.Millisecond * 100)
-		cleanThreshold = time.Millisecond
-	}
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case now := <-t.C:
-			s.ruRuntimeStatsMap.Range(
-				func(key, _ interface{}) bool {
-					startTSTime := oracle.GetTimeFromTS(key.(uint64))
-					if now.Sub(startTSTime) >= cleanThreshold {
-						s.ruRuntimeStatsMap.Delete(key)
-					}
-					return true
-				},
-			)
-		}
-	}
-}
-
-// CreateRURuntimeStats creates a RURuntimeStats for the startTS and returns it.
-func (s *KVStore) CreateRURuntimeStats(startTS uint64) *util.RURuntimeStats {
-	rrs, _ := s.ruRuntimeStatsMap.LoadOrStore(startTS, util.NewRURuntimeStats())
-	return rrs.(*util.RURuntimeStats)
+func isValidSafeTS(ts uint64) bool {
+	return ts != 0 && ts != math.MaxUint64
 }
 
 // EnableResourceControl enables the resource control.
@@ -829,6 +939,13 @@ func WithTxnScope(txnScope string) TxnOption {
 func WithStartTS(startTS uint64) TxnOption {
 	return func(st *transaction.TxnOptions) {
 		st.StartTS = &startTS
+	}
+}
+
+// WithPipelinedMemDB creates transaction with pipelined memdb.
+func WithPipelinedMemDB() TxnOption {
+	return func(st *transaction.TxnOptions) {
+		st.PipelinedMemDB = true
 	}
 }
 

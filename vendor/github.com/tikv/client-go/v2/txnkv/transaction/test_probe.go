@@ -20,8 +20,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/tikv/client-go/v2/config/retry"
 	"github.com/tikv/client-go/v2/internal/locate"
-	"github.com/tikv/client-go/v2/internal/retry"
 	"github.com/tikv/client-go/v2/internal/unionstore"
 	"github.com/tikv/client-go/v2/kv"
 	"github.com/tikv/client-go/v2/tikvrpc"
@@ -367,6 +367,11 @@ func (c CommitterProbe) SetPrimaryKeyBlocker(ac, bk chan struct{}) {
 func (c CommitterProbe) CleanupMutations(ctx context.Context) error {
 	bo := retry.NewBackofferWithVars(ctx, cleanupMaxBackoff, nil)
 	return c.cleanupMutations(bo, c.mutations)
+}
+
+// ResolveFlushedLocks exports resolveFlushedLocks
+func (c CommitterProbe) ResolveFlushedLocks(bo *retry.Backoffer, start, end []byte, commit bool) {
+	c.resolveFlushedLocks(bo, start, end, commit)
 }
 
 // SendTxnHeartBeat renews a txn's ttl.

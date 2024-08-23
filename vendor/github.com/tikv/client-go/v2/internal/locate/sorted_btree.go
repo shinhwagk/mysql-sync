@@ -38,6 +38,8 @@ import (
 	"bytes"
 
 	"github.com/google/btree"
+	"github.com/tikv/client-go/v2/internal/logutil"
+	"go.uber.org/zap"
 )
 
 // SortedRegions is a sorted btree.
@@ -61,21 +63,19 @@ func (s *SortedRegions) ReplaceOrInsert(cachedRegion *Region) *Region {
 	return nil
 }
 
-// DescendLessOrEqual returns all items that are less than or equal to the key.
-func (s *SortedRegions) DescendLessOrEqual(key []byte, isEndKey bool, ts int64) (r *Region) {
+// SearchByKey returns the region which contains the key. Note that the region might be expired and it's caller's duty to check the region TTL.
+func (s *SortedRegions) SearchByKey(key []byte, isEndKey bool) (r *Region) {
 	s.b.DescendLessOrEqual(newBtreeSearchItem(key), func(item *btreeItem) bool {
-		r = item.cachedRegion
-		if isEndKey && bytes.Equal(r.StartKey(), key) {
-			r = nil     // clear result
+		region := item.cachedRegion
+		if isEndKey && bytes.Equal(region.StartKey(), key) {
 			return true // iterate next item
 		}
-		if !r.checkRegionCacheTTL(ts) {
-			r = nil
-			return true
+		if !isEndKey && region.Contains(key) || isEndKey && region.ContainsByEnd(key) {
+			r = region
 		}
 		return false
 	})
-	return r
+	return
 }
 
 // AscendGreaterOrEqual returns all items that are greater than or equal to the key.
@@ -93,23 +93,30 @@ func (s *SortedRegions) AscendGreaterOrEqual(startKey, endKey []byte, limit int)
 
 // removeIntersecting removes all items that have intersection with the key range of given region.
 // If the region itself is in the cache, it's not removed.
-func (s *SortedRegions) removeIntersecting(r *Region) []*btreeItem {
+func (s *SortedRegions) removeIntersecting(r *Region, verID RegionVerID) ([]*btreeItem, bool) {
 	var deleted []*btreeItem
+	var stale bool
 	s.b.AscendGreaterOrEqual(newBtreeSearchItem(r.StartKey()), func(item *btreeItem) bool {
-		// Skip the item that is equal to the given region.
-		if item.cachedRegion.VerID() == r.VerID() {
-			return true
-		}
 		if len(r.EndKey()) > 0 && bytes.Compare(item.cachedRegion.StartKey(), r.EndKey()) >= 0 {
+			return false
+		}
+		if item.cachedRegion.meta.GetRegionEpoch().GetVersion() > verID.ver {
+			logutil.BgLogger().Debug("get stale region",
+				zap.Uint64("region", verID.GetID()), zap.Uint64("ver", verID.GetVer()), zap.Uint64("conf", verID.GetConfVer()),
+				zap.Uint64("intersecting-ver", item.cachedRegion.meta.GetRegionEpoch().GetVersion()))
+			stale = true
 			return false
 		}
 		deleted = append(deleted, item)
 		return true
 	})
+	if stale {
+		return nil, true
+	}
 	for _, item := range deleted {
 		s.b.Delete(item)
 	}
-	return deleted
+	return deleted, false
 }
 
 // Clear removes all items from the btree.

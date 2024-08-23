@@ -36,6 +36,7 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"google.golang.org/grpc/encoding/gzip"
@@ -43,7 +44,10 @@ import (
 
 const (
 	// DefStoreLivenessTimeout is the default value for store liveness timeout.
-	DefStoreLivenessTimeout = "1s"
+	DefStoreLivenessTimeout       = "1s"
+	DefGrpcInitialWindowSize      = 1 << 27 // 128MiB
+	DefGrpcInitialConnWindowSize  = 1 << 27 // 128MiB
+	DefMaxConcurrencyRequestLimit = math.MaxInt64
 )
 
 // TiKVClient is the config for tikv client.
@@ -59,6 +63,12 @@ type TiKVClient struct {
 	GrpcKeepAliveTimeout uint `toml:"grpc-keepalive-timeout" json:"grpc-keepalive-timeout"`
 	// GrpcCompressionType is the compression type for gRPC channel: none or gzip.
 	GrpcCompressionType string `toml:"grpc-compression-type" json:"grpc-compression-type"`
+	// GrpcSharedBufferPool is the flag to control whether to share the buffer pool in the TiKV gRPC clients.
+	GrpcSharedBufferPool bool `toml:"grpc-shared-buffer-pool" json:"grpc-shared-buffer-pool"`
+	// GrpcInitialWindowSize is the value for initial window size on a stream.
+	GrpcInitialWindowSize int32 `toml:"grpc-initial-window-size" json:"grpc-initial-window-size"`
+	// GrpcInitialConnWindowSize is the value for initial window size on a connection.
+	GrpcInitialConnWindowSize int32 `toml:"grpc-initial-conn-window-size" json:"grpc-initial-conn-window-size"`
 	// CommitTimeout is the max time which command 'commit' will wait.
 	CommitTimeout string      `toml:"commit-timeout" json:"commit-timeout"`
 	AsyncCommit   AsyncCommit `toml:"async-commit" json:"async-commit"`
@@ -87,6 +97,9 @@ type TiKVClient struct {
 	// TTLRefreshedTxnSize controls whether a transaction should update its TTL or not.
 	TTLRefreshedTxnSize      int64  `toml:"ttl-refreshed-txn-size" json:"ttl-refreshed-txn-size"`
 	ResolveLockLiteThreshold uint64 `toml:"resolve-lock-lite-threshold" json:"resolve-lock-lite-threshold"`
+	// MaxConcurrencyRequestLimit is the max concurrency number of request to be sent the tikv
+	// 0 means auto adjust by feedback.
+	MaxConcurrencyRequestLimit int64 `toml:"max-concurrency-request-limit" json:"max-concurrency-request-limit"`
 }
 
 // AsyncCommit is the config for the async commit feature. The switch to enable it is a system variable.
@@ -121,11 +134,14 @@ type CoprocessorCache struct {
 // DefaultTiKVClient returns default config for TiKVClient.
 func DefaultTiKVClient() TiKVClient {
 	return TiKVClient{
-		GrpcConnectionCount:  4,
-		GrpcKeepAliveTime:    10,
-		GrpcKeepAliveTimeout: 3,
-		GrpcCompressionType:  "none",
-		CommitTimeout:        "41s",
+		GrpcConnectionCount:       4,
+		GrpcKeepAliveTime:         10,
+		GrpcKeepAliveTimeout:      3,
+		GrpcCompressionType:       "none",
+		GrpcSharedBufferPool:      false,
+		GrpcInitialWindowSize:     DefGrpcInitialWindowSize,
+		GrpcInitialConnWindowSize: DefGrpcInitialConnWindowSize,
+		CommitTimeout:             "41s",
 		AsyncCommit: AsyncCommit{
 			// FIXME: Find an appropriate default limit.
 			KeysLimit:         256,
@@ -155,7 +171,8 @@ func DefaultTiKVClient() TiKVClient {
 		},
 		CoprReqTimeout: 60 * time.Second,
 
-		ResolveLockLiteThreshold: 16,
+		ResolveLockLiteThreshold:   16,
+		MaxConcurrencyRequestLimit: DefMaxConcurrencyRequestLimit,
 	}
 }
 

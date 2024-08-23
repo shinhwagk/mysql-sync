@@ -52,5 +52,8 @@ type Iterator = unionstore.Iterator
 // If there are persistent flags associated with key, we will keep this key in node without value.
 type MemDB = unionstore.MemDB
 
+// MemBuffer is the interface for the MemDB buffer.
+type MemBuffer = unionstore.MemBuffer
+
 // MemDBCheckpoint is the checkpoint of memory DB.
 type MemDBCheckpoint = unionstore.MemDBCheckpoint

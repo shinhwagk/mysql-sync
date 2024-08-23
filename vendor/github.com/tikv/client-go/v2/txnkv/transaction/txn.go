@@ -43,20 +43,22 @@ import (
 	"math"
 	"math/rand"
 	"runtime/trace"
+	"slices"
 	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/dgryski/go-farm"
+	"github.com/docker/go-units"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pingcap/failpoint"
 	"github.com/pingcap/kvproto/pkg/kvrpcpb"
 	"github.com/pkg/errors"
 	"github.com/tikv/client-go/v2/config"
+	"github.com/tikv/client-go/v2/config/retry"
 	tikverr "github.com/tikv/client-go/v2/error"
 	"github.com/tikv/client-go/v2/internal/logutil"
-	"github.com/tikv/client-go/v2/internal/retry"
 	"github.com/tikv/client-go/v2/internal/unionstore"
 	tikv "github.com/tikv/client-go/v2/kv"
 	"github.com/tikv/client-go/v2/metrics"
@@ -110,8 +112,9 @@ func (e *tempLockBufferEntry) trySkipLockingOnRetry(returnValue bool, checkExist
 // TxnOptions indicates the option when beginning a transaction.
 // TxnOptions are set by the TxnOption values passed to Begin
 type TxnOptions struct {
-	TxnScope string
-	StartTS  *uint64
+	TxnScope       string
+	StartTS        *uint64
+	PipelinedMemDB bool
 }
 
 // KVTxn contains methods to interact with a TiKV transaction.
@@ -161,6 +164,9 @@ type KVTxn struct {
 	aggressiveLockingDirty   atomic.Bool
 
 	forUpdateTSChecks map[string]uint64
+
+	isPipelined     bool
+	pipelinedCancel context.CancelFunc
 }
 
 // NewTiKVTxn creates a new KVTxn.
@@ -168,7 +174,6 @@ func NewTiKVTxn(store kvstore, snapshot *txnsnapshot.KVSnapshot, startTS uint64,
 	cfg := config.GetGlobalConfig()
 	newTiKVTxn := &KVTxn{
 		snapshot:          snapshot,
-		us:                unionstore.NewUnionStore(snapshot),
 		store:             store,
 		startTS:           startTS,
 		startTime:         time.Now(),
@@ -179,6 +184,13 @@ func NewTiKVTxn(store kvstore, snapshot *txnsnapshot.KVSnapshot, startTS uint64,
 		enable1PC:         cfg.Enable1PC,
 		diskFullOpt:       kvrpcpb.DiskFullOpt_NotAllowedOnFull,
 		RequestSource:     snapshot.RequestSource,
+	}
+	if !options.PipelinedMemDB {
+		newTiKVTxn.us = unionstore.NewUnionStore(unionstore.NewMemDBWithContext(), snapshot)
+		return newTiKVTxn, nil
+	}
+	if err := newTiKVTxn.InitPipelinedMemDB(); err != nil {
+		return nil, err
 	}
 	return newTiKVTxn, nil
 }
@@ -226,7 +238,7 @@ func (txn *KVTxn) BatchGet(ctx context.Context, keys [][]byte) (map[string][]byt
 // v must NOT be nil or empty, otherwise it returns ErrCannotSetNilValue.
 func (txn *KVTxn) Set(k []byte, v []byte) error {
 	txn.setCnt++
-	return txn.us.GetMemBuffer().Set(k, v)
+	return txn.GetMemBuffer().Set(k, v)
 }
 
 // String implements fmt.Stringer interface.
@@ -253,7 +265,7 @@ func (txn *KVTxn) IterReverse(k, lowerBound []byte) (unionstore.Iterator, error)
 
 // Delete removes the entry for key k from kv store.
 func (txn *KVTxn) Delete(k []byte) error {
-	return txn.us.GetMemBuffer().Delete(k)
+	return txn.GetMemBuffer().Delete(k)
 }
 
 // SetSchemaLeaseChecker sets a hook to check schema version.
@@ -268,6 +280,9 @@ func (txn *KVTxn) EnableForceSyncLog() {
 
 // SetPessimistic indicates if the transaction should use pessimictic lock.
 func (txn *KVTxn) SetPessimistic(b bool) {
+	if txn.IsPipelined() {
+		panic("can not set a txn with pipelined memdb to pessimistic mode")
+	}
 	txn.isPessimistic = b
 }
 
@@ -286,6 +301,9 @@ func (txn *KVTxn) SetPriority(pri txnutil.Priority) {
 func (txn *KVTxn) SetResourceGroupTag(tag []byte) {
 	txn.resourceGroupTag = tag
 	txn.GetSnapshot().SetResourceGroupTag(tag)
+	if txn.committer != nil && txn.IsPipelined() {
+		txn.committer.resourceGroupTag = tag
+	}
 }
 
 // SetResourceGroupTagger sets the resource tagger for both write and read.
@@ -294,12 +312,18 @@ func (txn *KVTxn) SetResourceGroupTag(tag []byte) {
 func (txn *KVTxn) SetResourceGroupTagger(tagger tikvrpc.ResourceGroupTagger) {
 	txn.resourceGroupTagger = tagger
 	txn.GetSnapshot().SetResourceGroupTagger(tagger)
+	if txn.committer != nil && txn.IsPipelined() {
+		txn.committer.resourceGroupTagger = tagger
+	}
 }
 
 // SetResourceGroupName set resource group name for both read and write.
 func (txn *KVTxn) SetResourceGroupName(name string) {
 	txn.resourceGroupName = name
 	txn.GetSnapshot().SetResourceGroupName(name)
+	if txn.committer != nil && txn.IsPipelined() {
+		txn.committer.resourceGroupName = name
+	}
 }
 
 // SetRPCInterceptor sets interceptor.RPCInterceptor for the transaction and its related snapshot.
@@ -371,6 +395,22 @@ func (txn *KVTxn) SetTxnSource(txnSource uint64) {
 	txn.txnSource = txnSource
 }
 
+// SetSessionID sets the session ID of the transaction.
+// If the committer is not initialized yet, the function won't take effect.
+// It is supposed to be set before performing any writes in the transaction to avoid data race.
+// It is designed to be called in ActivateTxn(), though subject to change.
+// It is especially useful for pipelined transactions, as its committer is initialized immediately
+// when the transaction is created.
+//
+// Note that commiter may also obtain a sessionID from context directly via sessionIDCtxKey.
+// TODO: consider unifying them.
+
+func (txn *KVTxn) SetSessionID(sessionID uint64) {
+	if txn.committer != nil {
+		txn.committer.sessionID = sessionID
+	}
+}
+
 // GetDiskFullOpt gets the options of current operation in each TiKV disk usage level.
 func (txn *KVTxn) GetDiskFullOpt() kvrpcpb.DiskFullOpt {
 	return txn.diskFullOpt
@@ -389,6 +429,167 @@ func (txn *KVTxn) SetAssertionLevel(assertionLevel kvrpcpb.AssertionLevel) {
 // IsPessimistic returns true if it is pessimistic.
 func (txn *KVTxn) IsPessimistic() bool {
 	return txn.isPessimistic
+}
+
+// IsPipelined returns true if it's a pipelined transaction.
+func (txn *KVTxn) IsPipelined() bool {
+	return txn.isPipelined
+}
+
+func (txn *KVTxn) InitPipelinedMemDB() error {
+	if txn.committer != nil {
+		return errors.New("pipelined memdb should be set before the transaction is committed")
+	}
+	txn.isPipelined = true
+	txn.snapshot.SetPipelined(txn.startTS)
+	// TODO: set the correct sessionID
+	committer, err := newTwoPhaseCommitter(txn, 0)
+	if err != nil {
+		return err
+	}
+	txn.committer = committer
+	// disable 1pc and async commit for pipelined txn.
+	if txn.committer.isOnePC() || txn.committer.isAsyncCommit() {
+		logutil.BgLogger().Fatal("[pipelined dml] should not enable 1pc or async commit for pipelined txn",
+			zap.Uint64("startTS", txn.startTS),
+			zap.Bool("1pc", txn.committer.isOnePC()),
+			zap.Bool("async commit", txn.committer.isAsyncCommit()))
+	}
+	commitDetail := &util.CommitDetails{
+		ResolveLock: util.ResolveLockDetail{},
+	}
+	txn.committer.setDetail(commitDetail)
+	flushCtx, flushCancel := context.WithCancel(context.Background())
+	txn.pipelinedCancel = flushCancel
+	// generation is increased when the memdb is flushed to kv store.
+	// note the first generation is 1, which can mark pipelined dml's lock.
+	flushedKeys, flushedSize := 0, 0
+	pipelinedMemDB := unionstore.NewPipelinedMemDB(func(ctx context.Context, keys [][]byte) (map[string][]byte, error) {
+		return txn.snapshot.BatchGetWithTier(ctx, keys, txnsnapshot.BatchGetBufferTier)
+	}, func(generation uint64, memdb *unionstore.MemDB) (err error) {
+		if atomic.LoadUint32((*uint32)(&txn.committer.ttlManager.state)) == uint32(stateClosed) {
+			return errors.New("ttl manager is closed")
+		}
+		startTime := time.Now()
+		defer func() {
+			if err != nil {
+				txn.committer.ttlManager.close()
+			}
+			flushedKeys += memdb.Len()
+			flushedSize += memdb.Size()
+			logutil.BgLogger().Info(
+				"[pipelined dml] flushed memdb to kv store",
+				zap.Uint64("startTS", txn.startTS),
+				zap.Uint64("generation", generation),
+				zap.Uint64("session", txn.committer.sessionID),
+				zap.Int("keys", memdb.Len()),
+				zap.String("size", units.HumanSize(float64(memdb.Size()))),
+				zap.Int("flushed keys", flushedKeys),
+				zap.String("flushed size", units.HumanSize(float64(flushedSize))),
+				zap.Duration("take time", time.Since(startTime)),
+			)
+		}()
+
+		// The flush function will not be called concurrently.
+		// TODO: set backoffer from upper context.
+		bo := retry.NewBackofferWithVars(flushCtx, 20000, nil)
+		mutations := newMemBufferMutations(memdb.Len(), memdb)
+		if memdb.Len() == 0 {
+			return nil
+		}
+		// update bounds
+		{
+			var it unionstore.Iterator
+			// lower bound
+			it = memdb.IterWithFlags(nil, nil)
+			if !it.Valid() {
+				return errors.New("invalid iterator")
+			}
+			startKey := it.Key()
+			if len(txn.committer.pipelinedCommitInfo.pipelinedStart) == 0 || bytes.Compare(txn.committer.pipelinedCommitInfo.pipelinedStart, startKey) > 0 {
+				txn.committer.pipelinedCommitInfo.pipelinedStart = make([]byte, len(startKey))
+				copy(txn.committer.pipelinedCommitInfo.pipelinedStart, startKey)
+			}
+			it.Close()
+			// upper bound
+			it = memdb.IterReverseWithFlags(nil)
+			if !it.Valid() {
+				return errors.New("invalid iterator")
+			}
+			endKey := it.Key()
+			if len(txn.committer.pipelinedCommitInfo.pipelinedEnd) == 0 || bytes.Compare(txn.committer.pipelinedCommitInfo.pipelinedEnd, endKey) < 0 {
+				txn.committer.pipelinedCommitInfo.pipelinedEnd = make([]byte, len(endKey))
+				copy(txn.committer.pipelinedCommitInfo.pipelinedEnd, endKey)
+			}
+			it.Close()
+		}
+		// TODO: reuse initKeysAndMutations
+		for it := memdb.IterWithFlags(nil, nil); it.Valid(); err = it.Next() {
+			if err != nil {
+				return err
+			}
+			flags := it.Flags()
+			var value []byte
+			var op kvrpcpb.Op
+
+			if !it.HasValue() {
+				if !flags.HasLocked() {
+					continue
+				}
+				op = kvrpcpb.Op_Lock
+			} else {
+				value = it.Value()
+				if len(value) > 0 {
+					op = kvrpcpb.Op_Put
+					if flags.HasPresumeKeyNotExists() {
+						op = kvrpcpb.Op_Insert
+					}
+				} else {
+					if flags.HasPresumeKeyNotExists() {
+						// delete-your-writes keys in optimistic txn need check not exists in prewrite-phase
+						// due to `Op_CheckNotExists` doesn't prewrite lock, so mark those keys should not be used in commit-phase.
+						op = kvrpcpb.Op_CheckNotExists
+					} else {
+						if flags.HasNewlyInserted() {
+							// The delete-your-write keys in pessimistic transactions, only lock needed keys and skip
+							// other deletes for example the secondary index delete.
+							// Here if `tidb_constraint_check_in_place` is enabled and the transaction is in optimistic mode,
+							// the logic is same as the pessimistic mode.
+							if flags.HasLocked() {
+								op = kvrpcpb.Op_Lock
+							} else {
+								continue
+							}
+						} else {
+							op = kvrpcpb.Op_Del
+						}
+					}
+				}
+			}
+
+			if len(txn.committer.primaryKey) == 0 && op != kvrpcpb.Op_CheckNotExists {
+				pk := it.Key()
+				txn.committer.primaryKey = make([]byte, len(pk))
+				// copy the primary key to avoid reference to the memory arena.
+				copy(txn.committer.primaryKey, pk)
+				txn.committer.pipelinedCommitInfo.primaryOp = op
+			}
+
+			mustExist, mustNotExist := flags.HasAssertExist(), flags.HasAssertNotExist()
+			if txn.assertionLevel == kvrpcpb.AssertionLevel_Off {
+				mustExist, mustNotExist = false, false
+			}
+			mutations.Push(op, false, mustExist, mustNotExist, flags.HasNeedConstraintCheckInPrewrite(), it.Handle())
+		}
+		return txn.committer.pipelinedFlushMutations(bo, mutations, generation)
+	})
+	txn.committer.priority = txn.priority.ToPB()
+	txn.committer.syncLog = txn.syncLog
+	txn.committer.resourceGroupTag = txn.resourceGroupTag
+	txn.committer.resourceGroupTagger = txn.resourceGroupTagger
+	txn.committer.resourceGroupName = txn.resourceGroupName
+	txn.us = unionstore.NewUnionStore(pipelinedMemDB, txn.snapshot)
+	return nil
 }
 
 // IsCasualConsistency returns if the transaction allows linearizability
@@ -466,22 +667,26 @@ func (txn *KVTxn) Commit(ctx context.Context) error {
 		txn.committer = committer
 	}
 
-	txn.committer.SetDiskFullOpt(txn.diskFullOpt)
-	txn.committer.SetTxnSource(txn.txnSource)
+	committer.SetDiskFullOpt(txn.diskFullOpt)
+	committer.SetTxnSource(txn.txnSource)
 	txn.committer.forUpdateTSConstraints = txn.forUpdateTSChecks
 
 	defer committer.ttlManager.close()
 
-	initRegion := trace.StartRegion(ctx, "InitKeys")
-	err = committer.initKeysAndMutations(ctx)
-	initRegion.End()
+	if !txn.isPipelined {
+		initRegion := trace.StartRegion(ctx, "InitKeys")
+		err = committer.initKeysAndMutations(ctx)
+		initRegion.End()
+	} else if !txn.GetMemBuffer().Dirty() {
+		return nil
+	}
 	if err != nil {
 		if txn.IsPessimistic() {
 			txn.asyncPessimisticRollback(ctx, committer.mutations.GetKeys(), txn.committer.forUpdateTS)
 		}
 		return err
 	}
-	if committer.mutations.Len() == 0 {
+	if !txn.isPipelined && committer.mutations.Len() == 0 {
 		return nil
 	}
 
@@ -504,7 +709,8 @@ func (txn *KVTxn) Commit(ctx context.Context) error {
 	}()
 	// latches disabled
 	// pessimistic transaction should also bypass latch.
-	if txn.store.TxnLatches() == nil || txn.IsPessimistic() {
+	// transaction with pipelined memdb should also bypass latch.
+	if txn.store.TxnLatches() == nil || txn.IsPessimistic() || txn.IsPipelined() {
 		err = committer.execute(ctx)
 		if val == nil || sessionID > 0 {
 			txn.onCommitted(err)
@@ -582,6 +788,18 @@ func (txn *KVTxn) Rollback() error {
 			logutil.BgLogger().Error(err.Error())
 		}
 	}
+	if txn.IsPipelined() && txn.committer != nil {
+		// wait all flush to finish, this avoids data race.
+		txn.pipelinedCancel()
+		txn.GetMemBuffer().FlushWait()
+		txn.committer.ttlManager.close()
+		// no need to clean up locks when no flush triggered.
+		pipelinedStart, pipelinedEnd := txn.committer.pipelinedCommitInfo.pipelinedStart, txn.committer.pipelinedCommitInfo.pipelinedEnd
+		if len(pipelinedStart) != 0 && len(pipelinedEnd) != 0 {
+			rollbackBo := retry.NewBackofferWithVars(txn.store.Ctx(), CommitSecondaryMaxBackoff, txn.vars)
+			txn.committer.resolveFlushedLocks(rollbackBo, pipelinedStart, pipelinedEnd, false)
+		}
+	}
 	txn.close()
 	logutil.BgLogger().Debug("[kv] rollback txn", zap.Uint64("txnStartTS", txn.StartTS()))
 	if txn.isInternal() {
@@ -610,7 +828,7 @@ func (txn *KVTxn) rollbackPessimisticLocks() error {
 
 func (txn *KVTxn) collectLockedKeys() [][]byte {
 	keys := make([][]byte, 0, txn.lockedCnt)
-	buf := txn.GetMemBuffer()
+	buf := txn.GetMemBuffer().GetMemDB()
 	var err error
 	for it := buf.IterWithFlags(nil, nil); it.Valid(); err = it.Next() {
 		_ = err
@@ -634,6 +852,8 @@ type TxnInfo struct {
 	AsyncCommitFallback bool   `json:"async_commit_fallback"`
 	OnePCFallback       bool   `json:"one_pc_fallback"`
 	ErrMsg              string `json:"error,omitempty"`
+	Pipelined           bool   `json:"pipelined"`
+	FlushWaitMs         int64  `json:"flush_wait_ms"`
 }
 
 func (txn *KVTxn) onCommitted(err error) {
@@ -655,6 +875,8 @@ func (txn *KVTxn) onCommitted(err error) {
 			TxnCommitMode:       commitMode,
 			AsyncCommitFallback: txn.committer.hasTriedAsyncCommit && !isAsyncCommit,
 			OnePCFallback:       txn.committer.hasTriedOnePC && !isOnePC,
+			Pipelined:           txn.IsPipelined(),
+			FlushWaitMs:         txn.GetMemBuffer().GetFlushMetrics().WaitDuration.Milliseconds(),
 		}
 		if err != nil {
 			info.ErrMsg = err.Error()
@@ -735,6 +957,18 @@ func (txn *KVTxn) CancelAggressiveLocking(ctx context.Context) {
 	if txn.aggressiveLockingContext == nil {
 		panic("Trying to cancel aggressive locking while it's not started")
 	}
+
+	// Unset `aggressiveLockingContext` in a defer block to ensure it must be executed even it panicked on the half way.
+	// It's because that if it's panicked by an OOM-kill of TiDB, it can then be recovered and the user can still
+	// continue using the transaction's state.
+	// The usage of `defer` can be removed once we have other way to avoid the panicking.
+	// See: https://github.com/pingcap/tidb/issues/53540#issuecomment-2138089140
+	// Currently the problem only exists in `DoneAggressiveLocking`, but we do the same to `CancelAggressiveLocking`
+	// to the two function consistent, and prevent for new panics that might be introduced in the future.
+	defer func() {
+		txn.aggressiveLockingContext = nil
+	}()
+
 	txn.cleanupAggressiveLockingRedundantLocks(context.Background())
 	if txn.aggressiveLockingContext.assignedPrimaryKey {
 		txn.resetPrimary()
@@ -754,7 +988,6 @@ func (txn *KVTxn) CancelAggressiveLocking(ctx context.Context) {
 		txn.asyncPessimisticRollback(context.Background(), keys, forUpdateTS)
 		txn.lockedCnt -= len(keys)
 	}
-	txn.aggressiveLockingContext = nil
 }
 
 // DoneAggressiveLocking finishes the current aggressive locking. The locked keys will be moved to the membuffer as if
@@ -763,6 +996,16 @@ func (txn *KVTxn) DoneAggressiveLocking(ctx context.Context) {
 	if txn.aggressiveLockingContext == nil {
 		panic("Trying to finish aggressive locking while it's not started")
 	}
+
+	// Unset `aggressiveLockingContext` in a defer block to ensure it must be executed even it panicked on the half way.
+	// It's because that if it's panicked by an OOM-kill of TiDB, it can then be recovered and the user can still
+	// continue using the transaction's state.
+	// The usage of `defer` can be removed once we have other way to avoid the panicking.
+	// See: https://github.com/pingcap/tidb/issues/53540#issuecomment-2138089140
+	defer func() {
+		txn.aggressiveLockingContext = nil
+	}()
+
 	txn.cleanupAggressiveLockingRedundantLocks(context.Background())
 
 	if txn.forUpdateTSChecks == nil {
@@ -787,7 +1030,6 @@ func (txn *KVTxn) DoneAggressiveLocking(ctx context.Context) {
 			txn.committer.maxLockedWithConflictTS = txn.aggressiveLockingContext.maxLockedWithConflictTS
 		}
 	}
-	txn.aggressiveLockingContext = nil
 }
 
 // IsInAggressiveLockingMode checks if the transaction is currently in aggressive locking mode.
@@ -1111,12 +1353,6 @@ func (txn *KVTxn) lockKeys(ctx context.Context, lockCtx *tikv.LockCtx, fn func()
 			lockCtx.Stats.Mu.BackoffTypes = append(lockCtx.Stats.Mu.BackoffTypes, bo.GetTypes()...)
 			lockCtx.Stats.Mu.Unlock()
 		}
-		if lockCtx.Killed != nil {
-			// If the kill signal is received during waiting for pessimisticLock,
-			// pessimisticLockKeys would handle the error but it doesn't reset the flag.
-			// We need to reset the killed flag here.
-			atomic.CompareAndSwapUint32(lockCtx.Killed, 1, 0)
-		}
 		if txn.IsInAggressiveLockingMode() {
 			if txn.aggressiveLockingContext.maxLockedWithConflictTS < lockCtx.MaxLockedWithConflictTS {
 				txn.aggressiveLockingContext.maxLockedWithConflictTS = lockCtx.MaxLockedWithConflictTS
@@ -1320,8 +1556,8 @@ func deduplicateKeys(keys [][]byte) [][]byte {
 		return keys
 	}
 
-	sort.Slice(keys, func(i, j int) bool {
-		return bytes.Compare(keys[i], keys[j]) < 0
+	slices.SortFunc(keys, func(i, j []byte) int {
+		return bytes.Compare(i, j)
 	})
 	deduped := keys[:1]
 	for i := 1; i < len(keys); i++ {
@@ -1415,18 +1651,13 @@ func (txn *KVTxn) Size() int {
 	return txn.us.GetMemBuffer().Size()
 }
 
-// Reset reset the Transaction to initial states.
-func (txn *KVTxn) Reset() {
-	txn.us.GetMemBuffer().Reset()
-}
-
 // GetUnionStore returns the UnionStore binding to this transaction.
 func (txn *KVTxn) GetUnionStore() *unionstore.KVUnionStore {
 	return txn.us
 }
 
 // GetMemBuffer return the MemBuffer binding to this transaction.
-func (txn *KVTxn) GetMemBuffer() *unionstore.MemDB {
+func (txn *KVTxn) GetMemBuffer() unionstore.MemBuffer {
 	return txn.us.GetMemBuffer()
 }
 
@@ -1471,4 +1702,9 @@ func (txn *KVTxn) SetRequestSourceType(tp string) {
 // SetExplicitRequestSourceType sets the explicit type of the request source.
 func (txn *KVTxn) SetExplicitRequestSourceType(tp string) {
 	txn.RequestSource.SetExplicitRequestSourceType(tp)
+}
+
+// MemHookSet returns whether the mem buffer has a memory footprint change hook set.
+func (txn *KVTxn) MemHookSet() bool {
+	return txn.us.GetMemBuffer().MemHookSet()
 }

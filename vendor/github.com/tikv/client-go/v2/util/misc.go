@@ -38,7 +38,6 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -168,11 +167,7 @@ func String(b []byte) (s string) {
 	if len(b) == 0 {
 		return ""
 	}
-	pbytes := (*reflect.SliceHeader)(unsafe.Pointer(&b))
-	pstring := (*reflect.StringHeader)(unsafe.Pointer(&s))
-	pstring.Data = pbytes.Data
-	pstring.Len = pbytes.Len
-	return
+	return unsafe.String(unsafe.SliceData(b), len(b))
 }
 
 // ToUpperASCIIInplace bytes.ToUpper but zero-cost
@@ -214,4 +209,20 @@ func HexRegionKey(key []byte) []byte {
 // logs.
 func HexRegionKeyStr(key []byte) string {
 	return String(HexRegionKey(key))
+}
+
+type Option[T interface{}] struct {
+	inner *T
+}
+
+func Some[T interface{}](inner T) Option[T] {
+	return Option[T]{inner: &inner}
+}
+
+func None[T interface{}]() Option[T] {
+	return Option[T]{inner: nil}
+}
+
+func (o Option[T]) Inner() *T {
+	return o.inner
 }

@@ -17,16 +17,17 @@ package tikv
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/pingcap/kvproto/pkg/kvrpcpb"
 	"github.com/pingcap/kvproto/pkg/metapb"
 	"github.com/pkg/errors"
+	"github.com/tikv/client-go/v2/config/retry"
 	tikverr "github.com/tikv/client-go/v2/error"
 	"github.com/tikv/client-go/v2/internal/locate"
 	"github.com/tikv/client-go/v2/internal/logutil"
-	"github.com/tikv/client-go/v2/internal/retry"
 	"github.com/tikv/client-go/v2/kv"
 	"github.com/tikv/client-go/v2/metrics"
 	"github.com/tikv/client-go/v2/tikvrpc"
@@ -35,7 +36,7 @@ import (
 	zap "go.uber.org/zap"
 )
 
-// We don't want gc to sweep out the cached info belong to other processes, like coprocessor.
+// GCScanLockLimit We don't want gc to sweep out the cached info belong to other processes, like coprocessor.
 const GCScanLockLimit = txnlock.ResolvedCacheSize / 2
 
 // GC does garbage collection (GC) of the TiKV cluster.
@@ -89,7 +90,13 @@ func (s *KVStore) resolveLocks(ctx context.Context, safePoint uint64, concurrenc
 		return ResolveLocksForRange(ctx, lockResolver, safePoint, r.StartKey, r.EndKey, NewGcResolveLockMaxBackoffer, GCScanLockLimit)
 	}
 
-	runner := rangetask.NewRangeTaskRunner("resolve-locks-runner", s, concurrency, handler)
+	runner := rangetask.NewRangeTaskRunnerWithID(
+		"resolve-locks-runner",
+		fmt.Sprintf("resolve-locks-runner-%d", safePoint),
+		s,
+		concurrency,
+		handler,
+	)
 	// Run resolve lock on the whole TiKV cluster. Empty keys means the range is unbounded.
 	err := runner.RunOnRange(ctx, []byte(""), []byte(""))
 	if err != nil {
@@ -98,11 +105,13 @@ func (s *KVStore) resolveLocks(ctx context.Context, safePoint uint64, concurrenc
 	return nil
 }
 
+// BaseRegionLockResolver is a base implementation of RegionLockResolver.
 type BaseRegionLockResolver struct {
 	identifier string
 	store      Storage
 }
 
+// NewRegionLockResolver creates a new BaseRegionLockResolver.
 func NewRegionLockResolver(identifier string, store Storage) *BaseRegionLockResolver {
 	return &BaseRegionLockResolver{
 		identifier: identifier,
@@ -110,18 +119,22 @@ func NewRegionLockResolver(identifier string, store Storage) *BaseRegionLockReso
 	}
 }
 
+// Identifier represents the name of this resolver.
 func (l *BaseRegionLockResolver) Identifier() string {
 	return l.identifier
 }
 
+// ResolveLocksInOneRegion tries to resolve expired locks for one region.
 func (l *BaseRegionLockResolver) ResolveLocksInOneRegion(bo *Backoffer, locks []*txnlock.Lock, loc *locate.KeyLocation) (*locate.KeyLocation, error) {
 	return batchResolveLocksInOneRegion(bo, l.GetStore(), locks, loc)
 }
 
+// ScanLocksInOneRegion return locks and location with given start key in a region.
 func (l *BaseRegionLockResolver) ScanLocksInOneRegion(bo *Backoffer, key []byte, maxVersion uint64, scanLimit uint32) ([]*txnlock.Lock, *locate.KeyLocation, error) {
 	return scanLocksInOneRegionWithStartKey(bo, l.GetStore(), key, maxVersion, scanLimit)
 }
 
+// GetStore is used to get store to GetRegionCache and SendReq for this lock resolver.
 func (l *BaseRegionLockResolver) GetStore() Storage {
 	return l.store
 }

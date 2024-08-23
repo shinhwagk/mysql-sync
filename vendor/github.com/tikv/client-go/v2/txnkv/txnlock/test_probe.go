@@ -17,8 +17,8 @@ package txnlock
 import (
 	"github.com/pingcap/kvproto/pkg/kvrpcpb"
 	"github.com/pkg/errors"
+	"github.com/tikv/client-go/v2/config/retry"
 	"github.com/tikv/client-go/v2/internal/locate"
-	"github.com/tikv/client-go/v2/internal/retry"
 )
 
 // LockProbe exposes some lock utilities for testing purpose.
@@ -58,7 +58,7 @@ func (l LockResolverProbe) ResolveLock(bo *retry.Backoffer, lock *Lock) error {
 
 // ResolvePessimisticLock resolves single pessimistic lock.
 func (l LockResolverProbe) ResolvePessimisticLock(bo *retry.Backoffer, lock *Lock) error {
-	return l.resolvePessimisticLock(bo, lock)
+	return l.resolvePessimisticLock(bo, lock, false, nil)
 }
 
 // GetTxnStatus sends the CheckTxnStatus request to the TiKV server.

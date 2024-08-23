@@ -51,6 +51,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pingcap/kvproto/pkg/coprocessor"
 	"github.com/pingcap/kvproto/pkg/debugpb"
+	"github.com/pingcap/kvproto/pkg/kvrpcpb"
 	"github.com/pingcap/kvproto/pkg/mpp"
 	"github.com/pingcap/kvproto/pkg/tikvpb"
 	"github.com/pkg/errors"
@@ -69,6 +70,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/encoding/gzip"
+	"google.golang.org/grpc/experimental"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
 )
@@ -89,12 +91,6 @@ const (
 	MaxWriteExecutionTime = ReadTimeoutShort - 10*time.Second
 )
 
-// Grpc window size
-const (
-	GrpcInitialWindowSize     = 1 << 30
-	GrpcInitialConnWindowSize = 1 << 30
-)
-
 // forwardMetadataKey is the key of gRPC metadata which represents a forwarded request.
 const forwardMetadataKey = "tikv-forwarded-host"
 
@@ -107,11 +103,60 @@ type Client interface {
 	CloseAddr(addr string) error
 	// SendRequest sends Request.
 	SendRequest(ctx context.Context, addr string, req *tikvrpc.Request, timeout time.Duration) (*tikvrpc.Response, error)
+	// SetEventListener registers an event listener for the Client instance. If it's called more than once, the
+	// previously set one will be replaced.
+	SetEventListener(listener ClientEventListener)
+}
+
+// ClientEventListener is a listener to handle events produced by `Client`.
+type ClientEventListener interface {
+	// OnHealthFeedback is called when `Client` receives a response that carries the HealthFeedback information.
+	OnHealthFeedback(feedback *kvrpcpb.HealthFeedback)
+}
+
+// ClientExt is a client has extended interfaces.
+type ClientExt interface {
+	// CloseAddrVer closes gRPC connections to the address with additional `ver` parameter.
+	// Each new connection will have an incremented `ver` value, and attempts to close a previous `ver` will be ignored.
+	// Passing `math.MaxUint64` as the `ver` parameter will forcefully close all connections to the address.
+	CloseAddrVer(addr string, ver uint64) error
+}
+
+// ErrConn wraps error with target address and version of the connection.
+type ErrConn struct {
+	Err  error
+	Addr string
+	Ver  uint64
+}
+
+func (e *ErrConn) Error() string {
+	return fmt.Sprintf("[%s](%d) %s", e.Addr, e.Ver, e.Err.Error())
+}
+
+func (e *ErrConn) Cause() error {
+	return e.Err
+}
+
+func (e *ErrConn) Unwrap() error {
+	return e.Err
+}
+
+func WrapErrConn(err error, conn *connArray) error {
+	if err == nil {
+		return nil
+	}
+	return &ErrConn{
+		Err:  err,
+		Addr: conn.target,
+		Ver:  conn.ver,
+	}
 }
 
 type connArray struct {
 	// The target host.
 	target string
+	// version of the connection array, increase by 1 when reconnect.
+	ver uint64
 
 	index uint32
 	v     []*monitoredConn
@@ -125,9 +170,10 @@ type connArray struct {
 	monitor *connMonitor
 }
 
-func newConnArray(maxSize uint, addr string, security config.Security,
-	idleNotify *uint32, enableBatch bool, dialTimeout time.Duration, m *connMonitor, opts []grpc.DialOption) (*connArray, error) {
+func newConnArray(maxSize uint, addr string, ver uint64, security config.Security,
+	idleNotify *uint32, enableBatch bool, dialTimeout time.Duration, m *connMonitor, eventListener *atomic.Pointer[ClientEventListener], opts []grpc.DialOption) (*connArray, error) {
 	a := &connArray{
+		ver:           ver,
 		index:         0,
 		v:             make([]*monitoredConn, maxSize),
 		streamTimeout: make(chan *tikvrpc.Lease, 1024),
@@ -135,7 +181,7 @@ func newConnArray(maxSize uint, addr string, security config.Security,
 		dialTimeout:   dialTimeout,
 		monitor:       m,
 	}
-	if err := a.Init(addr, security, idleNotify, enableBatch, opts...); err != nil {
+	if err := a.Init(addr, security, idleNotify, enableBatch, eventListener, opts...); err != nil {
 		return nil, err
 	}
 	return a, nil
@@ -222,12 +268,14 @@ func (a *connArray) monitoredDial(ctx context.Context, connName, target string, 
 
 func (c *monitoredConn) Close() error {
 	if c.ClientConn != nil {
-		return c.ClientConn.Close()
+		err := c.ClientConn.Close()
+		logutil.BgLogger().Debug("close gRPC connection", zap.String("target", c.Name), zap.Error(err))
+		return err
 	}
 	return nil
 }
 
-func (a *connArray) Init(addr string, security config.Security, idleNotify *uint32, enableBatch bool, opts ...grpc.DialOption) error {
+func (a *connArray) Init(addr string, security config.Security, idleNotify *uint32, enableBatch bool, eventListener *atomic.Pointer[ClientEventListener], opts ...grpc.DialOption) error {
 	a.target = addr
 
 	opt := grpc.WithTransportCredentials(insecure.NewCredentials())
@@ -267,8 +315,8 @@ func (a *connArray) Init(addr string, security config.Security, idleNotify *uint
 
 		opts = append([]grpc.DialOption{
 			opt,
-			grpc.WithInitialWindowSize(GrpcInitialWindowSize),
-			grpc.WithInitialConnWindowSize(GrpcInitialConnWindowSize),
+			grpc.WithInitialWindowSize(cfg.TiKVClient.GrpcInitialWindowSize),
+			grpc.WithInitialConnWindowSize(cfg.TiKVClient.GrpcInitialConnWindowSize),
 			grpc.WithUnaryInterceptor(unaryInterceptor),
 			grpc.WithStreamInterceptor(streamInterceptor),
 			grpc.WithDefaultCallOptions(callOptions...),
@@ -286,7 +334,9 @@ func (a *connArray) Init(addr string, security config.Security, idleNotify *uint
 				Timeout: time.Duration(keepAliveTimeout) * time.Second,
 			}),
 		}, opts...)
-
+		if cfg.TiKVClient.GrpcSharedBufferPool {
+			opts = append(opts, experimental.WithRecvBufferPool(grpc.NewSharedBufferPool()))
+		}
 		conn, err := a.monitoredDial(
 			ctx,
 			fmt.Sprintf("%s-%d", a.target, i),
@@ -314,7 +364,9 @@ func (a *connArray) Init(addr string, security config.Security, idleNotify *uint
 				tikvLoad:         &a.tikvTransportLayerLoad,
 				dialTimeout:      a.dialTimeout,
 				tryLock:          tryLock{sync.NewCond(new(sync.Mutex)), false},
+				eventListener:    eventListener,
 			}
+			batchClient.maxConcurrencyRequestLimit.Store(cfg.TiKVClient.MaxConcurrencyRequestLimit)
 			a.batchCommandsClients = append(a.batchCommandsClients, batchClient)
 		}
 	}
@@ -388,6 +440,7 @@ type RPCClient struct {
 	sync.RWMutex
 
 	conns  map[string]*connArray
+	vers   map[string]uint64
 	option *option
 
 	idleNotify uint32
@@ -397,16 +450,22 @@ type RPCClient struct {
 	isClosed bool
 
 	connMonitor *connMonitor
+
+	eventListener *atomic.Pointer[ClientEventListener]
 }
+
+var _ Client = &RPCClient{}
 
 // NewRPCClient creates a client that manages connections and rpc calls with tikv-servers.
 func NewRPCClient(opts ...Opt) *RPCClient {
 	cli := &RPCClient{
 		conns: make(map[string]*connArray),
+		vers:  make(map[string]uint64),
 		option: &option{
 			dialTimeout: dialTimeout,
 		},
-		connMonitor: &connMonitor{},
+		connMonitor:   &connMonitor{},
+		eventListener: new(atomic.Pointer[ClientEventListener]),
 	}
 	for _, opt := range opts {
 		opt(cli.option)
@@ -450,20 +509,24 @@ func (c *RPCClient) createConnArray(addr string, enableBatch bool, opts ...func(
 		for _, opt := range opts {
 			opt(&client)
 		}
+		ver := c.vers[addr] + 1
 		array, err = newConnArray(
 			client.GrpcConnectionCount,
 			addr,
+			ver,
 			c.option.security,
 			&c.idleNotify,
 			enableBatch,
 			c.option.dialTimeout,
 			c.connMonitor,
+			c.eventListener,
 			c.option.gRPCDialOptions)
 
 		if err != nil {
 			return nil, err
 		}
 		c.conns[addr] = array
+		c.vers[addr] = ver
 	}
 	return array, nil
 }
@@ -601,6 +664,10 @@ func (c *RPCClient) sendRequest(ctx context.Context, addr string, req *tikvrpc.R
 		return nil, err
 	}
 
+	wrapErrConn := func(resp *tikvrpc.Response, err error) (*tikvrpc.Response, error) {
+		return resp, WrapErrConn(err, connArray)
+	}
+
 	start := time.Now()
 	staleRead := req.GetStaleRead()
 	defer func() {
@@ -620,10 +687,11 @@ func (c *RPCClient) sendRequest(ctx context.Context, addr string, req *tikvrpc.R
 
 	// TiDB RPC server supports batch RPC, but batch connection will send heart beat, It's not necessary since
 	// request to TiDB is not high frequency.
+	pri := req.GetResourceControlContext().GetOverridePriority()
 	if config.GetGlobalConfig().TiKVClient.MaxBatchSize > 0 && enableBatch {
 		if batchReq := req.ToBatchCommandsRequest(); batchReq != nil {
 			defer trace.StartRegion(ctx, req.Type.String()).End()
-			return sendBatchRequest(ctx, addr, req.ForwardedHost, connArray.batchConn, batchReq, timeout)
+			return wrapErrConn(sendBatchRequest(ctx, addr, req.ForwardedHost, connArray.batchConn, batchReq, timeout, pri))
 		}
 	}
 
@@ -637,7 +705,7 @@ func (c *RPCClient) sendRequest(ctx context.Context, addr string, req *tikvrpc.R
 		client := debugpb.NewDebugClient(clientConn)
 		ctx1, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
-		return tikvrpc.CallDebugRPC(ctx1, client, req)
+		return wrapErrConn(tikvrpc.CallDebugRPC(ctx1, client, req))
 	}
 
 	client := tikvpb.NewTikvClient(clientConn)
@@ -648,16 +716,16 @@ func (c *RPCClient) sendRequest(ctx context.Context, addr string, req *tikvrpc.R
 	}
 	switch req.Type {
 	case tikvrpc.CmdBatchCop:
-		return c.getBatchCopStreamResponse(ctx, client, req, timeout, connArray)
+		return wrapErrConn(c.getBatchCopStreamResponse(ctx, client, req, timeout, connArray))
 	case tikvrpc.CmdCopStream:
-		return c.getCopStreamResponse(ctx, client, req, timeout, connArray)
+		return wrapErrConn(c.getCopStreamResponse(ctx, client, req, timeout, connArray))
 	case tikvrpc.CmdMPPConn:
-		return c.getMPPStreamResponse(ctx, client, req, timeout, connArray)
+		return wrapErrConn(c.getMPPStreamResponse(ctx, client, req, timeout, connArray))
 	}
 	// Or else it's a unary call.
 	ctx1, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	return tikvrpc.CallRPC(ctx1, client, req)
+	return wrapErrConn(tikvrpc.CallRPC(ctx1, client, req))
 }
 
 // SendRequest sends a Request to server and receives Response.
@@ -791,11 +859,24 @@ func (c *RPCClient) Close() error {
 
 // CloseAddr closes gRPC connections to the address.
 func (c *RPCClient) CloseAddr(addr string) error {
+	return c.CloseAddrVer(addr, math.MaxUint64)
+}
+
+func (c *RPCClient) CloseAddrVer(addr string, ver uint64) error {
 	c.Lock()
+	if c.isClosed {
+		c.Unlock()
+		return nil
+	}
 	conn, ok := c.conns[addr]
 	if ok {
-		delete(c.conns, addr)
-		logutil.BgLogger().Debug("close connection", zap.String("target", addr))
+		if conn.ver <= ver {
+			delete(c.conns, addr)
+			logutil.BgLogger().Debug("close connection", zap.String("target", addr), zap.Uint64("ver", ver), zap.Uint64("conn.ver", conn.ver))
+		} else {
+			logutil.BgLogger().Debug("ignore close connection", zap.String("target", addr), zap.Uint64("ver", ver), zap.Uint64("conn.ver", conn.ver))
+			conn = nil
+		}
 	}
 	c.Unlock()
 
@@ -803,6 +884,12 @@ func (c *RPCClient) CloseAddr(addr string) error {
 		conn.Close()
 	}
 	return nil
+}
+
+// SetEventListener registers an event listener for the Client instance. If it's called more than once, the
+// previously set one will be replaced.
+func (c *RPCClient) SetEventListener(listener ClientEventListener) {
+	c.eventListener.Store(&listener)
 }
 
 type spanInfo struct {

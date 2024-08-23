@@ -45,11 +45,11 @@ import (
 	"github.com/pingcap/kvproto/pkg/kvrpcpb"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/tikv/client-go/v2/config/retry"
 	tikverr "github.com/tikv/client-go/v2/error"
 	"github.com/tikv/client-go/v2/internal/client"
 	"github.com/tikv/client-go/v2/internal/locate"
 	"github.com/tikv/client-go/v2/internal/logutil"
-	"github.com/tikv/client-go/v2/internal/retry"
 	"github.com/tikv/client-go/v2/kv"
 	"github.com/tikv/client-go/v2/metrics"
 	"github.com/tikv/client-go/v2/tikvrpc"
@@ -214,18 +214,6 @@ func (action actionPessimisticLock) handleSingleBatch(
 				return nil
 			}
 		}
-
-		// Handle the killed flag when waiting for the pessimistic lock.
-		// When a txn runs into LockKeys() and backoff here, it has no chance to call
-		// executor.Next() and check the killed flag.
-		if action.Killed != nil {
-			// Do not reset the killed flag here!
-			// actionPessimisticLock runs on each region parallelly, we have to consider that
-			// the error may be dropped.
-			if atomic.LoadUint32(action.Killed) == 1 {
-				return errors.WithStack(tikverr.ErrQueryInterrupted)
-			}
-		}
 	}
 }
 
@@ -325,7 +313,7 @@ func (action actionPessimisticLock) handlePessimisticLockResponseNormalMode(
 		if batch.isPrimary {
 			// After locking the primary key, we should protect the primary lock from expiring
 			// now in case locking the remaining keys take a long time.
-			c.run(c, action.LockCtx)
+			c.run(c, action.LockCtx, false)
 		}
 
 		// Handle the case that the TiKV's version is too old and doesn't support `CheckExistence`.
@@ -368,8 +356,9 @@ func (action actionPessimisticLock) handlePessimisticLockResponseNormalMode(
 		c.store.GetLockResolver().UpdateResolvingLocks(locks, c.startTS, *diagCtx.resolvingRecordToken)
 	}
 	resolveLockOpts := txnlock.ResolveLocksOptions{
-		CallerStartTS: 0,
-		Locks:         locks,
+		CallerStartTS:            0,
+		Locks:                    locks,
+		PessimisticRegionResolve: true,
 	}
 	if action.LockCtx.Stats != nil {
 		resolveLockOpts.Detail = &action.LockCtx.Stats.ResolveLock
@@ -423,7 +412,7 @@ func (action actionPessimisticLock) handlePessimisticLockResponseForceLockMode(
 		len(lockResp.Results) > 0 &&
 		lockResp.Results[0].Type != kvrpcpb.PessimisticLockKeyResultType_LockResultFailed {
 		// After locking the primary key, we should protect the primary lock from expiring.
-		c.run(c, action.LockCtx)
+		c.run(c, action.LockCtx, false)
 	}
 
 	if len(lockResp.Results) > 0 {
@@ -496,8 +485,9 @@ func (action actionPessimisticLock) handlePessimisticLockResponseForceLockMode(
 				c.store.GetLockResolver().UpdateResolvingLocks(locks, c.startTS, *diagCtx.resolvingRecordToken)
 			}
 			resolveLockOpts := txnlock.ResolveLocksOptions{
-				CallerStartTS: 0,
-				Locks:         locks,
+				CallerStartTS:            0,
+				Locks:                    locks,
+				PessimisticRegionResolve: true,
 			}
 			if action.LockCtx.Stats != nil {
 				resolveLockOpts.Detail = &action.LockCtx.Stats.ResolveLock

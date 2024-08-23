@@ -44,13 +44,14 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/pingcap/kvproto/pkg/kvrpcpb"
 	"github.com/pingcap/kvproto/pkg/tikvpb"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/tikv/client-go/v2/config"
+	"github.com/tikv/client-go/v2/config/retry"
 	tikverr "github.com/tikv/client-go/v2/error"
 	"github.com/tikv/client-go/v2/internal/logutil"
-	"github.com/tikv/client-go/v2/internal/retry"
 	"github.com/tikv/client-go/v2/metrics"
 	"github.com/tikv/client-go/v2/tikvrpc"
 	"github.com/tikv/client-go/v2/util"
@@ -70,10 +71,15 @@ type batchCommandsEntry struct {
 	// canceled indicated the request is canceled or not.
 	canceled int32
 	err      error
+	pri      uint64
 }
 
 func (b *batchCommandsEntry) isCanceled() bool {
 	return atomic.LoadInt32(&b.canceled) == 1
+}
+
+func (b *batchCommandsEntry) priority() uint64 {
+	return b.pri
 }
 
 func (b *batchCommandsEntry) error(err error) {
@@ -87,7 +93,7 @@ type batchCommandsBuilder struct {
 	// Each BatchCommandsRequest_Request sent to a store has a unique identity to
 	// distinguish its response.
 	idAlloc    uint64
-	entries    []*batchCommandsEntry
+	entries    *PriorityQueue
 	requests   []*tikvpb.BatchCommandsRequest_Request
 	requestIDs []uint64
 	// In most cases, there isn't any forwardingReq.
@@ -95,39 +101,65 @@ type batchCommandsBuilder struct {
 }
 
 func (b *batchCommandsBuilder) len() int {
-	return len(b.entries)
+	return b.entries.Len()
 }
 
 func (b *batchCommandsBuilder) push(entry *batchCommandsEntry) {
-	b.entries = append(b.entries, entry)
+	b.entries.Push(entry)
 }
 
-// build builds BatchCommandsRequests and calls collect() for each valid entry.
+const highTaskPriority = 10
+
+func (b *batchCommandsBuilder) hasHighPriorityTask() bool {
+	return b.entries.highestPriority() >= highTaskPriority
+}
+
+// buildWithLimit builds BatchCommandsRequests with the given limit.
+// the highest priority tasks don't consume any limit,
+// so the limit only works for normal tasks.
 // The first return value is the request that doesn't need forwarding.
 // The second is a map that maps forwarded hosts to requests.
-func (b *batchCommandsBuilder) build(
-	collect func(id uint64, e *batchCommandsEntry),
+func (b *batchCommandsBuilder) buildWithLimit(limit int64, collect func(id uint64, e *batchCommandsEntry),
 ) (*tikvpb.BatchCommandsRequest, map[string]*tikvpb.BatchCommandsRequest) {
-	for _, e := range b.entries {
-		if e.isCanceled() {
-			continue
-		}
-		if collect != nil {
-			collect(b.idAlloc, e)
-		}
-		if e.forwardedHost == "" {
-			b.requestIDs = append(b.requestIDs, b.idAlloc)
-			b.requests = append(b.requests, e.req)
-		} else {
-			batchReq, ok := b.forwardingReqs[e.forwardedHost]
-			if !ok {
-				batchReq = &tikvpb.BatchCommandsRequest{}
-				b.forwardingReqs[e.forwardedHost] = batchReq
+	count := int64(0)
+	build := func(reqs []Item) {
+		for _, e := range reqs {
+			e := e.(*batchCommandsEntry)
+			if e.isCanceled() {
+				continue
 			}
-			batchReq.RequestIds = append(batchReq.RequestIds, b.idAlloc)
-			batchReq.Requests = append(batchReq.Requests, e.req)
+			if e.priority() < highTaskPriority {
+				count++
+			}
+
+			if collect != nil {
+				collect(b.idAlloc, e)
+			}
+			if e.forwardedHost == "" {
+				b.requestIDs = append(b.requestIDs, b.idAlloc)
+				b.requests = append(b.requests, e.req)
+			} else {
+				batchReq, ok := b.forwardingReqs[e.forwardedHost]
+				if !ok {
+					batchReq = &tikvpb.BatchCommandsRequest{}
+					b.forwardingReqs[e.forwardedHost] = batchReq
+				}
+				batchReq.RequestIds = append(batchReq.RequestIds, b.idAlloc)
+				batchReq.Requests = append(batchReq.Requests, e.req)
+			}
+			b.idAlloc++
 		}
-		b.idAlloc++
+	}
+	for (count < limit && b.entries.Len() > 0) || b.hasHighPriorityTask() {
+		n := limit
+		if limit == 0 {
+			n = 1
+		}
+		reqs := b.entries.Take(int(n))
+		if len(reqs) == 0 {
+			break
+		}
+		build(reqs)
 	}
 	var req *tikvpb.BatchCommandsRequest
 	if len(b.requests) > 0 {
@@ -139,23 +171,22 @@ func (b *batchCommandsBuilder) build(
 	return req, b.forwardingReqs
 }
 
+// cancel all requests, only used in test.
 func (b *batchCommandsBuilder) cancel(e error) {
-	for _, entry := range b.entries {
-		entry.error(e)
+	for _, entry := range b.entries.all() {
+		entry.(*batchCommandsEntry).error(e)
 	}
+	b.entries.reset()
 }
 
 // reset resets the builder to the initial state.
 // Should call it before collecting a new batch.
 func (b *batchCommandsBuilder) reset() {
+	b.entries.clean()
 	// NOTE: We can't simply set entries = entries[:0] here.
 	// The data in the cap part of the slice would reference the prewrite keys whose
 	// underlying memory is borrowed from memdb. The reference cause GC can't release
 	// the memdb, leading to serious memory leak problems in the large transaction case.
-	for i := 0; i < len(b.entries); i++ {
-		b.entries[i] = nil
-	}
-	b.entries = b.entries[:0]
 	for i := 0; i < len(b.requests); i++ {
 		b.requests[i] = nil
 	}
@@ -170,7 +201,7 @@ func (b *batchCommandsBuilder) reset() {
 func newBatchCommandsBuilder(maxBatchSize uint) *batchCommandsBuilder {
 	return &batchCommandsBuilder{
 		idAlloc:        0,
-		entries:        make([]*batchCommandsEntry, 0, maxBatchSize),
+		entries:        NewPriorityQueue(),
 		requests:       make([]*tikvpb.BatchCommandsRequest_Request, 0, maxBatchSize),
 		requestIDs:     make([]uint64, 0, maxBatchSize),
 		forwardingReqs: make(map[string]*tikvpb.BatchCommandsRequest),
@@ -333,8 +364,7 @@ func (a *batchConn) batchSendLoop(cfg config.TiKVClient) {
 				a.fetchMorePendingRequests(int(cfg.MaxBatchSize), int(bestBatchWaitSize), cfg.MaxBatchWaitTime)
 			}
 		}
-		a.pendingRequests.Observe(float64(len(a.batchCommandsCh)))
-		a.batchSize.Observe(float64(a.reqBuilder.len()))
+		a.pendingRequests.Observe(float64(len(a.batchCommandsCh) + a.reqBuilder.len()))
 		length := a.reqBuilder.len()
 		if uint(length) == 0 {
 			// The batch command channel is closed.
@@ -351,6 +381,11 @@ func (a *batchConn) batchSendLoop(cfg config.TiKVClient) {
 	}
 }
 
+const (
+	SendFailedReasonNoAvailableLimit   = "concurrency limit exceeded"
+	SendFailedReasonTryLockForSendFail = "tryLockForSend fail"
+)
+
 func (a *batchConn) getClientAndSend() {
 	if val, err := util.EvalFailpoint("mockBatchClientSendDelay"); err == nil {
 		if timeout, ok := val.(int); ok && timeout > 0 {
@@ -363,36 +398,55 @@ func (a *batchConn) getClientAndSend() {
 		cli    *batchCommandsClient
 		target string
 	)
+	reasons := make([]string, 0)
+	hasHighPriorityTask := a.reqBuilder.hasHighPriorityTask()
 	for i := 0; i < len(a.batchCommandsClients); i++ {
 		a.index = (a.index + 1) % uint32(len(a.batchCommandsClients))
 		target = a.batchCommandsClients[a.index].target
 		// The lock protects the batchCommandsClient from been closed while it's in use.
-		if a.batchCommandsClients[a.index].tryLockForSend() {
-			cli = a.batchCommandsClients[a.index]
-			break
+		c := a.batchCommandsClients[a.index]
+		if hasHighPriorityTask || c.available() > 0 {
+			if c.tryLockForSend() {
+				cli = c
+				break
+			} else {
+				reasons = append(reasons, SendFailedReasonTryLockForSendFail)
+			}
+		} else {
+			reasons = append(reasons, SendFailedReasonNoAvailableLimit)
 		}
 	}
 	if cli == nil {
-		logutil.BgLogger().Warn("no available connections", zap.String("target", target))
+		logutil.BgLogger().Info("no available connections", zap.String("target", target), zap.Any("reasons", reasons))
 		metrics.TiKVNoAvailableConnectionCounter.Inc()
-
-		// Please ensure the error is handled in region cache correctly.
-		a.reqBuilder.cancel(errors.New("no available connections"))
+		if config.GetGlobalConfig().TiKVClient.MaxConcurrencyRequestLimit == config.DefMaxConcurrencyRequestLimit {
+			// Only cancel requests when MaxConcurrencyRequestLimit feature is not enabled, to be compatible with the behavior of older versions.
+			// TODO: But when MaxConcurrencyRequestLimit feature is enabled, the requests won't be canceled and will wait until timeout.
+			// This behavior may not be reasonable, as the timeout is usually 40s or 60s, which is too long to retry in time.
+			a.reqBuilder.cancel(errors.New("no available connections"))
+		}
 		return
 	}
 	defer cli.unlockForSend()
-
-	req, forwardingReqs := a.reqBuilder.build(func(id uint64, e *batchCommandsEntry) {
+	available := cli.available()
+	batch := 0
+	req, forwardingReqs := a.reqBuilder.buildWithLimit(available, func(id uint64, e *batchCommandsEntry) {
 		cli.batched.Store(id, e)
+		cli.sent.Add(1)
 		if trace.IsEnabled() {
 			trace.Log(e.ctx, "rpc", "send")
 		}
 	})
 	if req != nil {
+		batch += len(req.RequestIds)
 		cli.send("", req)
 	}
 	for forwardedHost, req := range forwardingReqs {
+		batch += len(req.RequestIds)
 		cli.send(forwardedHost, req)
+	}
+	if batch > 0 {
+		a.batchSize.Observe(float64(batch))
 	}
 }
 
@@ -504,10 +558,32 @@ type batchCommandsClient struct {
 	closed int32
 	// tryLock protects client when re-create the streaming.
 	tryLock
+
+	// sent is the number of the requests are processed by tikv server.
+	sent atomic.Int64
+	// maxConcurrencyRequestLimit is the max allowed number of requests to be sent the tikv
+	maxConcurrencyRequestLimit atomic.Int64
+
+	// eventListener is the listener set by external code to observe some events in the client. It's stored in a atomic
+	// pointer to make setting thread-safe.
+	eventListener *atomic.Pointer[ClientEventListener]
 }
 
 func (c *batchCommandsClient) isStopped() bool {
 	return atomic.LoadInt32(&c.closed) != 0
+}
+
+func (c *batchCommandsClient) available() int64 {
+	limit := c.maxConcurrencyRequestLimit.Load()
+	sent := c.sent.Load()
+	//  The `sent` could be less than 0, see https://github.com/tikv/client-go/issues/1225 for details.
+	if sent > 0 {
+		if limit > sent {
+			return limit - sent
+		}
+		return 0
+	}
+	return limit
 }
 
 func (c *batchCommandsClient) send(forwardedHost string, req *tikvpb.BatchCommandsRequest) {
@@ -519,7 +595,7 @@ func (c *batchCommandsClient) send(forwardedHost string, req *tikvpb.BatchComman
 			zap.String("forwardedHost", forwardedHost),
 			zap.Error(err),
 		)
-		c.failPendingRequests(err)
+		c.failRequestsByIDs(err, req.RequestIds) // fast fail requests.
 		return
 	}
 
@@ -535,20 +611,48 @@ func (c *batchCommandsClient) send(forwardedHost string, req *tikvpb.BatchComman
 			zap.Uint64s("requestIDs", req.RequestIds),
 			zap.Error(err),
 		)
-		c.failPendingRequests(err)
+		c.failRequestsByIDs(err, req.RequestIds) // fast fail requests.
 	}
 }
 
 // `failPendingRequests` must be called in locked contexts in order to avoid double closing channels.
-func (c *batchCommandsClient) failPendingRequests(err error) {
+// when enable-forwarding is true, the `forwardedHost` maybe not empty.
+// failPendingRequests fails all pending requests which req.forwardedHost equals to forwardedHost parameter.
+// Why need check `forwardedHost`? Here is an example, when enable-forwarding is true, and this client has network issue with store1:
+//   - some requests are sent to store1 with forwarding, such as forwardedHost is store2, those requests will succeed.
+//   - some requests are sent to store1 without forwarding, and may fail then `failPendingRequests` would be called,
+//     if we don't check `forwardedHost` and fail all pending requests, the requests with forwarding will be failed too. this may cause some issue:
+//     1. data race. see https://github.com/tikv/client-go/issues/1222 and TestRandomRestartStoreAndForwarding.
+//     2. panic which cause by `send on closed channel`, since failPendingRequests will close the entry.res channel,
+//     but in another batchRecvLoop goroutine,  it may receive the response from forwardedHost store2 and try to send the response to entry.res channel,
+//     then panic by send on closed channel.
+func (c *batchCommandsClient) failPendingRequests(err error, forwardedHost string) {
 	util.EvalFailpoint("panicInFailPendingRequests")
 	c.batched.Range(func(key, value interface{}) bool {
 		id, _ := key.(uint64)
 		entry, _ := value.(*batchCommandsEntry)
-		c.batched.Delete(id)
-		entry.error(err)
+		if entry.forwardedHost == forwardedHost {
+			c.failRequest(err, id, entry)
+		}
 		return true
 	})
+}
+
+// failRequestsByIDs fails requests by requestID.
+func (c *batchCommandsClient) failRequestsByIDs(err error, requestIDs []uint64) {
+	for _, requestID := range requestIDs {
+		value, ok := c.batched.Load(requestID)
+		if !ok {
+			continue
+		}
+		c.failRequest(err, requestID, value.(*batchCommandsEntry))
+	}
+}
+
+func (c *batchCommandsClient) failRequest(err error, requestID uint64, entry *batchCommandsEntry) {
+	c.batched.Delete(requestID)
+	c.sent.Add(-1)
+	entry.error(err)
 }
 
 func (c *batchCommandsClient) waitConnReady() (err error) {
@@ -638,6 +742,17 @@ func (c *batchCommandsClient) batchRecvLoop(cfg config.TiKVClient, tikvTransport
 			continue
 		}
 
+		if resp.GetHealthFeedback() != nil {
+			if val, err := util.EvalFailpoint("injectHealthFeedbackSlowScore"); err == nil {
+				v, ok := val.(int)
+				if !ok || v < 0 || v > 100 {
+					panic(fmt.Sprintf("invalid injection in failpoint injectHealthFeedbackSlowScore: %+q", v))
+				}
+				resp.GetHealthFeedback().SlowScore = int32(v)
+			}
+			c.onHealthFeedback(resp.GetHealthFeedback())
+		}
+
 		responses := resp.GetResponses()
 		for i, requestID := range resp.GetRequestIds() {
 			value, ok := c.batched.Load(requestID)
@@ -658,6 +773,7 @@ func (c *batchCommandsClient) batchRecvLoop(cfg config.TiKVClient, tikvTransport
 				entry.res <- responses[i]
 			}
 			c.batched.Delete(requestID)
+			c.sent.Add(-1)
 		}
 
 		transportLayerLoad := resp.GetTransportLayerLoad()
@@ -665,6 +781,12 @@ func (c *batchCommandsClient) batchRecvLoop(cfg config.TiKVClient, tikvTransport
 			// We need to consider TiKV load only if batch-wait strategy is enabled.
 			atomic.StoreUint64(tikvTransportLayerLoad, transportLayerLoad)
 		}
+	}
+}
+
+func (c *batchCommandsClient) onHealthFeedback(feedback *kvrpcpb.HealthFeedback) {
+	if h := c.eventListener.Load(); h != nil {
+		(*h).OnHealthFeedback(feedback)
 	}
 }
 
@@ -705,7 +827,7 @@ func (c *batchCommandsClient) recreateStreamingClient(err error, streamClient *b
 	}
 	*epoch++
 
-	c.failPendingRequests(err) // fail all pending requests.
+	c.failPendingRequests(err, streamClient.forwardedHost) // fail all pending requests.
 	b := retry.NewBackofferWithVars(context.Background(), math.MaxInt32, nil)
 	for { // try to re-create the streaming in the loop.
 		if c.isStopped() {
@@ -776,6 +898,7 @@ func sendBatchRequest(
 	batchConn *batchConn,
 	req *tikvpb.BatchCommandsRequest_Request,
 	timeout time.Duration,
+	priority uint64,
 ) (*tikvrpc.Response, error) {
 	entry := &batchCommandsEntry{
 		ctx:           ctx,
@@ -784,6 +907,7 @@ func sendBatchRequest(
 		forwardedHost: forwardedHost,
 		canceled:      0,
 		err:           nil,
+		pri:           priority,
 	}
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
@@ -795,11 +919,14 @@ func sendBatchRequest(
 		logutil.Logger(ctx).Debug("send request is cancelled",
 			zap.String("to", addr), zap.String("cause", ctx.Err().Error()))
 		return nil, errors.WithStack(ctx.Err())
+	case <-batchConn.closed:
+		logutil.Logger(ctx).Debug("send request is cancelled (batchConn closed)", zap.String("to", addr))
+		return nil, errors.New("batchConn closed")
 	case <-timer.C:
 		return nil, errors.WithMessage(context.DeadlineExceeded, "wait sendLoop")
 	}
-	waitDuration := time.Since(start)
-	metrics.TiKVBatchWaitDuration.Observe(float64(waitDuration))
+	waitSendDuration := time.Since(start)
+	metrics.TiKVBatchWaitDuration.Observe(float64(waitSendDuration))
 
 	select {
 	case res, ok := <-entry.res:
@@ -812,9 +939,14 @@ func sendBatchRequest(
 		logutil.Logger(ctx).Debug("wait response is cancelled",
 			zap.String("to", addr), zap.String("cause", ctx.Err().Error()))
 		return nil, errors.WithStack(ctx.Err())
+	case <-batchConn.closed:
+		atomic.StoreInt32(&entry.canceled, 1)
+		logutil.Logger(ctx).Debug("wait response is cancelled (batchConn closed)", zap.String("to", addr))
+		return nil, errors.New("batchConn closed")
 	case <-timer.C:
 		atomic.StoreInt32(&entry.canceled, 1)
-		reason := fmt.Sprintf("wait recvLoop timeout,timeout:%s, wait_duration:%s:", timeout, waitDuration)
+		reason := fmt.Sprintf("wait recvLoop timeout, timeout:%s, wait_send_duration:%s, wait_recv_duration:%s",
+			timeout, util.FormatDuration(waitSendDuration), util.FormatDuration(time.Since(start)-waitSendDuration))
 		return nil, errors.WithMessage(context.DeadlineExceeded, reason)
 	}
 }
@@ -823,16 +955,18 @@ func (c *RPCClient) recycleIdleConnArray() {
 	start := time.Now()
 
 	var addrs []string
+	var vers []uint64
 	c.RLock()
 	for _, conn := range c.conns {
 		if conn.batchConn != nil && conn.isIdle() {
 			addrs = append(addrs, conn.target)
+			vers = append(vers, conn.ver)
 		}
 	}
 	c.RUnlock()
 
-	for _, addr := range addrs {
-		c.CloseAddr(addr)
+	for i, addr := range addrs {
+		c.CloseAddrVer(addr, vers[i])
 	}
 
 	metrics.TiKVBatchClientRecycle.Observe(time.Since(start).Seconds())

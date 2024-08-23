@@ -41,6 +41,7 @@ import (
 	"github.com/tikv/client-go/v2/internal/apicodec"
 	"github.com/tikv/client-go/v2/internal/client"
 	"github.com/tikv/client-go/v2/internal/locate"
+	"github.com/tikv/client-go/v2/kv"
 	"github.com/tikv/client-go/v2/tikvrpc"
 	pd "github.com/tikv/pd/client"
 )
@@ -135,11 +136,6 @@ const (
 	NullspaceID KeyspaceID = apicodec.NullspaceID
 )
 
-// RecordRegionRequestRuntimeStats records request runtime stats.
-func RecordRegionRequestRuntimeStats(stats map[tikvrpc.CmdType]*locate.RPCRuntimeStats, cmd tikvrpc.CmdType, d time.Duration) {
-	locate.RecordRegionRequestRuntimeStats(stats, cmd, d)
-}
-
 // Store contains a kv process's address.
 type Store = locate.Store
 
@@ -190,13 +186,19 @@ func WithMatchStores(stores []uint64) StoreSelectorOption {
 }
 
 // NewRegionRequestRuntimeStats returns a new RegionRequestRuntimeStats.
-func NewRegionRequestRuntimeStats() RegionRequestRuntimeStats {
+func NewRegionRequestRuntimeStats() *RegionRequestRuntimeStats {
 	return locate.NewRegionRequestRuntimeStats()
 }
 
-// SetRegionCacheTTLSec sets regionCacheTTLSec to t.
+// SetRegionCacheTTLSec sets the base value of region cache TTL.
+// Deprecated: use SetRegionCacheTTLWithJitter instead.
 func SetRegionCacheTTLSec(t int64) {
 	locate.SetRegionCacheTTLSec(t)
+}
+
+// SetRegionCacheTTLWithJitter sets region cache TTL with jitter. The real TTL is in range of [base, base+jitter).
+func SetRegionCacheTTLWithJitter(base int64, jitter int64) {
+	locate.SetRegionCacheTTLWithJitter(base, jitter)
 }
 
 // SetStoreLivenessTimeout sets storeLivenessTimeout to t.
@@ -225,3 +227,18 @@ var LabelFilterAllTiFlashNode = locate.LabelFilterAllTiFlashNode
 
 // LabelFilterAllNode will select all stores.
 var LabelFilterAllNode = locate.LabelFilterAllNode
+
+// KeyRange represents a range where StartKey <= key < EndKey.
+type KeyRange = kv.KeyRange
+
+// BatchLocateKeyRangesOpt is the option for BatchLocateKeyRanges.
+type BatchLocateKeyRangesOpt = locate.BatchLocateKeyRangesOpt
+
+var (
+	// WithNeedBuckets indicates that the request needs to contain bucket info.
+	WithNeedBuckets = locate.WithNeedBuckets
+	// WithNeedRegionHasLeaderPeer indicates that the regions returned must contain leader peer, unless it's skipped.
+	// Note the leader peer existence is not guaranteed is not related to the election status,
+	// the region info contains old leader during the election, this variable affects nothing in most time.
+	WithNeedRegionHasLeaderPeer = locate.WithNeedRegionHasLeaderPeer
+)

@@ -74,6 +74,8 @@ const (
 	CmdCheckSecondaryLocks
 	CmdFlashbackToVersion
 	CmdPrepareFlashbackToVersion
+	CmdFlush
+	CmdBufferBatchGet
 
 	CmdRawGet CmdType = 256 + iota
 	CmdRawBatchGet
@@ -83,7 +85,7 @@ const (
 	CmdRawBatchDelete
 	CmdRawDeleteRange
 	CmdRawScan
-	CmdGetKeyTTL
+	CmdRawGetKeyTTL
 	CmdRawCompareAndSwap
 	CmdRawChecksum
 
@@ -96,6 +98,8 @@ const (
 
 	CmdStoreSafeTS
 	CmdLockWaitInfo
+
+	CmdGetHealthFeedback
 
 	CmdCop CmdType = 512 + iota
 	CmdCopStream
@@ -114,6 +118,11 @@ const (
 	CmdGetTiFlashSystemTable            // TODO: These non TiKV RPCs should be moved out of TiKV client
 
 	CmdEmpty CmdType = 3072 + iota
+)
+
+// CmdType aliases.
+const (
+	CmdGetKeyTTL = CmdRawGetKeyTTL
 )
 
 func (t CmdType) String() string {
@@ -162,6 +171,10 @@ func (t CmdType) String() string {
 		return "RawScan"
 	case CmdRawChecksum:
 		return "RawChecksum"
+	case CmdRawGetKeyTTL:
+		return "RawGetKeyTTL"
+	case CmdRawCompareAndSwap:
+		return "RawCompareAndSwap"
 	case CmdUnsafeDestroyRange:
 		return "UnsafeDestroyRange"
 	case CmdRegisterLockObserver:
@@ -206,12 +219,18 @@ func (t CmdType) String() string {
 		return "StoreSafeTS"
 	case CmdLockWaitInfo:
 		return "LockWaitInfo"
+	case CmdGetHealthFeedback:
+		return "GetHealthFeedback"
 	case CmdFlashbackToVersion:
 		return "FlashbackToVersion"
 	case CmdPrepareFlashbackToVersion:
 		return "PrepareFlashbackToVersion"
 	case CmdGetTiFlashSystemTable:
 		return "GetTiFlashSystemTable"
+	case CmdFlush:
+		return "Flush"
+	case CmdBufferBatchGet:
+		return "BufferBatchGet"
 	}
 	return "Unknown"
 }
@@ -219,7 +238,11 @@ func (t CmdType) String() string {
 // Request wraps all kv/coprocessor requests.
 type Request struct {
 	Type CmdType
-	Req  interface{}
+	// Req is one of the request type defined in kvrpcpb.
+	//
+	// WARN: It may be read concurrently in batch-send-loop, so you should ONLY modify it via `AttachContext`,
+	// otherwise there could be a risk of data race.
+	Req interface{}
 	kvrpcpb.Context
 	ReadReplicaScope string
 	// remove txnScope after tidb removed txnScope
@@ -238,6 +261,9 @@ type Request struct {
 	ReadType string
 	// InputRequestSource is the input source of the request, if it's not empty, the final RequestSource sent to store will be attached with the retry info.
 	InputRequestSource string
+
+	// rev represents the revision of the request, it's increased when `Req.Context` gets patched.
+	rev uint32
 }
 
 // NewRequest returns new kv rpc request.
@@ -537,14 +563,29 @@ func (req *Request) LockWaitInfo() *kvrpcpb.GetLockWaitInfoRequest {
 	return req.Req.(*kvrpcpb.GetLockWaitInfoRequest)
 }
 
+// GetHealthFeedback returns GetHealthFeedbackRequest in request.
+func (req *Request) GetHealthFeedback() *kvrpcpb.GetHealthFeedbackRequest {
+	return req.Req.(*kvrpcpb.GetHealthFeedbackRequest)
+}
+
 // FlashbackToVersion returns FlashbackToVersionRequest in request.
 func (req *Request) FlashbackToVersion() *kvrpcpb.FlashbackToVersionRequest {
 	return req.Req.(*kvrpcpb.FlashbackToVersionRequest)
 }
 
-// PrepareFlashbackToVersion returns PrepareFlashbackToVersion in request.
+// PrepareFlashbackToVersion returns PrepareFlashbackToVersionRequest in request.
 func (req *Request) PrepareFlashbackToVersion() *kvrpcpb.PrepareFlashbackToVersionRequest {
 	return req.Req.(*kvrpcpb.PrepareFlashbackToVersionRequest)
+}
+
+// Flush returns FlushRequest in request.
+func (req *Request) Flush() *kvrpcpb.FlushRequest {
+	return req.Req.(*kvrpcpb.FlushRequest)
+}
+
+// BufferBatchGet returns BufferBatchGetRequest in request.
+func (req *Request) BufferBatchGet() *kvrpcpb.BufferBatchGetRequest {
+	return req.Req.(*kvrpcpb.BufferBatchGetRequest)
 }
 
 // ToBatchCommandsRequest converts the request to an entry in BatchCommands request.
@@ -606,6 +647,12 @@ func (req *Request) ToBatchCommandsRequest() *tikvpb.BatchCommandsRequest_Reques
 		return &tikvpb.BatchCommandsRequest_Request{Cmd: &tikvpb.BatchCommandsRequest_Request_FlashbackToVersion{FlashbackToVersion: req.FlashbackToVersion()}}
 	case CmdPrepareFlashbackToVersion:
 		return &tikvpb.BatchCommandsRequest_Request{Cmd: &tikvpb.BatchCommandsRequest_Request_PrepareFlashbackToVersion{PrepareFlashbackToVersion: req.PrepareFlashbackToVersion()}}
+	case CmdFlush:
+		return &tikvpb.BatchCommandsRequest_Request{Cmd: &tikvpb.BatchCommandsRequest_Request_Flush{Flush: req.Flush()}}
+	case CmdBufferBatchGet:
+		return &tikvpb.BatchCommandsRequest_Request{Cmd: &tikvpb.BatchCommandsRequest_Request_BufferBatchGet{BufferBatchGet: req.BufferBatchGet()}}
+	case CmdGetHealthFeedback:
+		return &tikvpb.BatchCommandsRequest_Request{Cmd: &tikvpb.BatchCommandsRequest_Request_GetHealthFeedback{GetHealthFeedback: req.GetHealthFeedback()}}
 	}
 	return nil
 }
@@ -677,6 +724,12 @@ func FromBatchCommandsResponse(res *tikvpb.BatchCommandsResponse_Response) (*Res
 		return &Response{Resp: res.CheckTxnStatus}, nil
 	case *tikvpb.BatchCommandsResponse_Response_CheckSecondaryLocks:
 		return &Response{Resp: res.CheckSecondaryLocks}, nil
+	case *tikvpb.BatchCommandsResponse_Response_Flush:
+		return &Response{Resp: res.Flush}, nil
+	case *tikvpb.BatchCommandsResponse_Response_BufferBatchGet:
+		return &Response{Resp: res.BufferBatchGet}, nil
+	case *tikvpb.BatchCommandsResponse_Response_GetHealthFeedback:
+		return &Response{Resp: res.GetHealthFeedback}, nil
 	}
 	panic("unreachable")
 }
@@ -707,100 +760,31 @@ type MPPStreamResponse struct {
 	Lease
 }
 
+//go:generate bash gen.sh
+
 // AttachContext sets the request context to the request,
 // return false if encounter unknown request type.
 // Parameter `rpcCtx` use `kvrpcpb.Context` instead of `*kvrpcpb.Context` to avoid concurrent modification by shallow copy.
 func AttachContext(req *Request, rpcCtx kvrpcpb.Context) bool {
 	ctx := &rpcCtx
+	cmd := req.Type
+	// CmdCopStream and CmdCop share the same request type.
+	if cmd == CmdCopStream {
+		cmd = CmdCop
+	}
+	if patchCmdCtx(req, cmd, ctx) {
+		return true
+	}
 	switch req.Type {
-	case CmdGet:
-		req.Get().Context = ctx
-	case CmdScan:
-		req.Scan().Context = ctx
-	case CmdPrewrite:
-		req.Prewrite().Context = ctx
-	case CmdPessimisticLock:
-		req.PessimisticLock().Context = ctx
-	case CmdPessimisticRollback:
-		req.PessimisticRollback().Context = ctx
-	case CmdCommit:
-		req.Commit().Context = ctx
-	case CmdCleanup:
-		req.Cleanup().Context = ctx
-	case CmdBatchGet:
-		req.BatchGet().Context = ctx
-	case CmdBatchRollback:
-		req.BatchRollback().Context = ctx
-	case CmdScanLock:
-		req.ScanLock().Context = ctx
-	case CmdResolveLock:
-		req.ResolveLock().Context = ctx
-	case CmdGC:
-		req.GC().Context = ctx
-	case CmdDeleteRange:
-		req.DeleteRange().Context = ctx
-	case CmdRawGet:
-		req.RawGet().Context = ctx
-	case CmdRawBatchGet:
-		req.RawBatchGet().Context = ctx
-	case CmdRawPut:
-		req.RawPut().Context = ctx
-	case CmdRawBatchPut:
-		req.RawBatchPut().Context = ctx
-	case CmdRawDelete:
-		req.RawDelete().Context = ctx
-	case CmdRawBatchDelete:
-		req.RawBatchDelete().Context = ctx
-	case CmdRawDeleteRange:
-		req.RawDeleteRange().Context = ctx
-	case CmdRawScan:
-		req.RawScan().Context = ctx
-	case CmdGetKeyTTL:
-		req.RawGetKeyTTL().Context = ctx
-	case CmdRawCompareAndSwap:
-		req.RawCompareAndSwap().Context = ctx
-	case CmdRawChecksum:
-		req.RawChecksum().Context = ctx
-	case CmdUnsafeDestroyRange:
-		req.UnsafeDestroyRange().Context = ctx
-	case CmdRegisterLockObserver:
-		req.RegisterLockObserver().Context = ctx
-	case CmdCheckLockObserver:
-		req.CheckLockObserver().Context = ctx
-	case CmdRemoveLockObserver:
-		req.RemoveLockObserver().Context = ctx
-	case CmdPhysicalScanLock:
-		req.PhysicalScanLock().Context = ctx
-	case CmdCop:
-		req.Cop().Context = ctx
-	case CmdCopStream:
-		req.Cop().Context = ctx
-	case CmdBatchCop:
-		req.BatchCop().Context = ctx
 	// Dispatching MPP tasks don't need a region context, because it's a request for store but not region.
 	case CmdMPPTask:
 	case CmdMPPConn:
 	case CmdMPPCancel:
 	case CmdMPPAlive:
 
-	case CmdMvccGetByKey:
-		req.MvccGetByKey().Context = ctx
-	case CmdMvccGetByStartTs:
-		req.MvccGetByStartTs().Context = ctx
-	case CmdSplitRegion:
-		req.SplitRegion().Context = ctx
+	// Empty command doesn't need a region context.
 	case CmdEmpty:
-		req.SplitRegion().Context = ctx
-	case CmdTxnHeartBeat:
-		req.TxnHeartBeat().Context = ctx
-	case CmdCheckTxnStatus:
-		req.CheckTxnStatus().Context = ctx
-	case CmdCheckSecondaryLocks:
-		req.CheckSecondaryLocks().Context = ctx
-	case CmdFlashbackToVersion:
-		req.FlashbackToVersion().Context = ctx
-	case CmdPrepareFlashbackToVersion:
-		req.PrepareFlashbackToVersion().Context = ctx
+
 	default:
 		return false
 	}
@@ -971,6 +955,18 @@ func GenRegionErrorResp(req *Request, e *errorpb.Error) (*Response, error) {
 		p = &kvrpcpb.PrepareFlashbackToVersionResponse{
 			RegionError: e,
 		}
+	case CmdFlush:
+		p = &kvrpcpb.FlushResponse{
+			RegionError: e,
+		}
+	case CmdBufferBatchGet:
+		p = &kvrpcpb.BufferBatchGetResponse{
+			RegionError: e,
+		}
+	case CmdGetHealthFeedback:
+		p = &kvrpcpb.GetHealthFeedbackResponse{
+			RegionError: e,
+		}
 	default:
 		return nil, errors.Errorf("invalid request type %v", req.Type)
 	}
@@ -982,6 +978,16 @@ type getRegionError interface {
 	GetRegionError() *errorpb.Error
 }
 
+func isResponseOKToNotImplGetRegionError(resp interface{}) bool {
+	switch resp.(type) {
+	case *MPPStreamResponse, *mpp.CancelTaskResponse, *mpp.IsAliveResponse, *mpp.ReportTaskStatusResponse,
+		*mpp.DispatchTaskResponse, *BatchCopStreamResponse, *tikvpb.BatchCommandsEmptyResponse:
+		return true
+	default:
+		return false
+	}
+}
+
 // GetRegionError returns the RegionError of the underlying concrete response.
 func (resp *Response) GetRegionError() (*errorpb.Error, error) {
 	if resp.Resp == nil {
@@ -989,7 +995,7 @@ func (resp *Response) GetRegionError() (*errorpb.Error, error) {
 	}
 	err, ok := resp.Resp.(getRegionError)
 	if !ok {
-		if _, isEmpty := resp.Resp.(*tikvpb.BatchCommandsEmptyResponse); isEmpty {
+		if isResponseOKToNotImplGetRegionError(resp.Resp) {
 			return nil, nil
 		}
 		return nil, errors.Errorf("invalid response type %v", resp)
@@ -1131,6 +1137,12 @@ func CallRPC(ctx context.Context, client tikvpb.TikvClient, req *Request) (*Resp
 		resp.Resp, err = client.KvPrepareFlashbackToVersion(ctx, req.PrepareFlashbackToVersion())
 	case CmdGetTiFlashSystemTable:
 		resp.Resp, err = client.GetTiFlashSystemTable(ctx, req.GetTiFlashSystemTable())
+	case CmdFlush:
+		resp.Resp, err = client.KvFlush(ctx, req.Flush())
+	case CmdBufferBatchGet:
+		resp.Resp, err = client.KvBufferBatchGet(ctx, req.BufferBatchGet())
+	case CmdGetHealthFeedback:
+		resp.Resp, err = client.GetHealthFeedback(ctx, req.GetHealthFeedback())
 	default:
 		return nil, errors.Errorf("invalid request type: %v", req.Type)
 	}
@@ -1294,7 +1306,8 @@ func (req *Request) IsTxnWriteRequest() bool {
 		req.Type == CmdTxnHeartBeat ||
 		req.Type == CmdResolveLock ||
 		req.Type == CmdFlashbackToVersion ||
-		req.Type == CmdPrepareFlashbackToVersion {
+		req.Type == CmdPrepareFlashbackToVersion ||
+		req.Type == CmdFlush {
 		return true
 	}
 	return false
@@ -1347,7 +1360,11 @@ func (req *Request) GetStartTS() uint64 {
 	case CmdFlashbackToVersion:
 		return req.FlashbackToVersion().GetStartTs()
 	case CmdPrepareFlashbackToVersion:
-		req.PrepareFlashbackToVersion().GetStartTs()
+		return req.PrepareFlashbackToVersion().GetStartTs()
+	case CmdFlush:
+		return req.Flush().GetStartTs()
+	case CmdBufferBatchGet:
+		return req.BufferBatchGet().GetVersion()
 	case CmdCop:
 		return req.Cop().GetStartTs()
 	case CmdCopStream:

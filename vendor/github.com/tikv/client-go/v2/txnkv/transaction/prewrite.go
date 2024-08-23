@@ -46,11 +46,11 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/tikv/client-go/v2/config"
+	"github.com/tikv/client-go/v2/config/retry"
 	tikverr "github.com/tikv/client-go/v2/error"
 	"github.com/tikv/client-go/v2/internal/client"
 	"github.com/tikv/client-go/v2/internal/locate"
 	"github.com/tikv/client-go/v2/internal/logutil"
-	"github.com/tikv/client-go/v2/internal/retry"
 	"github.com/tikv/client-go/v2/metrics"
 	"github.com/tikv/client-go/v2/oracle"
 	"github.com/tikv/client-go/v2/tikvrpc"
@@ -370,7 +370,7 @@ func (action actionPrewrite) handleSingleBatch(
 				// In this case 1PC is not expected to be used, but still check it for safety.
 				if int64(c.txnSize) > config.GetGlobalConfig().TiKVClient.TTLRefreshedTxnSize &&
 					prewriteResp.OnePcCommitTs == 0 {
-					c.run(c, nil)
+					c.run(c, nil, false)
 				}
 			}
 
@@ -429,6 +429,7 @@ func (action actionPrewrite) handleSingleBatch(
 			return nil
 		}
 		var locks []*txnlock.Lock
+		logged := make(map[uint64]struct{})
 		for _, keyErr := range keyErrs {
 			// Check already exists error
 			if alreadyExist := keyErr.GetAlreadyExist(); alreadyExist != nil {
@@ -441,12 +442,16 @@ func (action actionPrewrite) handleSingleBatch(
 			if err1 != nil {
 				return err1
 			}
-			logutil.BgLogger().Info(
-				"prewrite encounters lock",
-				zap.Uint64("session", c.sessionID),
-				zap.Uint64("txnID", c.startTS),
-				zap.Stringer("lock", lock),
-			)
+			if _, ok := logged[lock.TxnID]; !ok {
+				logutil.BgLogger().Info(
+					"prewrite encounters lock. "+
+						"More locks belonging to the same transaction may be omitted",
+					zap.Uint64("session", c.sessionID),
+					zap.Uint64("txnID", c.startTS),
+					zap.Stringer("lock", lock),
+				)
+				logged[lock.TxnID] = struct{}{}
+			}
 			// If an optimistic transaction encounters a lock with larger TS, this transaction will certainly
 			// fail due to a WriteConflict error. So we can construct and return an error here early.
 			// Pessimistic transactions don't need such an optimization. If this key needs a pessimistic lock,
@@ -471,9 +476,10 @@ func (action actionPrewrite) handleSingleBatch(
 			c.store.GetLockResolver().UpdateResolvingLocks(locks, c.startTS, *resolvingRecordToken)
 		}
 		resolveLockOpts := txnlock.ResolveLocksOptions{
-			CallerStartTS: c.startTS,
-			Locks:         locks,
-			Detail:        &c.getDetail().ResolveLock,
+			CallerStartTS:            c.startTS,
+			Locks:                    locks,
+			Detail:                   &c.getDetail().ResolveLock,
+			PessimisticRegionResolve: true,
 		}
 		resolveLockRes, err := c.store.GetLockResolver().ResolveLocksWithOpts(bo, resolveLockOpts)
 		if err != nil {

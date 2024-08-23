@@ -60,11 +60,11 @@ func NewCodecPDClient(mode apicodec.Mode, client pd.Client) *CodecPDClient {
 
 // NewCodecPDClientWithKeyspace creates a CodecPDClient in API v2 with keyspace name.
 func NewCodecPDClientWithKeyspace(mode apicodec.Mode, client pd.Client, keyspace string) (*CodecPDClient, error) {
-	id, err := GetKeyspaceID(client, keyspace)
+	keyspaceMeta, err := GetKeyspaceMeta(client, keyspace)
 	if err != nil {
 		return nil, err
 	}
-	codec, err := apicodec.NewCodecV2(mode, id)
+	codec, err := apicodec.NewCodecV2(mode, keyspaceMeta)
 	if err != nil {
 		return nil, err
 	}
@@ -83,6 +83,15 @@ func GetKeyspaceID(client pd.Client, name string) (uint32, error) {
 		return 0, errors.Errorf("keyspace %s not enabled", name)
 	}
 	return meta.Id, nil
+}
+
+// GetKeyspaceMeta attempts to retrieve keyspace meta corresponding to the given keyspace name from PD.
+func GetKeyspaceMeta(client pd.Client, name string) (*keyspacepb.KeyspaceMeta, error) {
+	meta, err := client.LoadKeyspace(context.Background(), apicodec.BuildKeyspaceName(name))
+	if err != nil {
+		return nil, err
+	}
+	return meta, nil
 }
 
 // GetCodec returns CodecPDClient's codec.
@@ -115,9 +124,33 @@ func (c *CodecPDClient) GetRegionByID(ctx context.Context, regionID uint64, opts
 
 // ScanRegions encodes the key before send requests to pd-server and decodes the
 // returned StartKey && EndKey from pd-server.
-func (c *CodecPDClient) ScanRegions(ctx context.Context, startKey []byte, endKey []byte, limit int) ([]*pd.Region, error) {
+func (c *CodecPDClient) ScanRegions(ctx context.Context, startKey []byte, endKey []byte, limit int, opts ...pd.GetRegionOption) ([]*pd.Region, error) {
 	startKey, endKey = c.codec.EncodeRegionRange(startKey, endKey)
-	regions, err := c.Client.ScanRegions(ctx, startKey, endKey, limit)
+	//nolint:staticcheck
+	regions, err := c.Client.ScanRegions(ctx, startKey, endKey, limit, opts...)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	for _, region := range regions {
+		if region != nil {
+			err = c.decodeRegionKeyInPlace(region)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	return regions, nil
+}
+
+// BatchScanRegions encodes the key before send requests to pd-server and decodes the
+// returned StartKey && EndKey from pd-server.
+// if limit > 0, it limits the maximum number of returned regions, should check if the result regions fully contain the given key ranges.
+func (c *CodecPDClient) BatchScanRegions(ctx context.Context, keyRanges []pd.KeyRange, limit int, opts ...pd.GetRegionOption) ([]*pd.Region, error) {
+	encodedRanges := make([]pd.KeyRange, len(keyRanges))
+	for i, keyRange := range keyRanges {
+		encodedRanges[i].StartKey, encodedRanges[i].EndKey = c.codec.EncodeRegionRange(keyRange.StartKey, keyRange.EndKey)
+	}
+	regions, err := c.Client.BatchScanRegions(ctx, encodedRanges, limit, opts...)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
