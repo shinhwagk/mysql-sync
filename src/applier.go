@@ -382,7 +382,7 @@ func (ma *MysqlApplier) MergeCommit() error {
 }
 
 func (ma *MysqlApplier) Checkpoint() error {
-	if err := ma.GtidSets.PersistGtidSetsMaptToHJDB(); err == nil {
+	if err := ma.GtidSets.PersistGtidSetsMaptToConsul(); err == nil {
 		if trx, ok := ma.GtidSets.GetTrxIdOfServerUUID(ma.LastGtidServerUUID); ok {
 			ma.Logger.Info("Checkpoint GTID: %s:%d", ma.LastGtidServerUUID, trx)
 		}

@@ -10,11 +10,8 @@
 			},
 			"extensions": [
 				"golang.Go",
-				"ms-azuretools.vscode-docker",
-				"HashiCorp.terraform",
-				"HashiCorp.HCL"
+				"ms-azuretools.vscode-docker"
 			]
 		}
-	},
-	"postCreateCommand": "/workspace/scripts/initContainer.centos.go.sh"
+	}
 }

@@ -12,5 +12,5 @@ dnf -y install sysbench
 # install python
 
 # install terraform
-yum-config-manager --add-repo https://rpm.releases.hashicorp.com/RHEL/hashicorp.repo
-yum -y install terraform-1.9.2
+# yum-config-manager --add-repo https://rpm.releases.hashicorp.com/RHEL/hashicorp.repo
+# yum -y install terraform-1.9.2

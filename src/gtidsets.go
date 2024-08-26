@@ -41,7 +41,7 @@ type DestStartGtidSetsRangeStr struct {
 }
 
 func (gss *GtidSets) InitStartupGtidSetsMap(initGtidSetsRangeStr string) error {
-	hjdbGtidSetsMap, err := gss.QueryGtidSetsMapFromHJDB()
+	hjdbGtidSetsMap, err := gss.QueryGtidSetsMapFromConsul()
 
 	if err != nil {
 		return err
@@ -63,7 +63,7 @@ func (gss *GtidSets) InitStartupGtidSetsMap(initGtidSetsRangeStr string) error {
 	return nil
 }
 
-func (gss *GtidSets) QueryGtidSetsMapFromHJDB() (map[string]uint, error) {
+func (gss *GtidSets) QueryGtidSetsMapFromConsul() (map[string]uint, error) {
 	p, _, err := gss.ConsulKV.Get(gss.ConsulKVPath, nil)
 	if err != nil {
 		gss.Logger.Error("Read consul kv: %s.", err)
@@ -82,7 +82,7 @@ func (gss *GtidSets) QueryGtidSetsMapFromHJDB() (map[string]uint, error) {
 }
 
 // gtid sets map gssm
-func (gss *GtidSets) PersistGtidSetsMaptToHJDB() error {
+func (gss *GtidSets) PersistGtidSetsMaptToConsul() error {
 	p := &api.KVPair{Key: gss.ConsulKVPath, Value: []byte(GetGtidSetsRangeStrFromGtidSetsMap(gss.GtidSetsMap))}
 	if _, err := gss.ConsulKV.Put(p, nil); err != nil {
 		gss.Logger.Error("Write consul kv: %s.", err)
