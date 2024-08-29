@@ -22,7 +22,6 @@ func NewMysqlApplier(logLevel int, gtidSets *GtidSets, mysqlClient *MysqlClient,
 		GtidSets:                gtidSets,
 		mysqlClient:             mysqlClient,
 		replicate:               replicate,
-		LastGtidServerUUID:      "",
 		LastCommitted:           0,
 		LastCheckpointTimestamp: 0,
 		AllowCommit:             false,
@@ -37,7 +36,6 @@ type MysqlApplier struct {
 	mysqlClient             *MysqlClient
 	replicate               *Replicate
 	GtidSets                *GtidSets
-	LastGtidServerUUID      string
 	LastCommitted           int64
 	LastCheckpointTimestamp uint32
 	AllowCommit             bool
@@ -331,13 +329,13 @@ func (ma *MysqlApplier) OnBegin(op MysqlOperationBegin) error {
 func (ma *MysqlApplier) OnGTID(op MysqlOperationGTID) error {
 	ma.Logger.Debug("OnGTID: %s:%d", op.ServerUUID, op.TrxID)
 	ma.GtidSkip = false
-	if trx, ok := ma.GtidSets.GetTrxIdOfServerUUID(op.ServerUUID); ok {
-		if trx >= uint(op.TrxID) {
+	if lastTrxID, ok := ma.GtidSets.GetTrxIdOfServerUUID(op.ServerUUID); ok {
+		if lastTrxID >= uint(op.TrxID) {
 			ma.GtidSkip = true
 			ma.Logger.Info("skip %s %d", op.ServerUUID, op.TrxID)
 			return nil
-		} else if uint(op.TrxID) >= trx+2 {
-			err := fmt.Errorf("gtid miss '%s:%d'", op.ServerUUID, trx+1)
+		} else if uint(op.TrxID) >= lastTrxID+2 {
+			err := fmt.Errorf("gtid miss '%s:%d'", op.ServerUUID, lastTrxID+1)
 			ma.Logger.Error("OnGTID: %s.", err)
 			return err
 		}
@@ -350,10 +348,7 @@ func (ma *MysqlApplier) OnGTID(op MysqlOperationGTID) error {
 		ma.LastCommitted = op.LastCommitted
 	}
 
-	if err := ma.GtidSets.SetTrxIdOfServerUUID(op.ServerUUID, uint(op.TrxID)); err != nil {
-		return err
-	}
-	ma.LastGtidServerUUID = op.ServerUUID
+	ma.GtidSets.SetTrxIdOfServerUUID(op.ServerUUID, uint(op.TrxID))
 
 	return nil
 }
@@ -385,15 +380,14 @@ func (ma *MysqlApplier) MergeCommit() error {
 
 func (ma *MysqlApplier) Checkpoint() error {
 	if err := ma.GtidSets.PersistGtidSetsMaptToConsul(); err == nil {
-		if trx, ok := ma.GtidSets.GetTrxIdOfServerUUID(ma.LastGtidServerUUID); ok {
-			ma.Logger.Info("Checkpoint GTID: %s:%d", ma.LastGtidServerUUID, trx)
-		}
-		ma.metricCh <- MetricUnit{Name: MetricDestCheckpointDelay, Value: uint(time.Now().Unix() - int64(ma.LastCheckpointTimestamp))}
+		ma.Logger.Info("Checkpoint GTID: %s", GetGtidSetsRangeStrFromGtidSetsMap(ma.GtidSets.GtidSetsMap))
 	}
 
 	if err := ma.GtidSets.PersistBinLogPosToConsul(); err == nil {
 		ma.Logger.Info("Checkpoint BINLOGPOS: %s:%d", ma.GtidSets.BinLogFile, ma.GtidSets.BinLogPos)
 	}
+
+	ma.metricCh <- MetricUnit{Name: MetricDestCheckpointDelay, Value: uint(time.Now().Unix() - int64(ma.LastCheckpointTimestamp))}
 
 	return nil
 }

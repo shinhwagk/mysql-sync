@@ -108,18 +108,8 @@ func (gss *GtidSets) GetTrxIdOfServerUUID(serverUUID string) (uint, bool) {
 	return lastTrxID, ok
 }
 
-func (gss *GtidSets) SetTrxIdOfServerUUID(serverUUID string, trxID uint) error {
-	if lastTrxID, ok := gss.GetTrxIdOfServerUUID(serverUUID); ok {
-		if lastTrxID+1 == trxID {
-			gss.GtidSetsMap[serverUUID] = trxID
-		} else {
-			return fmt.Errorf("gtid trxid order uuid:'%s' last:'%d', next '%d'", serverUUID, lastTrxID, trxID)
-		}
-	} else {
-		gss.Logger.Warning("Gtid: '%s:%d' first join.", serverUUID, trxID)
-		gss.GtidSetsMap[serverUUID] = trxID
-	}
-	return nil
+func (gss *GtidSets) SetTrxIdOfServerUUID(serverUUID string, trxID uint) {
+	gss.GtidSetsMap[serverUUID] = trxID
 }
 
 func (gss *GtidSets) SetBinlogPos(binlogfile string, binlogpos uint32) {
