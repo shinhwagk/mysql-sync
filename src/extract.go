@@ -74,6 +74,8 @@ func (bext *BinlogExtract) Start(ctx context.Context) {
 	}
 	bext.Logger.Info("Start streamer from gtidsets: '%s'.", gtidSet.String())
 
+	binlogfile := ""
+
 	for {
 		ev, err := streamer.GetEvent(ctx)
 
@@ -88,6 +90,8 @@ func (bext *BinlogExtract) Start(ctx context.Context) {
 			bext.Logger.Error("Event %s.", err)
 			return
 		}
+
+		bext.toMoCh(MysqlOperationBinLogPos{binlogfile, ev.Header.LogPos, ev.Header.Timestamp})
 
 		switch e := ev.Event.(type) {
 		case *replication.RowsEvent:
@@ -115,9 +119,9 @@ func (bext *BinlogExtract) Start(ctx context.Context) {
 		case *replication.RotateEvent:
 			switch ev.Header.EventType {
 			case replication.ROTATE_EVENT:
-				if ev.Header.Timestamp >= 1 {
-					// repl.binlogfile = string(e.NextLogName)
-				}
+				// if ev.Header.Timestamp >= 1 {
+				binlogfile = string(e.NextLogName)
+				// }
 			default:
 				bext.Logger.Warning("other RotateEvent", e)
 			}

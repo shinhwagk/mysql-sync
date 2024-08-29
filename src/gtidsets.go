@@ -19,20 +19,25 @@ func NewGtidSets(logLevel int, addr string, replName string, destName string) *G
 	}
 
 	gss := &GtidSets{
-		Logger:       logger,
-		ConsulKV:     client.KV(),
-		ConsulKVPath: fmt.Sprintf("mysqlsync/%s/%s/gtidsets", replName, destName),
-		GtidSetsMap:  make(map[string]uint),
+		Logger:                logger,
+		ConsulKV:              client.KV(),
+		ConsulKVPathGtidsets:  fmt.Sprintf("mysqlsync/%s/%s/gtidsets", replName, destName),
+		ConsulKVPathBinlogpos: fmt.Sprintf("mysqlsync/%s/%s/binlogpos", replName, destName),
+
+		GtidSetsMap: make(map[string]uint),
 	}
 
 	return gss
 }
 
 type GtidSets struct {
-	Logger       *Logger
-	ConsulKV     *api.KV
-	ConsulKVPath string
-	GtidSetsMap  map[string]uint
+	Logger                *Logger
+	ConsulKV              *api.KV
+	ConsulKVPathGtidsets  string
+	ConsulKVPathBinlogpos string
+	GtidSetsMap           map[string]uint
+	BinLogFile            string
+	BinLogPos             uint32
 }
 
 type DestStartGtidSetsRangeStr struct {
@@ -64,7 +69,7 @@ func (gss *GtidSets) InitStartupGtidSetsMap(initGtidSetsRangeStr string) error {
 }
 
 func (gss *GtidSets) QueryGtidSetsMapFromConsul() (map[string]uint, error) {
-	p, _, err := gss.ConsulKV.Get(gss.ConsulKVPath, nil)
+	p, _, err := gss.ConsulKV.Get(gss.ConsulKVPathGtidsets, nil)
 	if err != nil {
 		gss.Logger.Error("Read consul kv: %s.", err)
 		return nil, err
@@ -83,9 +88,16 @@ func (gss *GtidSets) QueryGtidSetsMapFromConsul() (map[string]uint, error) {
 
 // gtid sets map gssm
 func (gss *GtidSets) PersistGtidSetsMaptToConsul() error {
-	p := &api.KVPair{Key: gss.ConsulKVPath, Value: []byte(GetGtidSetsRangeStrFromGtidSetsMap(gss.GtidSetsMap))}
-	if _, err := gss.ConsulKV.Put(p, nil); err != nil {
-		gss.Logger.Error("Write consul kv: %s.", err)
+	if _, err := gss.ConsulKV.Put(&api.KVPair{Key: gss.ConsulKVPathGtidsets, Value: []byte(GetGtidSetsRangeStrFromGtidSetsMap(gss.GtidSetsMap))}, nil); err != nil {
+		gss.Logger.Error("Write consul kv gtidsets: %s.", err)
+		return err
+	}
+	return nil
+}
+
+func (gss *GtidSets) PersistBinLogPosToConsul() error {
+	if _, err := gss.ConsulKV.Put(&api.KVPair{Key: gss.ConsulKVPathBinlogpos, Value: []byte(fmt.Sprintf("%s:%d", gss.BinLogFile, gss.BinLogPos))}, nil); err != nil {
+		gss.Logger.Error("Write consul kv binlogpos: %s.", err)
 		return err
 	}
 	return nil
@@ -108,6 +120,11 @@ func (gss *GtidSets) SetTrxIdOfServerUUID(serverUUID string, trxID uint) error {
 		gss.GtidSetsMap[serverUUID] = trxID
 	}
 	return nil
+}
+
+func (gss *GtidSets) SetBinlogPos(binlogfile string, binlogpos uint32) {
+	gss.BinLogFile = binlogfile
+	gss.BinLogPos = binlogpos
 }
 
 func GetGtidSetsRangeStrFromGtidSetsMap(gtidSetsMap map[string]uint) string {

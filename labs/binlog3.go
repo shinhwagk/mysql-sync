@@ -7,8 +7,6 @@ import (
 
 	"github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/go-mysql-org/go-mysql/replication"
-
-	_ "github.com/pingcap/tidb/pkg/types/parser_driver"
 )
 
 // func handleQueryEvent(e *replication.QueryEvent, eh *replication.EventHeader) error {
@@ -115,12 +113,16 @@ func main() {
 			break
 		}
 
+		fmt.Println("logpos", ev.Header.LogPos, ev.Header.EventType.String(), ev.Header.Timestamp)
 		switch e := ev.Event.(type) {
-		case *replication.RowsEvent:
-			fmt.Println(string(e.Table.Schema), string(e.Table.Table))
-			for ct := range e.Table.ColumnType {
-				switch ct {
- 				}
+		case *replication.RotateEvent:
+			switch ev.Header.EventType {
+			case replication.ROTATE_EVENT:
+				// if ev.Header.Timestamp >= 1 {
+				fmt.Println(string(e.NextLogName), ev.Header.Timestamp)
+				// }
+			default:
+
 			}
 		}
 

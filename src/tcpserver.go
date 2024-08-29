@@ -20,6 +20,7 @@ func init() {
 	gob.Register(MysqlOperationDMLDelete{})
 	gob.Register(MysqlOperationBegin{})
 	gob.Register(MysqlOperationXid{})
+	gob.Register(MysqlOperationBinLogPos{})
 
 	gob.Register(Signal1{})
 	gob.Register(Signal2{})

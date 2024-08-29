@@ -1,16 +1,7 @@
 #!/bin/bash
 
-build() {
-  go build -v -o /tmp/mysqlsync ./src/*.go
-#   go build -ldflags="-s -w" -o /tmp/mysqlsync ./src/*.go
+VERSION=`cat version`
 
-}
+mkdir -p build
 
-if [[ $1 == "-w" ]]; then
-    while true; do
-        build && date
-        sleep 1
-    done
-else
-    build
-fi
+go build -o "build/mysqlsync-${VERSION}" ./src/*.go

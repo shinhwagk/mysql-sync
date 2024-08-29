@@ -227,6 +227,8 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					ma.Logger.Error("operation(begin): last state is '%s'", ma.State)
 					return
 				}
+			case MysqlOperationBinLogPos:
+				ma.GtidSets.SetBinlogPos(op.File, op.Pos)
 			default:
 				ma.Logger.Error("unknow operation.")
 				return
@@ -387,6 +389,10 @@ func (ma *MysqlApplier) Checkpoint() error {
 			ma.Logger.Info("Checkpoint GTID: %s:%d", ma.LastGtidServerUUID, trx)
 		}
 		ma.metricCh <- MetricUnit{Name: MetricDestCheckpointDelay, Value: uint(time.Now().Unix() - int64(ma.LastCheckpointTimestamp))}
+	}
+
+	if err := ma.GtidSets.PersistBinLogPosToConsul(); err == nil {
+		ma.Logger.Info("Checkpoint BINLOGPOS: %s:%d", ma.GtidSets.BinLogFile, ma.GtidSets.BinLogPos)
 	}
 
 	return nil

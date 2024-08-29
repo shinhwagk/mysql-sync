@@ -5,6 +5,20 @@ type MysqlOperation interface {
 	GetTimestamp() uint32
 }
 
+type MysqlOperationBinLogPos struct {
+	File      string
+	Pos       uint32
+	Timestamp uint32
+}
+
+func (op MysqlOperationBinLogPos) OperationType() string {
+	return "MysqlOperationBinLogPos"
+}
+
+func (op MysqlOperationBinLogPos) GetTimestamp() uint32 {
+	return op.Timestamp
+}
+
 type MysqlOperationDDLTable struct {
 	SchemaContext string
 	Schema        string
