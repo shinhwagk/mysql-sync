@@ -81,7 +81,7 @@ func (mc *MysqlClient) Begin() error {
 		} else {
 			for pk, pv := range mc.SessionParams {
 				query := fmt.Sprintf("SET SESSION %s = '%s'", pk, pv)
-				mc.Logger.Debug("execute Begin: init session parameter '%s'", query)
+				mc.Logger.Info("execute Begin: init session parameter '%s'", query)
 				if _, err := mc.tx.Exec(query); err != nil {
 					mc.Logger.Error("execute Begin: init session parameter '%s' %s", query, err)
 					return err
