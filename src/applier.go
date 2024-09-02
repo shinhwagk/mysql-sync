@@ -227,19 +227,14 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				}
 			case MysqlOperationBinLogPos:
 				ma.GtidSets.SetBinlogPos(op.File, op.Pos)
+				continue
 			default:
 				ma.Logger.Error("unknow operation.")
 				return
 			}
 
 			ma.metricCh <- MetricUnit{Name: MetricDestApplierOperations, Value: 1}
-
-			nowUnix := time.Now().Unix()
-			if nowUnix >= int64(oper.GetTimestamp()) {
-				ma.metricCh <- MetricUnit{Name: MetricDestApplierDelay, Value: uint(nowUnix - int64(oper.GetTimestamp()))}
-			} else {
-				ma.Logger.Warning("The current time(%d) is less than the binlog timestamp(%d).", nowUnix, oper.GetTimestamp())
-			}
+			ma.metricCh <- MetricUnit{Name: MetricDestApplierDelay, Value: uint(time.Now().Unix() - int64(oper.GetTimestamp()))}
 		}
 	}
 }
