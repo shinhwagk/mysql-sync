@@ -16,10 +16,10 @@ const (
 	StateGTID  = "gtid"
 )
 
-func NewMysqlApplier(logLevel int, gtidSets *GtidSets, mysqlClient *MysqlClient, replicate *Replicate, metricCh chan<- MetricUnit) *MysqlApplier {
+func NewMysqlApplier(logLevel int, ckpt *Checkpoint, mysqlClient *MysqlClient, replicate *Replicate, metricCh chan<- MetricUnit) *MysqlApplier {
 	return &MysqlApplier{
 		Logger:                  NewLogger(logLevel, "mysql-applier"),
-		GtidSets:                gtidSets,
+		ckpt:                    ckpt,
 		mysqlClient:             mysqlClient,
 		replicate:               replicate,
 		LastCommitted:           0,
@@ -35,7 +35,7 @@ type MysqlApplier struct {
 	Logger                  *Logger
 	mysqlClient             *MysqlClient
 	replicate               *Replicate
-	GtidSets                *GtidSets
+	ckpt                    *Checkpoint
 	LastCommitted           int64
 	LastCheckpointTimestamp uint32
 	AllowCommit             bool
@@ -226,7 +226,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					return
 				}
 			case MysqlOperationBinLogPos:
-				ma.GtidSets.SetBinlogPos(op.File, op.Pos)
+				ma.ckpt.SetBinlogPos(op.File, op.Pos)
 				continue
 			default:
 				ma.Logger.Error("unknow operation.")
@@ -331,7 +331,7 @@ func (ma *MysqlApplier) OnBegin(op MysqlOperationBegin) error {
 func (ma *MysqlApplier) OnGTID(op MysqlOperationGTID) error {
 	ma.Logger.Debug("OnGTID: %s:%d", op.ServerUUID, op.TrxID)
 	ma.GtidSkip = false
-	if lastTrxID, ok := ma.GtidSets.GetTrxIdOfServerUUID(op.ServerUUID); ok {
+	if lastTrxID, ok := ma.ckpt.GetTrxIdOfServerUUID(op.ServerUUID); ok {
 		if lastTrxID >= uint(op.TrxID) {
 			ma.GtidSkip = true
 			ma.Logger.Info("skip %s %d", op.ServerUUID, op.TrxID)
@@ -350,7 +350,7 @@ func (ma *MysqlApplier) OnGTID(op MysqlOperationGTID) error {
 		ma.LastCommitted = op.LastCommitted
 	}
 
-	ma.GtidSets.SetTrxIdOfServerUUID(op.ServerUUID, uint(op.TrxID))
+	ma.ckpt.SetTrxIdOfServerUUID(op.ServerUUID, uint(op.TrxID))
 
 	return nil
 }
@@ -381,12 +381,12 @@ func (ma *MysqlApplier) MergeCommit() error {
 }
 
 func (ma *MysqlApplier) Checkpoint() error {
-	if err := ma.GtidSets.PersistGtidSetsMaptToConsul(); err == nil {
-		ma.Logger.Info("Checkpoint GTID: %s", GetGtidSetsRangeStrFromGtidSetsMap(ma.GtidSets.GtidSetsMap))
+	if err := ma.ckpt.PersistGtidSetsMaptToConsul(); err == nil {
+		ma.Logger.Info("Checkpoint GTID: %s", GetGtidSetsRangeStrFromGtidSetsMap(ma.ckpt.GtidSetsMap))
 	}
 
-	if err := ma.GtidSets.PersistBinLogPosToConsul(); err == nil {
-		ma.Logger.Info("Checkpoint BINLOGPOS: %s:%d", ma.GtidSets.BinLogFile, ma.GtidSets.BinLogPos)
+	if err := ma.ckpt.PersistBinLogPosToConsul(); err == nil {
+		ma.Logger.Info("Checkpoint BINLOGPOS: %s:%d", ma.ckpt.BinLogFile, ma.ckpt.BinLogPos)
 	}
 
 	ma.metricCh <- MetricUnit{Name: MetricDestCheckpointTimestamp, Value: uint(time.Now().Unix() - int64(ma.LastCheckpointTimestamp))}

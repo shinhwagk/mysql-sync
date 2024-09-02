@@ -36,8 +36,8 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) {
 	defer close(moCh)
 
 	// gtidsets must first init.
-	gtidSets := NewGtidSets(destConf.LogLevel, consulAddr, replName, dest.Name)
-	err := gtidSets.InitStartupGtidSetsMap(destConf.Sync.InitGtidSetsRangeStr)
+	ckpt := NewCheckpoint(destConf.LogLevel, consulAddr, replName, dest.Name)
+	err := ckpt.InitStartupGtidSetsMap(destConf.Sync.InitGtidSetsRangeStr)
 	if err != nil {
 		return
 	}
@@ -67,14 +67,14 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) {
 			return
 		}
 		defer mysqlClient.Close()
-		mysqlApplier := NewMysqlApplier(destConf.LogLevel, gtidSets, mysqlClient, replicateFilter, metricCh)
+		mysqlApplier := NewMysqlApplier(destConf.LogLevel, ckpt, mysqlClient, replicateFilter, metricCh)
 		mysqlApplier.Start(ctx, moCh)
 	}()
 
 	go func() {
 		defer cancelTc()
 		defer cancel()
-		tcpClient, err := NewTCPClient(destConf.LogLevel, tcpAddr, dest.Name, moCh, metricCh, GetGtidSetsRangeStrFromGtidSetsMap(gtidSets.GtidSetsMap))
+		tcpClient, err := NewTCPClient(destConf.LogLevel, tcpAddr, dest.Name, moCh, metricCh, GetGtidSetsRangeStrFromGtidSetsMap(ckpt.GtidSetsMap))
 		if err != nil {
 			dest.Logger.Error("NewTCPClient: %s.", err)
 			return

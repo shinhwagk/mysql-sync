@@ -8,7 +8,7 @@ import (
 	"github.com/hashicorp/consul/api"
 )
 
-func NewGtidSets(logLevel int, addr string, replName string, destName string) *GtidSets {
+func NewCheckpoint(logLevel int, addr string, replName string, destName string) *Checkpoint {
 	logger := NewLogger(logLevel, "gtidsets")
 
 	config := api.DefaultConfig()
@@ -18,7 +18,7 @@ func NewGtidSets(logLevel int, addr string, replName string, destName string) *G
 		logger.Error("%s.", err)
 	}
 
-	gss := &GtidSets{
+	ckpt := &Checkpoint{
 		Logger:                logger,
 		ConsulKV:              client.KV(),
 		ConsulKVPathGtidsets:  fmt.Sprintf("mysqlsync/%s/%s/gtidsets", replName, destName),
@@ -27,10 +27,10 @@ func NewGtidSets(logLevel int, addr string, replName string, destName string) *G
 		GtidSetsMap: make(map[string]uint),
 	}
 
-	return gss
+	return ckpt
 }
 
-type GtidSets struct {
+type Checkpoint struct {
 	Logger                *Logger
 	ConsulKV              *api.KV
 	ConsulKVPathGtidsets  string
@@ -45,8 +45,8 @@ type DestStartGtidSetsRangeStr struct {
 	GtidSetsStr string
 }
 
-func (gss *GtidSets) InitStartupGtidSetsMap(initGtidSetsRangeStr string) error {
-	hjdbGtidSetsMap, err := gss.QueryGtidSetsMapFromConsul()
+func (ckpt *Checkpoint) InitStartupGtidSetsMap(initGtidSetsRangeStr string) error {
+	hjdbGtidSetsMap, err := ckpt.QueryGtidSetsMapFromConsul()
 
 	if err != nil {
 		return err
@@ -58,20 +58,20 @@ func (gss *GtidSets) InitStartupGtidSetsMap(initGtidSetsRangeStr string) error {
 			return err
 		}
 		for k, v := range gtidSetsMap {
-			gss.GtidSetsMap[k] = v
+			ckpt.GtidSetsMap[k] = v
 		}
 	} else {
 		for k, v := range hjdbGtidSetsMap {
-			gss.GtidSetsMap[k] = v
+			ckpt.GtidSetsMap[k] = v
 		}
 	}
 	return nil
 }
 
-func (gss *GtidSets) QueryGtidSetsMapFromConsul() (map[string]uint, error) {
-	p, _, err := gss.ConsulKV.Get(gss.ConsulKVPathGtidsets, nil)
+func (ckpt *Checkpoint) QueryGtidSetsMapFromConsul() (map[string]uint, error) {
+	p, _, err := ckpt.ConsulKV.Get(ckpt.ConsulKVPathGtidsets, nil)
 	if err != nil {
-		gss.Logger.Error("Read consul kv: %s.", err)
+		ckpt.Logger.Error("Read consul kv: %s.", err)
 		return nil, err
 	}
 
@@ -87,34 +87,34 @@ func (gss *GtidSets) QueryGtidSetsMapFromConsul() (map[string]uint, error) {
 }
 
 // gtid sets map gssm
-func (gss *GtidSets) PersistGtidSetsMaptToConsul() error {
-	if _, err := gss.ConsulKV.Put(&api.KVPair{Key: gss.ConsulKVPathGtidsets, Value: []byte(GetGtidSetsRangeStrFromGtidSetsMap(gss.GtidSetsMap))}, nil); err != nil {
-		gss.Logger.Error("Write consul kv gtidsets: %s.", err)
+func (ckpt *Checkpoint) PersistGtidSetsMaptToConsul() error {
+	if _, err := ckpt.ConsulKV.Put(&api.KVPair{Key: ckpt.ConsulKVPathGtidsets, Value: []byte(GetGtidSetsRangeStrFromGtidSetsMap(ckpt.GtidSetsMap))}, nil); err != nil {
+		ckpt.Logger.Error("Write consul kv gtidsets: %s.", err)
 		return err
 	}
 	return nil
 }
 
-func (gss *GtidSets) PersistBinLogPosToConsul() error {
-	if _, err := gss.ConsulKV.Put(&api.KVPair{Key: gss.ConsulKVPathBinlogpos, Value: []byte(fmt.Sprintf("%s:%d", gss.BinLogFile, gss.BinLogPos))}, nil); err != nil {
-		gss.Logger.Error("Write consul kv binlogpos: %s.", err)
+func (ckpt *Checkpoint) PersistBinLogPosToConsul() error {
+	if _, err := ckpt.ConsulKV.Put(&api.KVPair{Key: ckpt.ConsulKVPathBinlogpos, Value: []byte(fmt.Sprintf("%s:%d", ckpt.BinLogFile, ckpt.BinLogPos))}, nil); err != nil {
+		ckpt.Logger.Error("Write consul kv binlogpos: %s.", err)
 		return err
 	}
 	return nil
 }
 
-func (gss *GtidSets) GetTrxIdOfServerUUID(serverUUID string) (uint, bool) {
-	lastTrxID, ok := gss.GtidSetsMap[serverUUID]
+func (ckpt *Checkpoint) GetTrxIdOfServerUUID(serverUUID string) (uint, bool) {
+	lastTrxID, ok := ckpt.GtidSetsMap[serverUUID]
 	return lastTrxID, ok
 }
 
-func (gss *GtidSets) SetTrxIdOfServerUUID(serverUUID string, trxID uint) {
-	gss.GtidSetsMap[serverUUID] = trxID
+func (ckpt *Checkpoint) SetTrxIdOfServerUUID(serverUUID string, trxID uint) {
+	ckpt.GtidSetsMap[serverUUID] = trxID
 }
 
-func (gss *GtidSets) SetBinlogPos(binlogfile string, binlogpos uint32) {
-	gss.BinLogFile = binlogfile
-	gss.BinLogPos = binlogpos
+func (ckpt *Checkpoint) SetBinlogPos(binlogfile string, binlogpos uint32) {
+	ckpt.BinLogFile = binlogfile
+	ckpt.BinLogPos = binlogpos
 }
 
 func GetGtidSetsRangeStrFromGtidSetsMap(gtidSetsMap map[string]uint) string {
