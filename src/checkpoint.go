@@ -9,7 +9,7 @@ import (
 )
 
 func NewCheckpoint(logLevel int, addr string, replName string, destName string) *Checkpoint {
-	logger := NewLogger(logLevel, "gtidsets")
+	logger := NewLogger(logLevel, "checkpoint")
 
 	config := api.DefaultConfig()
 	config.Address = addr
