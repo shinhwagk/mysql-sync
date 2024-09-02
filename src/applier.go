@@ -207,7 +207,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					return
 				}
 				ma.State = StateNULL
-				ma.metricCh <- MetricUnit{Name: MetricDestCheckpointDelay, Value: uint(time.Now().Unix() - int64(op.Timestamp))}
+				ma.metricCh <- MetricUnit{Name: MetricDestCheckpointTimestamp, Value: uint(op.GetTimestamp())}
 			case MysqlOperationBegin:
 				if ma.State == StateGTID {
 					ma.State = StateBEGIN
@@ -234,7 +234,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 			}
 
 			ma.metricCh <- MetricUnit{Name: MetricDestApplierOperations, Value: 1}
-			ma.metricCh <- MetricUnit{Name: MetricDestApplierDelay, Value: uint(time.Now().Unix() - int64(oper.GetTimestamp()))}
+			ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
 		}
 	}
 }
@@ -389,7 +389,7 @@ func (ma *MysqlApplier) Checkpoint() error {
 		ma.Logger.Info("Checkpoint BINLOGPOS: %s:%d", ma.GtidSets.BinLogFile, ma.GtidSets.BinLogPos)
 	}
 
-	ma.metricCh <- MetricUnit{Name: MetricDestCheckpointDelay, Value: uint(time.Now().Unix() - int64(ma.LastCheckpointTimestamp))}
+	ma.metricCh <- MetricUnit{Name: MetricDestCheckpointTimestamp, Value: uint(time.Now().Unix() - int64(ma.LastCheckpointTimestamp))}
 
 	return nil
 }

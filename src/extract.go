@@ -51,7 +51,7 @@ func (bext *BinlogExtract) toMoCh(mo MysqlOperation) {
 	bext.moCh <- mo
 	// bext.Logger.Debug("mo -> moCh ok.")
 	bext.metricCh <- MetricUnit{Name: MetricReplExtractOperations, Value: 1}
-	bext.metricCh <- MetricUnit{Name: MetricReplDelay, Value: uint(time.Now().Unix() - int64(mo.GetTimestamp()))}
+	bext.metricCh <- MetricUnit{Name: MetricReplExtractorTimestamp, Value: uint(mo.GetTimestamp())}
 }
 
 func (bext *BinlogExtract) Start(ctx context.Context) {

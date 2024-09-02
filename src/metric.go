@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	MetricDestCheckpointDelay uint = iota
-	MetricDestApplierDelay
+	MetricDestCheckpointTimestamp uint = iota
+	MetricDestApplierTimestamp
 	MetricDestDMLInsertTimes
 	MetricDestDMLUpdateTimes
 	MetricDestDMLDeleteTimes
@@ -25,7 +25,7 @@ const (
 	MetricTCPServerSendOperations
 	MetricTCPServerOutgoing
 
-	MetricReplDelay
+	MetricReplExtractorTimestamp
 	MetricReplDMLInsertTimes
 	MetricReplDMLUpdateTimes
 	MetricReplDMLDeleteTimes
@@ -166,10 +166,10 @@ func (md *MetricDirector) Start(ctx context.Context) {
 				md.inc("ddl_database_times", metric.Value, metric.LabelPair)
 			case MetricDestDDLTableTimes:
 				md.inc("ddl_table_times", metric.Value, metric.LabelPair)
-			case MetricDestCheckpointDelay:
-				md.set("ckeckpoint_delay", metric.Value, metric.LabelPair)
-			case MetricDestApplierDelay:
-				md.set("applier_delay", metric.Value, metric.LabelPair)
+			case MetricDestCheckpointTimestamp:
+				md.set("ckeckpoint_timestamp", metric.Value, metric.LabelPair)
+			case MetricDestApplierTimestamp:
+				md.set("applier_timestamp", metric.Value, metric.LabelPair)
 			case MetricTCPClientReceiveOperations:
 				md.inc("tcp_client_receive_operations", metric.Value, metric.LabelPair)
 			case MetricDestApplierOperations:
@@ -177,8 +177,8 @@ func (md *MetricDirector) Start(ctx context.Context) {
 			// case MetricDestApplierSkipOperations:
 			// 	md.inc("applier_skip_operations", metric.Value, metric.LabelPair)
 
-			case MetricReplDelay:
-				md.set("delay", metric.Value, metric.LabelPair)
+			case MetricReplExtractorTimestamp:
+				md.set("extractor_timestamp", metric.Value, metric.LabelPair)
 			case MetricTCPServerSendDelay:
 				md.set("tcp_server_send_delay", metric.Value, metric.LabelPair)
 			case MetricReplTrx:
