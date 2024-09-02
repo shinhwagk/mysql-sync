@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 )
 
 const (
@@ -389,7 +388,7 @@ func (ma *MysqlApplier) Checkpoint() error {
 		ma.Logger.Info("Checkpoint BINLOGPOS: %s:%d", ma.ckpt.BinLogFile, ma.ckpt.BinLogPos)
 	}
 
-	ma.metricCh <- MetricUnit{Name: MetricDestCheckpointTimestamp, Value: uint(time.Now().Unix() - int64(ma.LastCheckpointTimestamp))}
+	ma.metricCh <- MetricUnit{Name: MetricDestCheckpointTimestamp, Value: uint(ma.LastCheckpointTimestamp)}
 
 	return nil
 }
