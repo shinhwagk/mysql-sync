@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -118,11 +119,20 @@ func (ckpt *Checkpoint) SetBinlogPos(binlogfile string, binlogpos uint32) {
 }
 
 func GetGtidSetsRangeStrFromGtidSetsMap(gtidSetsMap map[string]uint) string {
+	var keys []string
 	var parts []string
-	for key, value := range gtidSetsMap {
+
+	for key := range gtidSetsMap {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	for _, key := range keys {
+		value := gtidSetsMap[key]
 		part := fmt.Sprintf("%s:1-%d", key, value)
 		parts = append(parts, part)
 	}
+
 	return strings.Join(parts, ",")
 }
 
