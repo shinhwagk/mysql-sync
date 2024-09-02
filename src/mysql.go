@@ -31,12 +31,18 @@ func NewMysqlClient(logLevel int, dmc DestinationMysqlConfig) (*MysqlClient, err
 	db.SetMaxIdleConns(1)
 	db.SetMaxOpenConns(2)
 
-	sessionParams := map[string]string{"time_zone": "+00:00"}
+	pSkipErrors := ""
+
+	sessionParams := map[string]string{}
 	for pk, pv := range dmc.SessionParams {
-		sessionParams[pk] = pv
+		if pk == "replica_skip_errors" {
+			pSkipErrors = pv
+		} else {
+			sessionParams[pk] = pv
+		}
 	}
 
-	skipErrors, err := ConvertStringToUint16Slice(dmc.SkipErrors)
+	skipErrors, err := ConvertStringToUint16Slice(pSkipErrors)
 	if err != nil {
 		return nil, err
 	}

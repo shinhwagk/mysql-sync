@@ -17,10 +17,13 @@ destination:
   destinations:
     db2:
       mysql:
-        dsn: "root:root_password@tcp(db2:3306)/?autocommit=false&time_zone='%2B00:00'"
+        dsn: "root:root_password@tcp(db2:3306)/"
         skip_errors: 1007,1008,1050,1051,1054,1060,1061,1068,1091,1146
         session_params:
           foreign_key_checks: off
+          time_zone: '+00:00'
+          autocommit: off
+          replica_skip_errors: 1007,1008,1050,1051,1054,1060,1061,1068,1091,1146
       sync:
         replicate:
           do_db: test
@@ -31,7 +34,7 @@ destination:
       loglevel: 1
     db3:
       mysql:
-        dsn: "root:root_password@tcp(db3:3306)/?autocommit=false&time_zone='%2B00:00'"
+        dsn: "root:root_password@tcp(db3:3306)/"
         skip_errors: 1007,1008,1050,1051,1054,1060,1061,1068,1091,1146
       sync:
         gtidsets: ""

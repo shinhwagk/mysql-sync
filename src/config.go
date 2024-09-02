@@ -40,7 +40,6 @@ type DestinationConfig struct {
 
 type DestinationMysqlConfig struct {
 	Dsn           string            `yaml:"dsn"`
-	SkipErrors    string            `yaml:"skip_errors"`
 	SessionParams map[string]string `yaml:"session_params"`
 }
 
