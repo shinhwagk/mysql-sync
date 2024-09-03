@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"sync"
 
 	"github.com/klauspost/compress/zstd"
 )
@@ -28,8 +27,6 @@ func init() {
 }
 
 type TCPClient struct {
-	ctx               context.Context
-	cancel            context.CancelFunc
 	Logger            *Logger
 	ServerAddress     string
 	metricCh          chan<- MetricUnit
@@ -39,7 +36,6 @@ type TCPClient struct {
 	decoderZstdReader *zstd.Decoder
 	BatchID           uint
 	moCh              chan<- MysqlOperation
-	// StartGtidSets     string
 }
 
 func NewTCPClient(logLevel int, serverAddress string, destName string, moCh chan<- MysqlOperation, metricCh chan<- MetricUnit, startGtidSets string) (*TCPClient, error) {
@@ -66,11 +62,7 @@ func NewTCPClient(logLevel int, serverAddress string, destName string, moCh chan
 	}
 	decoder := gob.NewDecoder(zstdReader)
 
-	ctx, cancel := context.WithCancel(context.Background())
-
 	return &TCPClient{
-		ctx:               ctx,
-		cancel:            cancel,
 		Logger:            logger,
 		ServerAddress:     serverAddress,
 		conn:              conn,
@@ -80,7 +72,6 @@ func NewTCPClient(logLevel int, serverAddress string, destName string, moCh chan
 		metricCh:          metricCh,
 		BatchID:           0,
 		moCh:              moCh,
-		// StartGtidSets:     startGtidSets,
 	}, nil
 }
 
@@ -124,30 +115,15 @@ func (tc *TCPClient) Start(ctx context.Context) {
 
 	go func() {
 		<-ctx.Done()
-		tc.cancel()
-	}()
-
-	var wg sync.WaitGroup
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		tc.receiveOperations()
-		tc.Logger.Info("tcp from server '%s' handler close.", tc.conn.RemoteAddr().String())
-		tc.cancel()
-	}()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
 		tc.Cleanup()
 	}()
 
-	wg.Wait()
+	tc.receiveOperations()
+	tc.Logger.Info("tcp from server '%s' handler close.", tc.conn.RemoteAddr().String())
+	tc.Cleanup()
 }
 
 func (tc *TCPClient) Cleanup() {
-	<-tc.ctx.Done()
 	tc.decoderZstdReader.Close()
 
 	if err := tc.conn.Close(); err != nil {
