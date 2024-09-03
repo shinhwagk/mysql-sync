@@ -112,7 +112,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					if ma.GtidSkip || ma.ReplicateNotExecute(op.Database, op.Table) {
 						continue
 					}
-					if gobRepairColumns, err := gobUint8NilRepair(op.Columns); err != nil {
+					if gobRepairColumns, err := GobUint8NilRepair(op.Columns); err != nil {
 						ma.Logger.Error("gob repair []uint8(nil): ", err)
 						return
 					} else {
@@ -134,7 +134,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					if ma.GtidSkip || ma.ReplicateNotExecute(op.Database, op.Table) {
 						continue
 					}
-					if gobRepairColumns, err := gobUint8NilRepair(op.Columns); err != nil {
+					if gobRepairColumns, err := GobUint8NilRepair(op.Columns); err != nil {
 						ma.Logger.Error("gob repair []uint8(nil): ", err)
 						return
 					} else {
@@ -156,13 +156,13 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					if ma.GtidSkip || ma.ReplicateNotExecute(op.Database, op.Table) {
 						continue
 					}
-					if gobRepairColumns, err := gobUint8NilRepair(op.AfterColumns); err != nil {
+					if gobRepairColumns, err := GobUint8NilRepair(op.AfterColumns); err != nil {
 						ma.Logger.Error("gob repair []uint8(nil): ", err)
 						return
 					} else {
 						op.AfterColumns = gobRepairColumns
 					}
-					if gobRepairColumns, err := gobUint8NilRepair(op.BeforeColumns); err != nil {
+					if gobRepairColumns, err := GobUint8NilRepair(op.BeforeColumns); err != nil {
 						ma.Logger.Error("gob repair []uint8(nil): ", err)
 						return
 					} else {
