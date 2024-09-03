@@ -216,6 +216,7 @@ func (bext *BinlogExtract) handleEventGtid(e *replication.GTIDEvent, eh *replica
 		return fmt.Errorf("unkonw handleEventGtids %#v", parts)
 	}
 }
+
 func (bext *BinlogExtract) handleQueryEvent(e *replication.QueryEvent, eh *replication.EventHeader) error {
 	parser := parser.New()
 	stmts, warns, err := parser.Parse(string(e.Query), "", "")
