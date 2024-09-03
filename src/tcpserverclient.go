@@ -171,7 +171,7 @@ func (tsc *TCPServerClient) ClientPush() {
 		tsc.Logger.Error("Push mos to client: %s.", err)
 		tsc.SendError = err
 	} else {
-		tsc.Logger.Info("Push batch(%d) mos(%d) bytes(%d) ok.", signal1.BatchID, len(tsc.SendMos), tsc.encoderBuffer.Len())
+		tsc.Logger.Debug("Push batch(%d) mos(%d) bytes(%d) ok.", signal1.BatchID, len(tsc.SendMos), tsc.encoderBuffer.Len())
 		tsc.metricCh <- MetricUnit{Name: MetricTCPServerSendOperations, Value: uint(len(tsc.SendMos))}
 		tsc.metricCh <- MetricUnit{Name: MetricTCPServerOutgoing, Value: uint(tsc.encoderBuffer.Len())}
 		tsc.encoderBuffer.Reset()

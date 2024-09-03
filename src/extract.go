@@ -213,7 +213,7 @@ func (bext *BinlogExtract) handleEventGtid(e *replication.GTIDEvent, eh *replica
 				return nil
 			}
 		}
-		return fmt.Errorf("unkonw handleEventGtids", parts)
+		return fmt.Errorf("unkonw handleEventGtids %#v", parts)
 	}
 }
 func (bext *BinlogExtract) handleQueryEvent(e *replication.QueryEvent, eh *replication.EventHeader) error {

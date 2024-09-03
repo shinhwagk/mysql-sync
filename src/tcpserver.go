@@ -128,7 +128,7 @@ func (ts *TCPServer) clientsReady() bool {
 
 		if client.State == ClientBusy {
 			if client.SendError != nil {
-				ts.Logger.Info("Push to Client(%s) Batch(%d) Mos(%d) again.", name, client.SendBatchID, len(client.SendMos))
+				ts.Logger.Debug("Push to Client(%s) Batch(%d) Mos(%d) again.", name, client.SendBatchID, len(client.SendMos))
 				client.ClientPush()
 			}
 			return false
@@ -222,14 +222,14 @@ func (ts *TCPServer) distributor() {
 }
 
 func (ts *TCPServer) ClientsPush(mos []MysqlOperation) {
-	ts.Logger.Info("Push to Clients Batch(%d) Mos(%d).", ts.BatchID, len(mos))
+	ts.Logger.Debug("Push to Clients Batch(%d) Mos(%d).", ts.BatchID, len(mos))
 	var wg sync.WaitGroup
 	for name, client := range ts.Clients {
 		wg.Add(1)
 		go func(cli *TCPServerClient) {
 			defer wg.Done()
 			cli.SetPush(ts.BatchID, mos)
-			ts.Logger.Info("Push to Client(%s) Batch(%d) Mos(%d).", name, ts.BatchID, len(mos))
+			ts.Logger.Debug("Push to Client(%s) Batch(%d) Mos(%d).", name, ts.BatchID, len(mos))
 			cli.ClientPush()
 		}(client)
 	}

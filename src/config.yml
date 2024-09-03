@@ -1,4 +1,4 @@
-loglevel: debug
+loglevel: info
 consul:
   addr: consul:8500
 replication:
