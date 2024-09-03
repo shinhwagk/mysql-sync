@@ -28,7 +28,7 @@ func main() {
 		logger.Error("--repl and --dest cannot be used together.")
 	} else if *repl {
 		replication := NewReplication(*config)
-		replication.start(ctx, cancel)
+		replication.Start(ctx, cancel)
 		return
 	} else if *dest {
 		if *destName == "" {

@@ -16,7 +16,7 @@ type Replication struct {
 	Logger *Logger
 }
 
-func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
+func (repl *Replication) Start(ctx context.Context, cancel context.CancelFunc) {
 	repl.Logger.Info("Started.")
 	defer repl.Logger.Info("Closed.")
 
