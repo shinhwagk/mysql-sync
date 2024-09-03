@@ -22,6 +22,9 @@ services:
 
 ## config.yml
 ```yml
+loglevel: info
+consul:
+  addr: consul:8500
 replication:
   name: "xxxx"
   tcpaddr: "0.0.0.0:9998"
@@ -30,40 +33,34 @@ replication:
   port: 3306
   user: "root"
   password: "root_password"
-  loglevel: 1
-  settings: # option
+  settings:
     cache: 1000
-  prom: # option
-    export: 9091 # default 9092
+  prom:
+    export: 9091
 destination:
   tcpaddr: "127.0.0.1:9998"
-  cache: 1000 # option
+  cache: 1000
   destinations:
     db2:
       mysql:
         dsn: "root:root_password@tcp(db2:3306)/"
-        skip_errors: 1007,1008,1050,1051,1054,1060,1061,1068,1091,1146 # option
-        session_params: # option
+        session_params:
           foreign_key_checks: off
+          time_zone: '+00:00'
+          autocommit: off
+          replica_skip_errors: 1007,1008,1050,1051,1054,1060,1061,1068,1091,1146
       sync:
-        replicate: # option
+        replicate:
           do_db: test
           ignore_tab: test.year_table
-          do_table: # option
-          ignore_db: # option
         gtidsets: ""
-      prom: # option
-        export: 9092 # default 9092
-      loglevel: 1
+      prom:
+        export: 9092
     db3:
       mysql:
         dsn: "root:root_password@tcp(db3:3306)/"
-        skip_errors: 1007,1008,1050,1051,1054,1060,1061,1068,1091,1146
       sync:
         gtidsets: ""
-      loglevel: 1
       prom:
         export: 9093
-consul:
-  addr: consul:8500
 ```
