@@ -10,6 +10,7 @@ type MysqlSyncConfig struct {
 	Replication ReplicationConfig  `yaml:"replication"`
 	Destination DestinationsConfig `yaml:"destination"`
 	Consul      ConsulConfig       `yaml:"consul"`
+	LogLevel    string             `yaml:"loglevel"`
 }
 
 type ReplicationConfig struct {
@@ -20,7 +21,6 @@ type ReplicationConfig struct {
 	Port       int              `yaml:"port"`
 	User       string           `yaml:"user"`
 	Password   string           `yaml:"password"`
-	LogLevel   int              `yaml:"loglevel"`
 	Settings   SettingsConfig   `yaml:"settings"`
 	Prometheus PrometheusConfig `yaml:"prom"`
 }
@@ -32,7 +32,6 @@ type DestinationsConfig struct {
 }
 
 type DestinationConfig struct {
-	LogLevel   int                    `yaml:"loglevel"`
 	Mysql      DestinationMysqlConfig `yaml:"mysql"`
 	Sync       DestinationSyncConfig  `yaml:"sync"`
 	Prometheus PrometheusConfig       `yaml:"prom"`

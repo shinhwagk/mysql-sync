@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -22,6 +23,19 @@ type Logger struct {
 	LogWarning *log.Logger
 	LogTrace   *log.Logger
 	LogAudit   *log.Logger
+}
+
+func parseLogLevel(logLevel string) int {
+	switch strings.ToLower(logLevel) {
+	case "debug":
+		return LevelDebug
+	case "info":
+		return LevelInfo
+	case "trace":
+		return LevelTrace
+	default:
+		return LevelInfo
+	}
 }
 
 func NewLogger(level int, module string) *Logger {

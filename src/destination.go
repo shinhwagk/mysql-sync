@@ -5,11 +5,10 @@ import (
 )
 
 func NewDestination(msc MysqlSyncConfig, destName string) *Destination {
-	destConf := msc.Destination.Destinations[destName]
 	return &Destination{
 		msc:    msc,
 		Name:   destName,
-		Logger: NewLogger(destConf.LogLevel, "destination"),
+		Logger: NewLogger(parseLogLevel(msc.LogLevel), "destination"),
 	}
 }
 
@@ -36,7 +35,7 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) {
 	defer close(moCh)
 
 	// gtidsets must first init.
-	ckpt := NewCheckpoint(destConf.LogLevel, consulAddr, replName, dest.Name)
+	ckpt := NewCheckpoint(dest.Logger.Level, consulAddr, replName, dest.Name)
 	err := ckpt.InitStartupGtidSetsMap(destConf.Sync.InitGtidSetsRangeStr)
 	if err != nil {
 		return
@@ -53,7 +52,7 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) {
 		if destConf.Prometheus.ExportPort > 0 {
 			promExportPort = destConf.Prometheus.ExportPort
 		}
-		metricDirector := NewMetricDestDirector(destConf.LogLevel, promExportPort, "destination", replName, dest.Name, metricCh)
+		metricDirector := NewMetricDestDirector(dest.Logger.Level, promExportPort, "destination", replName, dest.Name, metricCh)
 		metricDirector.Start(ctx)
 	}()
 
@@ -61,20 +60,20 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) {
 		defer cancelMa()
 		defer cancel()
 		replicateFilter := NewReplicateFilter(destConf.Sync.Replicate)
-		mysqlClient, err := NewMysqlClient(destConf.LogLevel, destConf.Mysql)
+		mysqlClient, err := NewMysqlClient(dest.Logger.Level, destConf.Mysql)
 		if err != nil {
 			dest.Logger.Error("NewMysqlClient: %s.", err)
 			return
 		}
 		defer mysqlClient.Close()
-		mysqlApplier := NewMysqlApplier(destConf.LogLevel, ckpt, mysqlClient, replicateFilter, metricCh)
+		mysqlApplier := NewMysqlApplier(dest.Logger.Level, ckpt, mysqlClient, replicateFilter, metricCh)
 		mysqlApplier.Start(ctx, moCh)
 	}()
 
 	go func() {
 		defer cancelTc()
 		defer cancel()
-		tcpClient, err := NewTCPClient(destConf.LogLevel, tcpAddr, dest.Name, moCh, metricCh, GetGtidSetsRangeStrFromGtidSetsMap(ckpt.GtidSetsMap))
+		tcpClient, err := NewTCPClient(dest.Logger.Level, tcpAddr, dest.Name, moCh, metricCh, GetGtidSetsRangeStrFromGtidSetsMap(ckpt.GtidSetsMap))
 		if err != nil {
 			dest.Logger.Error("NewTCPClient: %s.", err)
 			return

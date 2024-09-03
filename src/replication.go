@@ -7,7 +7,7 @@ import (
 func NewReplication(msc MysqlSyncConfig) *Replication {
 	return &Replication{
 		msc:    msc,
-		Logger: NewLogger(msc.Replication.LogLevel, "replication"),
+		Logger: NewLogger(parseLogLevel(msc.LogLevel), "replication"),
 	}
 }
 
@@ -52,14 +52,14 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 		if repl.msc.Replication.Prometheus.ExportPort > 0 {
 			promExportPort = repl.msc.Replication.Prometheus.ExportPort
 		}
-		metricDirector := NewMetricReplDirector(repl.msc.Replication.LogLevel, promExportPort, "replication", repl.msc.Replication.Name, metricCh)
+		metricDirector := NewMetricReplDirector(repl.Logger.Level, promExportPort, "replication", repl.msc.Replication.Name, metricCh)
 		metricDirector.Start(ctx)
 	}()
 
 	go func() {
 		defer cancelTs()
 		defer cancel()
-		tcpServer := NewTCPServer(repl.msc.Replication.LogLevel, repl.msc.Replication.TCPAddr, destNames, moCh, metricCh, destStartGtidSetsStrCh)
+		tcpServer := NewTCPServer(repl.Logger.Level, repl.msc.Replication.TCPAddr, destNames, moCh, metricCh, destStartGtidSetsStrCh)
 		tcpServer.Start(ctx)
 	}()
 
@@ -91,7 +91,7 @@ func (repl *Replication) start(ctx context.Context, cancel context.CancelFunc) {
 		initGtidSetsRangeStr := GetGtidSetsRangeStrFromGtidSetsMap(MergeGtidSetss(gtidSetss))
 		repl.Logger.Info("Init gtidsets range string:'%s'", initGtidSetsRangeStr)
 
-		extract := NewBinlogExtract(repl.msc.Replication.LogLevel, repl.msc.Replication, initGtidSetsRangeStr, moCh, metricCh)
+		extract := NewBinlogExtract(repl.Logger.Level, repl.msc.Replication, initGtidSetsRangeStr, moCh, metricCh)
 		extract.Start(ctx)
 	}()
 

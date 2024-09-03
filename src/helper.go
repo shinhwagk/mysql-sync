@@ -169,6 +169,10 @@ func calculateAdjustedMean(slice []int) int {
 }
 
 func ConvertStringToUint16Slice(input string) ([]uint16, error) {
+	if input == "" {
+		return []uint16{}, nil
+	}
+
 	numberStrings := strings.Split(input, ",")
 
 	var result []uint16

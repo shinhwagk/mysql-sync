@@ -38,7 +38,7 @@ func NewBinlogExtract(logLevel int, config ReplicationConfig, startSyncGtidsets 
 	}
 
 	return &BinlogExtract{
-		Logger:             NewLogger(config.LogLevel, "extract"),
+		Logger:             NewLogger(logLevel, "extract"),
 		BinlogSyncerConfig: cfg,
 		moCh:               moCh,
 		metricCh:           metricCh,

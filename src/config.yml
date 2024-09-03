@@ -1,3 +1,6 @@
+loglevel: debug
+consul:
+  addr: consul:8500
 replication:
   name: "xxxx"
   tcpaddr: "0.0.0.0:9998"
@@ -6,7 +9,6 @@ replication:
   port: 3306
   user: "root"
   password: "root_password"
-  loglevel: 1
   settings:
     cache: 1000
   prom:
@@ -30,14 +32,10 @@ destination:
         gtidsets: ""
       prom:
         export: 9092
-      loglevel: 1
     db3:
       mysql:
         dsn: "root:root_password@tcp(db3:3306)/"
       sync:
         gtidsets: ""
-      loglevel: 1
       prom:
         export: 9093
-consul:
-  addr: consul:8500
