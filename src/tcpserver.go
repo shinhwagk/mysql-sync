@@ -222,7 +222,6 @@ func (ts *TCPServer) distributor() {
 }
 
 func (ts *TCPServer) ClientsPush(mos []MysqlOperation) {
-	ts.Logger.Debug("Push to Clients Batch(%d) Mos(%d).", ts.BatchID, len(mos))
 	var wg sync.WaitGroup
 	for name, client := range ts.Clients {
 		wg.Add(1)

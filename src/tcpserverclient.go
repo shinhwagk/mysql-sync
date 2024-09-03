@@ -125,7 +125,7 @@ func (tsc *TCPServerClient) receivedSignal() {
 			tsc.State = ClientFree
 			tsc.SendError = nil
 			elapsed := time.Since(tsc.SendTimestamp).Milliseconds()
-			tsc.metricCh <- MetricUnit{Name: MetricTCPServerSendDelay, Value: uint(elapsed)}
+			tsc.metricCh <- MetricUnit{Name: MetricTCPServerSendDelay, Value: uint(elapsed), LabelPair: map[string]string{"dest": tsc.Name}}
 			tsc.Logger.Debug("Client received batch(%d), elapsed ms(%d) successfully.", ack.BatchID, elapsed)
 		} else {
 			tsc.Logger.Error("Not received batch(%d), %d", tsc.SendBatchID, ack.BatchID)
