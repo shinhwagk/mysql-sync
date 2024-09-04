@@ -125,7 +125,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 						continue
 					}
 					if ma.ReplicateNotExecute(op.Database, op.Table) {
-						ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
+						ma.metricCh <- MetricUnit{Name: MetricDestApplierSkipOperations, Value: 1}
 						ma.metricCh <- MetricUnit{Name: MetricDestDMLSkipInsertTimes, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 						ma.metricCh <- MetricUnit{Name: MetricDestDMLSkipUpdateTimes, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 						ma.metricCh <- MetricUnit{Name: MetricDestDMLSkipDeleteTimes, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
@@ -154,7 +154,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 						continue
 					}
 					if ma.ReplicateNotExecute(op.Database, op.Table) {
-						ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
+						ma.metricCh <- MetricUnit{Name: MetricDestApplierSkipOperations, Value: 1}
 						ma.metricCh <- MetricUnit{Name: MetricDestDMLSkipDeleteTimes, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 						ma.metricCh <- MetricUnit{Name: MetricDestDMLSkipUpdateTimes, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 						ma.metricCh <- MetricUnit{Name: MetricDestDMLSkipInsertTimes, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
@@ -183,7 +183,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 						continue
 					}
 					if ma.ReplicateNotExecute(op.Database, op.Table) {
-						ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
+						ma.metricCh <- MetricUnit{Name: MetricDestApplierSkipOperations, Value: 1}
 						ma.metricCh <- MetricUnit{Name: MetricDestDMLSkipUpdateTimes, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 						ma.metricCh <- MetricUnit{Name: MetricDestDMLSkipInsertTimes, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 						ma.metricCh <- MetricUnit{Name: MetricDestDMLSkipInsertTimes, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
