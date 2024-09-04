@@ -1,6 +1,6 @@
 FROM quay.io/centos/centos:stream9
 
-RUN dnf install -y git zsh
+RUN dnf install -y git
 
 ENV PATH /usr/local/go/bin:$PATH
 

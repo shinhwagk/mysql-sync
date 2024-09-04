@@ -5,9 +5,6 @@
 	"workspaceFolder": "/workspace",
 	"customizations": {
 		"vscode": {
-			"settings": {
-				"terminal.integrated.defaultProfile.linux": "zsh"
-			},
 			"extensions": [
 				"golang.Go",
 				"ms-azuretools.vscode-docker",

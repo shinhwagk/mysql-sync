@@ -16,8 +16,13 @@ const (
 	MetricDestDMLInsertTimes
 	MetricDestDMLUpdateTimes
 	MetricDestDMLDeleteTimes
+	MetricDestDMLSkipInsertTimes
+	MetricDestDMLSkipUpdateTimes
+	MetricDestDMLSkipDeleteTimes
 	MetricDestDDLDatabaseTimes
 	MetricDestDDLTableTimes
+	MetricDestDDLSkipDatabaseTimes
+	MetricDestDDLSkipTableTimes
 	MetricDestTrx
 	MetricDestMergeTrx
 	MetricDestApplierOperations
@@ -158,6 +163,12 @@ func (md *MetricDirector) Start(ctx context.Context) {
 				md.inc("dml_delete_times", metric.Value, metric.LabelPair)
 			case MetricDestDMLUpdateTimes:
 				md.inc("dml_update_times", metric.Value, metric.LabelPair)
+			case MetricDestDMLSkipInsertTimes:
+				md.inc("dml_skip_insert_times", metric.Value, metric.LabelPair)
+			case MetricDestDMLSkipDeleteTimes:
+				md.inc("dml_skip_delete_times", metric.Value, metric.LabelPair)
+			case MetricDestDMLSkipUpdateTimes:
+				md.inc("dml_skip_update_times", metric.Value, metric.LabelPair)
 			case MetricDestTrx:
 				md.inc("trx", metric.Value, metric.LabelPair)
 			case MetricDestMergeTrx:
@@ -166,6 +177,10 @@ func (md *MetricDirector) Start(ctx context.Context) {
 				md.inc("ddl_database_times", metric.Value, metric.LabelPair)
 			case MetricDestDDLTableTimes:
 				md.inc("ddl_table_times", metric.Value, metric.LabelPair)
+			case MetricDestDDLSkipDatabaseTimes:
+				md.inc("ddl_skip_database_times", metric.Value, metric.LabelPair)
+			case MetricDestDDLSkipTableTimes:
+				md.inc("ddl_skip_table_times", metric.Value, metric.LabelPair)
 			case MetricDestCheckpointTimestamp:
 				md.set("ckeckpoint_timestamp", metric.Value, metric.LabelPair)
 			case MetricDestApplierTimestamp:

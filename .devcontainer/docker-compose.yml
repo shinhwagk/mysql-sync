@@ -6,66 +6,66 @@ services:
     volumes:
       - ../:/workspace:cached
     command: sleep infinity
-    environment:
-      ARGS_SOURCE_HOST: db1
-      ARGS_SOURCE_PORT: 3306
-      ARGS_SOURCE_USER: root
-      ARGS_SOURCE_PASSWORD: root_password
-      ARGS_TARGET_HOST: db2
-      ARGS_TARGET_PORT: 3306
-      ARGS_TARGET_USER: root
-      ARGS_TARGET_PASSWORD: root_password
-  db1:
-    image: mysql:8.0.36
-    environment:
-      MYSQL_ROOT_PASSWORD: root_password
-    command:
-      - --server_id=1
-      - --log-bin=mysql-bin
-      - --gtid-mode=on
-      - --enforce-gtid-consistency=on
-      - --binlog-rows-query-log-events=on
-      - --binlog-format=ROW
-      - --binlog-row-image=FULL
-      - --max-connections=3000
-      - --innodb-flush-log-at-trx-commit=1
-      - --sync-binlog=0
-      - --binlog-row-metadata=FULL
-      # - --binlog-order-commits
-  db2:
-    image: mysql:8.0.36
-    environment:
-      MYSQL_ROOT_PASSWORD: root_password
-    command:
-      - --server_id=2
-      - --log-bin=mysql-bin
-      - --gtid-mode=on
-      - --enforce-gtid-consistency=on
-      - --binlog-rows-query-log-events=on
-      - --binlog-format=ROW
-      - --binlog-row-image=FULL
-      - --max-connections=3000
-      - --innodb-flush-log-at-trx-commit=1
-      - --sync-binlog=1
-  db3:
-    image: mysql:8.0.36
-    environment:
-      MYSQL_ROOT_PASSWORD: root_password
-    command:
-      - --server_id=3
-      - --log-bin=mysql-bin
-      - --gtid-mode=on
-      - --enforce-gtid-consistency=on
-      - --binlog-rows-query-log-events=on
-      - --binlog-format=ROW
-      - --binlog-row-image=FULL
-      - --max-connections=3000
-      - --innodb-flush-log-at-trx-commit=1
-      - --sync-binlog=1
-  consul:
-    image: hashicorp/consul:1.19.1
-    ports:
-      - 8500:8500
+  #   environment:
+  #     ARGS_SOURCE_HOST: db1
+  #     ARGS_SOURCE_PORT: 3306
+  #     ARGS_SOURCE_USER: root
+  #     ARGS_SOURCE_PASSWORD: root_password
+  #     ARGS_TARGET_HOST: db2
+  #     ARGS_TARGET_PORT: 3306
+  #     ARGS_TARGET_USER: root
+  #     ARGS_TARGET_PASSWORD: root_password
+  # db1:
+  #   image: mysql:8.0.36
+  #   environment:
+  #     MYSQL_ROOT_PASSWORD: root_password
+  #   command:
+  #     - --server_id=1
+  #     - --log-bin=mysql-bin
+  #     - --gtid-mode=on
+  #     - --enforce-gtid-consistency=on
+  #     - --binlog-rows-query-log-events=on
+  #     - --binlog-format=ROW
+  #     - --binlog-row-image=FULL
+  #     - --max-connections=3000
+  #     - --innodb-flush-log-at-trx-commit=1
+  #     - --sync-binlog=0
+  #     - --binlog-row-metadata=FULL
+  #     # - --binlog-order-commits
+  # db2:
+  #   image: mysql:8.0.36
+  #   environment:
+  #     MYSQL_ROOT_PASSWORD: root_password
+  #   command:
+  #     - --server_id=2
+  #     - --log-bin=mysql-bin
+  #     - --gtid-mode=on
+  #     - --enforce-gtid-consistency=on
+  #     - --binlog-rows-query-log-events=on
+  #     - --binlog-format=ROW
+  #     - --binlog-row-image=FULL
+  #     - --max-connections=3000
+  #     - --innodb-flush-log-at-trx-commit=1
+  #     - --sync-binlog=1
+  # db3:
+  #   image: mysql:8.0.36
+  #   environment:
+  #     MYSQL_ROOT_PASSWORD: root_password
+  #   command:
+  #     - --server_id=3
+  #     - --log-bin=mysql-bin
+  #     - --gtid-mode=on
+  #     - --enforce-gtid-consistency=on
+  #     - --binlog-rows-query-log-events=on
+  #     - --binlog-format=ROW
+  #     - --binlog-row-image=FULL
+  #     - --max-connections=3000
+  #     - --innodb-flush-log-at-trx-commit=1
+  #     - --sync-binlog=1
+  # consul:
+  #   image: hashicorp/consul:1.19.1
+  #   ports:
+  #     - 8500:8500
   # dtle:
   #   image: actiontech/dtle
   #   ports:

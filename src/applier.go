@@ -109,8 +109,13 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 			case MysqlOperationDMLInsert:
 				if ma.State == StateBEGIN || ma.State == StateDML {
 					ma.State = StateDML
-					if ma.GtidSkip || ma.ReplicateNotExecute(op.Database, op.Table) {
+					if ma.GtidSkip {
 						continue
+					}
+					if ma.ReplicateNotExecute(op.Database, op.Table) {
+						ma.metricCh <- MetricUnit{Name: MetricDestDMLSkipInsertTimes, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
+						ma.metricCh <- MetricUnit{Name: MetricDestDMLSkipUpdateTimes, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
+						ma.metricCh <- MetricUnit{Name: MetricDestDMLSkipDeleteTimes, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 					}
 					if gobRepairColumns, err := GobUint8NilRepair(op.Columns); err != nil {
 						ma.Logger.Error("gob repair []uint8(nil): ", err)
@@ -131,8 +136,13 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 			case MysqlOperationDMLDelete:
 				if ma.State == StateBEGIN || ma.State == StateDML {
 					ma.State = StateDML
-					if ma.GtidSkip || ma.ReplicateNotExecute(op.Database, op.Table) {
+					if ma.GtidSkip {
 						continue
+					}
+					if ma.ReplicateNotExecute(op.Database, op.Table) {
+						ma.metricCh <- MetricUnit{Name: MetricDestDMLSkipDeleteTimes, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
+						ma.metricCh <- MetricUnit{Name: MetricDestDMLSkipUpdateTimes, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
+						ma.metricCh <- MetricUnit{Name: MetricDestDMLSkipInsertTimes, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 					}
 					if gobRepairColumns, err := GobUint8NilRepair(op.Columns); err != nil {
 						ma.Logger.Error("gob repair []uint8(nil): ", err)
@@ -153,8 +163,13 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 			case MysqlOperationDMLUpdate:
 				if ma.State == StateBEGIN || ma.State == StateDML {
 					ma.State = StateDML
-					if ma.GtidSkip || ma.ReplicateNotExecute(op.Database, op.Table) {
+					if ma.GtidSkip {
 						continue
+					}
+					if ma.ReplicateNotExecute(op.Database, op.Table) {
+						ma.metricCh <- MetricUnit{Name: MetricDestDMLSkipUpdateTimes, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
+						ma.metricCh <- MetricUnit{Name: MetricDestDMLSkipInsertTimes, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
+						ma.metricCh <- MetricUnit{Name: MetricDestDMLSkipInsertTimes, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 					}
 					if gobRepairColumns, err := GobUint8NilRepair(op.AfterColumns); err != nil {
 						ma.Logger.Error("gob repair []uint8(nil): ", err)
