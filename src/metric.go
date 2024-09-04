@@ -41,13 +41,22 @@ const (
 	MetricTCPServerOutgoing
 
 	MetricReplExtractorTimestamp
-	MetricReplDMLInsertTimes
-	MetricReplDMLUpdateTimes
-	MetricReplDMLDeleteTimes
-	MetricReplDDLDatabaseTimes
-	MetricReplDDLTableTimes
-	MetricReplExtractorOperations
+	MetricReplDMLInsert
+	MetricReplDMLUpdate
+	MetricReplDMLDelete
+	MetricReplDDLDatabase
+	MetricReplDDLTable
+	MetricReplExtractorOperations // station
 	MetricReplExtractorOperationBegin
+	MetricReplExtractorOperationXid
+	MetricReplExtractorOperationGtid
+	MetricReplExtractorOperationHeartbeat
+	MetricReplExtractorOperationDMLUpdate
+	MetricReplExtractorOperationDMLDelete
+	MetricReplExtractorOperationDMLInsert
+	MetricReplExtractorOperationDDLDatabase
+	MetricReplExtractorOperationDDLTable
+	MetricReplExtractorOperationBinLogPos
 
 	MetricTCPServerSendDelay
 	MetricReplTrx
@@ -239,24 +248,50 @@ func (md *MetricDirector) Start(ctx context.Context) {
 				md.set("tcp_server_send_delay", metric.Value, metric.LabelPair)
 			case MetricReplTrx:
 				md.inc("trx", metric.Value, metric.LabelPair)
-			case MetricReplExtractorOperations:
-				md.inc("extractor_operations", metric.Value, metric.LabelPair)
 			case MetricReplExtractorOperationBegin:
 				md.inc("extractor_operation_begin_total", metric.Value, metric.LabelPair)
+			case MetricReplExtractorOperationXid:
+				md.inc("extractor_operation_xid_total", metric.Value, metric.LabelPair)
+				md.inc("extractor_operations", metric.Value, metric.LabelPair)
+			case MetricReplExtractorOperationGtid:
+				md.inc("extractor_operation_gtid_total", metric.Value, metric.LabelPair)
+				md.inc("extractor_operations", metric.Value, metric.LabelPair)
+			case MetricReplExtractorOperationHeartbeat:
+				md.inc("extractor_operation_heartbeat_total", metric.Value, metric.LabelPair)
+				md.inc("extractor_operations", metric.Value, metric.LabelPair)
+			case MetricReplExtractorOperationDMLDelete:
+				md.inc("extractor_operation_dml_delete_total", metric.Value, metric.LabelPair)
+				md.inc("extractor_operations", metric.Value, metric.LabelPair)
+			case MetricReplExtractorOperationDMLUpdate:
+				md.inc("extractor_operation_dml_update_total", metric.Value, metric.LabelPair)
+				md.inc("extractor_operations", metric.Value, metric.LabelPair)
+			case MetricReplExtractorOperationDMLInsert:
+				md.inc("extractor_operation_dml_insert_total", metric.Value, metric.LabelPair)
+				md.inc("extractor_operations", metric.Value, metric.LabelPair)
+			case MetricReplExtractorOperationDDLDatabase:
+				md.inc("extractor_operation_ddl_database_total", metric.Value, metric.LabelPair)
+				md.inc("extractor_operations", metric.Value, metric.LabelPair)
+			case MetricReplExtractorOperationDDLTable:
+				md.inc("extractor_operation_ddl_table_total", metric.Value, metric.LabelPair)
+				md.inc("extractor_operations", metric.Value, metric.LabelPair)
+			case MetricReplExtractorOperationBinLogPos:
+				md.inc("extractor_operation_binlogpos_total", metric.Value, metric.LabelPair)
+				md.inc("extractor_operations", metric.Value, metric.LabelPair)
+
 			case MetricTCPServerOutgoing:
 				md.inc("tcp_server_outgoing_bytes", metric.Value, metric.LabelPair)
 			case MetricTCPServerSendOperations:
 				md.inc("tcp_server_send_operations", metric.Value, metric.LabelPair)
-			case MetricReplDMLInsertTimes:
-				md.inc("dml_insert_times", metric.Value, metric.LabelPair)
-			case MetricReplDMLDeleteTimes:
-				md.inc("dml_delete_times", metric.Value, metric.LabelPair)
-			case MetricReplDMLUpdateTimes:
-				md.inc("dml_update_times", metric.Value, metric.LabelPair)
-			case MetricReplDDLDatabaseTimes:
-				md.inc("ddl_database_times", metric.Value, metric.LabelPair)
-			case MetricReplDDLTableTimes:
-				md.inc("ddl_table_times", metric.Value, metric.LabelPair)
+			case MetricReplDMLInsert:
+				md.inc("dml_insert_total", metric.Value, metric.LabelPair)
+			case MetricReplDMLDelete:
+				md.inc("dml_delete_total", metric.Value, metric.LabelPair)
+			case MetricReplDMLUpdate:
+				md.inc("dml_update_total", metric.Value, metric.LabelPair)
+			case MetricReplDDLDatabase:
+				md.inc("ddl_database_total", metric.Value, metric.LabelPair)
+			case MetricReplDDLTable:
+				md.inc("ddl_table_total", metric.Value, metric.LabelPair)
 			}
 		}
 	}
