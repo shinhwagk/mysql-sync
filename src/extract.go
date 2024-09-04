@@ -132,6 +132,8 @@ func (bext *BinlogExtract) Start(ctx context.Context) {
 				bext.toMoCh(MysqlOperationHeartbeat{uint32(time.Now().Unix())})
 				bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationHeartbeat, Value: 1}
 			}
+		default:
+			bext.Logger.Debug("unprocess envet %s", ev.Header.EventType.String())
 		}
 	}
 }
