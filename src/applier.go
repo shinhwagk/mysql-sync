@@ -372,7 +372,7 @@ func (ma *MysqlApplier) OnBegin(op MysqlOperationBegin) error {
 }
 
 func (ma *MysqlApplier) OnGTID(op MysqlOperationGTID) error {
-	ma.Logger.Debug("OnGTID: %s:%d", op.ServerUUID, op.TrxID)
+	ma.Logger.Debug("OnGTID: %s:%d, lastcommitted: %d", op.ServerUUID, op.TrxID, op.LastCommitted)
 	ma.GtidSkip = false
 	if lastTrxID, ok := ma.ckpt.GetTrxIdOfServerUUID(op.ServerUUID); ok {
 		if lastTrxID >= uint(op.TrxID) {
