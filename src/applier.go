@@ -84,6 +84,8 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationDDLDatabase, Value: 1}
 
 					if ma.ReplicateNotExecute(op.Schema, "") {
+						ma.Logger.Debug("OnDDLDatabase -- query: '%s', Skip", op.Query)
+
 						ma.metricCh <- MetricUnit{Name: MetricDestDDLDatabaseSkip, Value: 1, LabelPair: map[string]string{"database": op.Schema}}
 					} else {
 						// Submit dml before ddl execution
@@ -108,6 +110,8 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationDDLTable, Value: 1}
 
 					if ma.ReplicateNotExecute(op.Schema, op.Table) {
+						ma.Logger.Debug("OnDDLTable -- SchemaContext: %s, Database: %s, Query: %s, Skip", op.SchemaContext, op.Schema, op.Query)
+
 						ma.metricCh <- MetricUnit{Name: MetricDestDDLTableSkip, Value: 1, LabelPair: map[string]string{"database": op.Schema, "table": op.Table}}
 					} else {
 						if err := ma.MergeCommit(); err != nil {
@@ -130,10 +134,11 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationDMLInsert, Value: 1}
 
 					if ma.ReplicateNotExecute(op.Database, op.Table) {
+						ma.Logger.Debug("OnDMLInsert -- SchemaContext: %s, Table: %s, Skip", op.Database, op.Table)
+
 						ma.metricCh <- MetricUnit{Name: MetricDestDMLInsertSkip, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 						ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdateSkip, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 						ma.metricCh <- MetricUnit{Name: MetricDestDMLDeleteSkip, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
-
 					} else {
 						if gobRepairColumns, err := GobUint8NilRepair(op.Columns); err != nil {
 							ma.Logger.Error("gob repair []uint8(nil): ", err)
@@ -159,6 +164,8 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationDMLDelete, Value: 1}
 
 					if ma.ReplicateNotExecute(op.Database, op.Table) {
+						ma.Logger.Debug("OnDMLDelete -- SchemaContext: %s, Table: %s, Skip", op.Database, op.Table)
+
 						ma.metricCh <- MetricUnit{Name: MetricDestDMLDeleteSkip, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 						ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdateSkip, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 						ma.metricCh <- MetricUnit{Name: MetricDestDMLInsertSkip, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
@@ -187,6 +194,8 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationDMLUpdate, Value: 1}
 
 					if ma.ReplicateNotExecute(op.Database, op.Table) {
+						ma.Logger.Debug("OnDMLUpdate -- SchemaContext: %s, Table: %s, Skip", op.Database, op.Table)
+
 						ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdateSkip, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 						ma.metricCh <- MetricUnit{Name: MetricDestDMLInsertSkip, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 						ma.metricCh <- MetricUnit{Name: MetricDestDMLInsertSkip, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
