@@ -70,7 +70,6 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 		case oper := <-moCh:
 			if ma.GtidSkip {
 				if _, ok := oper.(MysqlOperationGTID); !ok {
-					ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
 					continue
 				}
 			}
@@ -282,6 +281,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationBinLogPos, Value: 1}
 				ma.ckpt.SetBinlogPos(op.File, op.Pos)
 				ma.Logger.Debug("Operation[binlogpos], file: %s, pos: %d", op.File, op.Pos)
+				continue
 			default:
 				ma.Logger.Error("unknow operation.")
 				return
