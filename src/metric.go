@@ -26,6 +26,7 @@ const (
 	MetricDestTrx
 	MetricDestMergeTrx
 	MetricDestApplierOperations
+	MetricDestApplierSkipOperations
 
 	MetricTCPServerSendOperations
 	MetricTCPServerOutgoing
@@ -189,6 +190,8 @@ func (md *MetricDirector) Start(ctx context.Context) {
 				md.inc("tcp_client_receive_operations", metric.Value, metric.LabelPair)
 			case MetricDestApplierOperations:
 				md.inc("applier_operations", metric.Value, metric.LabelPair)
+			case MetricDestApplierSkipOperations:
+				md.inc("applier_skip_operations", metric.Value, metric.LabelPair)
 			// case MetricDestApplierSkipOperations:
 			// 	md.inc("applier_skip_operations", metric.Value, metric.LabelPair)
 

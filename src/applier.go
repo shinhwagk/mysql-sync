@@ -73,7 +73,13 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				ma.LastCheckpointTimestamp = op.Timestamp
 				if ma.State == StateGTID {
 					ma.State = StateDDL
-					if !(ma.GtidSkip || ma.ReplicateNotExecute(op.Schema, "")) {
+					if ma.GtidSkip {
+						continue
+					}
+					if ma.ReplicateNotExecute(op.Schema, "") {
+						ma.metricCh <- MetricUnit{Name: MetricDestDDLSkipDatabaseTimes, Value: 1, LabelPair: map[string]string{"database": op.Schema}}
+						ma.metricCh <- MetricUnit{Name: MetricDestApplierSkipOperations, Value: 1}
+					} else {
 						// Submit dml before ddl execution
 						if err := ma.MergeCommit(); err != nil {
 							return
@@ -83,16 +89,22 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 						}
 						ma.metricCh <- MetricUnit{Name: MetricDestDDLDatabaseTimes, Value: 1}
 					}
+					ma.Checkpoint()
 				} else {
 					ma.Logger.Error("execute DDL(database): last state is '%s'", ma.State)
 					return
 				}
-				ma.Checkpoint()
 			case MysqlOperationDDLTable:
 				ma.LastCheckpointTimestamp = op.Timestamp
 				if ma.State == StateGTID {
 					ma.State = StateDDL
-					if !(ma.GtidSkip || ma.ReplicateNotExecute(op.Schema, op.Table)) {
+					if ma.GtidSkip {
+						continue
+					}
+					if ma.ReplicateNotExecute(op.Schema, op.Table) {
+						ma.metricCh <- MetricUnit{Name: MetricDestDDLSkipTableTimes, Value: 1, LabelPair: map[string]string{"database": op.Schema, "table": op.Table}}
+						ma.metricCh <- MetricUnit{Name: MetricDestApplierSkipOperations, Value: 1}
+					} else {
 						if err := ma.MergeCommit(); err != nil {
 							return
 						}
@@ -101,11 +113,11 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 						}
 						ma.metricCh <- MetricUnit{Name: MetricDestDDLTableTimes, Value: 1}
 					}
+					ma.Checkpoint()
 				} else {
 					ma.Logger.Error("execute DDL(table): last state is '%s'", ma.State)
 					return
 				}
-				ma.Checkpoint()
 			case MysqlOperationDMLInsert:
 				if ma.State == StateBEGIN || ma.State == StateDML {
 					ma.State = StateDML
@@ -113,9 +125,11 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 						continue
 					}
 					if ma.ReplicateNotExecute(op.Database, op.Table) {
+						ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
 						ma.metricCh <- MetricUnit{Name: MetricDestDMLSkipInsertTimes, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 						ma.metricCh <- MetricUnit{Name: MetricDestDMLSkipUpdateTimes, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 						ma.metricCh <- MetricUnit{Name: MetricDestDMLSkipDeleteTimes, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
+						continue
 					}
 					if gobRepairColumns, err := GobUint8NilRepair(op.Columns); err != nil {
 						ma.Logger.Error("gob repair []uint8(nil): ", err)
@@ -140,9 +154,11 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 						continue
 					}
 					if ma.ReplicateNotExecute(op.Database, op.Table) {
+						ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
 						ma.metricCh <- MetricUnit{Name: MetricDestDMLSkipDeleteTimes, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 						ma.metricCh <- MetricUnit{Name: MetricDestDMLSkipUpdateTimes, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 						ma.metricCh <- MetricUnit{Name: MetricDestDMLSkipInsertTimes, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
+						continue
 					}
 					if gobRepairColumns, err := GobUint8NilRepair(op.Columns); err != nil {
 						ma.Logger.Error("gob repair []uint8(nil): ", err)
@@ -167,9 +183,11 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 						continue
 					}
 					if ma.ReplicateNotExecute(op.Database, op.Table) {
+						ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
 						ma.metricCh <- MetricUnit{Name: MetricDestDMLSkipUpdateTimes, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 						ma.metricCh <- MetricUnit{Name: MetricDestDMLSkipInsertTimes, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 						ma.metricCh <- MetricUnit{Name: MetricDestDMLSkipInsertTimes, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
+						continue
 					}
 					if gobRepairColumns, err := GobUint8NilRepair(op.AfterColumns); err != nil {
 						ma.Logger.Error("gob repair []uint8(nil): ", err)
