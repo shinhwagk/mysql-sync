@@ -305,6 +305,7 @@ func (bext *BinlogExtract) handleQueryEvent(e *replication.QueryEvent, eh *repli
 			bext.metricCh <- MetricUnit{Name: MetricReplDDLDatabaseTimes, Value: 1}
 		case *ast.BeginStmt:
 			bext.toMoCh(MysqlOperationBegin{Timestamp: eh.Timestamp})
+			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationBegin, Value: 1}
 		case *ast.CommitStmt:
 			// warning
 		}

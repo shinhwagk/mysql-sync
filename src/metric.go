@@ -13,20 +13,29 @@ import (
 const (
 	MetricDestCheckpointTimestamp uint = iota
 	MetricDestApplierTimestamp
-	MetricDestDMLInsertTimes
-	MetricDestDMLUpdateTimes
-	MetricDestDMLDeleteTimes
-	MetricDestDMLSkipInsertTimes
-	MetricDestDMLSkipUpdateTimes
-	MetricDestDMLSkipDeleteTimes
-	MetricDestDDLDatabaseTimes
-	MetricDestDDLTableTimes
-	MetricDestDDLSkipDatabaseTimes
-	MetricDestDDLSkipTableTimes
+	MetricDestDMLInsert
+	MetricDestDMLUpdate
+	MetricDestDMLDelete
+	MetricDestDMLInsertSkip
+	MetricDestDMLUpdateSkip
+	MetricDestDMLDeleteSkip
+	MetricDestDDLDatabase
+	MetricDestDDLTable
+	MetricDestDDLDatabaseSkip
+	MetricDestDDLTableSkip
 	MetricDestTrx
 	MetricDestMergeTrx
-	MetricDestApplierOperations
-	MetricDestApplierSkipOperations
+	MetricDestApplierOperations // station
+	MetricDestApplierOperationBegin
+	MetricDestApplierOperationXid
+	MetricDestApplierOperationGtid
+	MetricDestApplierOperationHeartbeat
+	MetricDestApplierOperationDMLUpdate
+	MetricDestApplierOperationDMLDelete
+	MetricDestApplierOperationDMLInsert
+	MetricDestApplierOperationDDLDatabase
+	MetricDestApplierOperationDDLTable
+	MetricDestApplierOperationBinLogPos
 
 	MetricTCPServerSendOperations
 	MetricTCPServerOutgoing
@@ -38,6 +47,8 @@ const (
 	MetricReplDDLDatabaseTimes
 	MetricReplDDLTableTimes
 	MetricReplExtractorOperations
+	MetricReplExtractorOperationBegin
+
 	MetricTCPServerSendDelay
 	MetricReplTrx
 	// MetricDestApplierSkipOperations
@@ -158,42 +169,69 @@ func (md *MetricDirector) Start(ctx context.Context) {
 			return
 		case metric := <-md.metricCh:
 			switch metric.Name {
-			case MetricDestDMLInsertTimes:
-				md.inc("dml_insert_times", metric.Value, metric.LabelPair)
-			case MetricDestDMLDeleteTimes:
-				md.inc("dml_delete_times", metric.Value, metric.LabelPair)
-			case MetricDestDMLUpdateTimes:
-				md.inc("dml_update_times", metric.Value, metric.LabelPair)
-			case MetricDestDMLSkipInsertTimes:
-				md.inc("dml_skip_insert_times", metric.Value, metric.LabelPair)
-			case MetricDestDMLSkipDeleteTimes:
-				md.inc("dml_skip_delete_times", metric.Value, metric.LabelPair)
-			case MetricDestDMLSkipUpdateTimes:
-				md.inc("dml_skip_update_times", metric.Value, metric.LabelPair)
+			case MetricDestDMLInsert:
+				md.inc("dml_insert_total", metric.Value, metric.LabelPair)
+			case MetricDestDMLDelete:
+				md.inc("dml_delete_total", metric.Value, metric.LabelPair)
+			case MetricDestDMLUpdate:
+				md.inc("dml_update_total", metric.Value, metric.LabelPair)
+			case MetricDestDMLInsertSkip:
+				md.inc("dml_insert_skip_total", metric.Value, metric.LabelPair)
+			case MetricDestDMLDeleteSkip:
+				md.inc("dml_delete_skip_total", metric.Value, metric.LabelPair)
+			case MetricDestDMLUpdateSkip:
+				md.inc("dml_update_skip_total", metric.Value, metric.LabelPair)
 			case MetricDestTrx:
 				md.inc("trx", metric.Value, metric.LabelPair)
 			case MetricDestMergeTrx:
 				md.inc("merge_trx", metric.Value, metric.LabelPair)
-			case MetricDestDDLDatabaseTimes:
-				md.inc("ddl_database_times", metric.Value, metric.LabelPair)
-			case MetricDestDDLTableTimes:
-				md.inc("ddl_table_times", metric.Value, metric.LabelPair)
-			case MetricDestDDLSkipDatabaseTimes:
-				md.inc("ddl_skip_database_times", metric.Value, metric.LabelPair)
-			case MetricDestDDLSkipTableTimes:
-				md.inc("ddl_skip_table_times", metric.Value, metric.LabelPair)
+			case MetricDestDDLDatabase:
+				md.inc("ddl_database_total", metric.Value, metric.LabelPair)
+			case MetricDestDDLTable:
+				md.inc("ddl_table_total", metric.Value, metric.LabelPair)
+			case MetricDestDDLDatabaseSkip:
+				md.inc("ddl_database_skip_total", metric.Value, metric.LabelPair)
+			case MetricDestDDLTableSkip:
+				md.inc("ddl_table_skip_total", metric.Value, metric.LabelPair)
 			case MetricDestCheckpointTimestamp:
 				md.set("ckeckpoint_timestamp", metric.Value, metric.LabelPair)
 			case MetricDestApplierTimestamp:
 				md.set("applier_timestamp", metric.Value, metric.LabelPair)
 			case MetricTCPClientReceiveOperations:
 				md.inc("tcp_client_receive_operations", metric.Value, metric.LabelPair)
-			case MetricDestApplierOperations:
+			case MetricDestApplierOperationBegin:
+				md.inc("applier_operation_begin_total", metric.Value, metric.LabelPair)
 				md.inc("applier_operations", metric.Value, metric.LabelPair)
-			case MetricDestApplierSkipOperations:
-				md.inc("applier_skip_operations", metric.Value, metric.LabelPair)
-			// case MetricDestApplierSkipOperations:
-			// 	md.inc("applier_skip_operations", metric.Value, metric.LabelPair)
+			case MetricDestApplierOperationXid:
+				md.inc("applier_operation_xid_total", metric.Value, metric.LabelPair)
+				md.inc("applier_operations", metric.Value, metric.LabelPair)
+			case MetricDestApplierOperationGtid:
+				md.inc("applier_operation_gtid_total", metric.Value, metric.LabelPair)
+				md.inc("applier_operations", metric.Value, metric.LabelPair)
+			case MetricDestApplierOperationHeartbeat:
+				md.inc("applier_operation_heartbeat_total", metric.Value, metric.LabelPair)
+				md.inc("applier_operations", metric.Value, metric.LabelPair)
+			case MetricDestApplierOperationDMLDelete:
+				md.inc("applier_operation_dml_delete_total", metric.Value, metric.LabelPair)
+				md.inc("applier_operations", metric.Value, metric.LabelPair)
+			case MetricDestApplierOperationDMLUpdate:
+				md.inc("applier_operation_dml_update_total", metric.Value, metric.LabelPair)
+				md.inc("applier_operations", metric.Value, metric.LabelPair)
+			case MetricDestApplierOperationDMLInsert:
+				md.inc("applier_operation_dml_insert_total", metric.Value, metric.LabelPair)
+				md.inc("applier_operations", metric.Value, metric.LabelPair)
+			case MetricDestApplierOperationDDLDatabase:
+				md.inc("applier_operation_ddl_database_total", metric.Value, metric.LabelPair)
+				md.inc("applier_operations", metric.Value, metric.LabelPair)
+			case MetricDestApplierOperationDDLTable:
+				md.inc("applier_operation_ddl_table_total", metric.Value, metric.LabelPair)
+				md.inc("applier_operations", metric.Value, metric.LabelPair)
+			case MetricDestApplierOperationBinLogPos:
+				md.inc("applier_operation_binlogpos_total", metric.Value, metric.LabelPair)
+				md.inc("applier_operations", metric.Value, metric.LabelPair)
+
+				// case MetricDestApplierSkipOperations:
+				// 	md.inc("applier_skip_operations", metric.Value, metric.LabelPair)
 
 			case MetricReplExtractorTimestamp:
 				md.set("extractor_timestamp", metric.Value, metric.LabelPair)
@@ -203,6 +241,8 @@ func (md *MetricDirector) Start(ctx context.Context) {
 				md.inc("trx", metric.Value, metric.LabelPair)
 			case MetricReplExtractorOperations:
 				md.inc("extractor_operations", metric.Value, metric.LabelPair)
+			case MetricReplExtractorOperationBegin:
+				md.inc("extractor_operation_begin_total", metric.Value, metric.LabelPair)
 			case MetricTCPServerOutgoing:
 				md.inc("tcp_server_outgoing_bytes", metric.Value, metric.LabelPair)
 			case MetricTCPServerSendOperations:
