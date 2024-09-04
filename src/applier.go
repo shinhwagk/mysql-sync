@@ -255,6 +255,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				}
 			case MysqlOperationHeartbeat:
 				ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationHeartbeat, Value: 1}
+
 				if err := ma.OnHeartbeat(op); err != nil {
 					return
 				}
