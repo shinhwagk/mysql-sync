@@ -272,7 +272,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 			case MysqlOperationBinLogPos:
 				ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationBinLogPos, Value: 1}
 				ma.ckpt.SetBinlogPos(op.File, op.Pos)
-				ma.Logger.Debug("Operation: binlogpos, file: %s, pos: %d", op.File, op.Pos)
+				ma.Logger.Debug("Operation[binlogpos], file: %s, pos: %d", op.File, op.Pos)
 			default:
 				ma.Logger.Error("unknow operation.")
 				return
