@@ -79,216 +79,215 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				ma.LastCheckpointTimestamp = op.Timestamp
 				if ma.State == StateGTID {
 					ma.State = StateDDL
-
-					ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationDDLDatabase, Value: 1}
-
-					if ma.ReplicateNotExecute(op.Schema, "") {
-						ma.Logger.Debug("OnDDLDatabase -- query: '%s', Skip", op.Query)
-
-						ma.metricCh <- MetricUnit{Name: MetricDestDDLDatabaseSkip, Value: 1, LabelPair: map[string]string{"database": op.Schema}}
-					} else {
-						// Submit dml before ddl execution
-						if err := ma.MergeCommit(); err != nil {
-							return
-						}
-						if err := ma.OnDDLDatabase(op); err != nil {
-							return
-						}
-						ma.metricCh <- MetricUnit{Name: MetricDestDDLDatabase, Value: 1, LabelPair: map[string]string{"database": op.Schema}}
-					}
-					ma.Checkpoint()
 				} else {
 					ma.Logger.Error("execute DDL(database): last state is '%s'", ma.State)
 					return
 				}
+
+				if ma.ReplicateNotExecute(op.Schema, "") {
+					ma.Logger.Debug("OnDDLDatabase -- query: '%s', Skip", op.Query)
+
+					ma.metricCh <- MetricUnit{Name: MetricDestDDLDatabaseSkip, Value: 1, LabelPair: map[string]string{"database": op.Schema}}
+					ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationDDLDatabaseSkip, Value: 1}
+				} else {
+					// Submit dml before ddl execution
+					if err := ma.MergeCommit(); err != nil {
+						return
+					}
+					if err := ma.OnDDLDatabase(op); err != nil {
+						return
+					}
+					ma.metricCh <- MetricUnit{Name: MetricDestDDLDatabase, Value: 1, LabelPair: map[string]string{"database": op.Schema}}
+					ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationDDLDatabase, Value: 1}
+				}
+				ma.Checkpoint()
+				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
 			case MysqlOperationDDLTable:
 				ma.LastCheckpointTimestamp = op.Timestamp
 				if ma.State == StateGTID {
 					ma.State = StateDDL
-
-					ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationDDLTable, Value: 1}
-
-					if ma.ReplicateNotExecute(op.Schema, op.Table) {
-						ma.Logger.Debug("OnDDLTable -- SchemaContext: %s, Database: %s, Query: %s, Skip", op.SchemaContext, op.Schema, op.Query)
-
-						ma.metricCh <- MetricUnit{Name: MetricDestDDLTableSkip, Value: 1, LabelPair: map[string]string{"database": op.Schema, "table": op.Table}}
-					} else {
-						if err := ma.MergeCommit(); err != nil {
-							return
-						}
-						if err := ma.OnDDLTable(op); err != nil {
-							return
-						}
-						ma.metricCh <- MetricUnit{Name: MetricDestDDLTable, Value: 1, LabelPair: map[string]string{"database": op.Schema, "table": op.Table}}
-					}
-					ma.Checkpoint()
 				} else {
 					ma.Logger.Error("execute DDL(table): last state is '%s'", ma.State)
 					return
 				}
+
+				if ma.ReplicateNotExecute(op.Schema, op.Table) {
+					ma.Logger.Debug("OnDDLTable -- SchemaContext: %s, Database: %s, Query: %s, Skip", op.SchemaContext, op.Schema, op.Query)
+
+					ma.metricCh <- MetricUnit{Name: MetricDestDDLTableSkip, Value: 1, LabelPair: map[string]string{"database": op.Schema, "table": op.Table}}
+					ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationDDLTableSkip, Value: 1}
+				} else {
+					// Submit dml before ddl execution
+					if err := ma.MergeCommit(); err != nil {
+						return
+					}
+					if err := ma.OnDDLTable(op); err != nil {
+						return
+					}
+					ma.metricCh <- MetricUnit{Name: MetricDestDDLTable, Value: 1, LabelPair: map[string]string{"database": op.Schema, "table": op.Table}}
+					ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationDDLTable, Value: 1}
+				}
+				ma.Checkpoint()
+				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
 			case MysqlOperationDMLInsert:
 				if ma.State == StateBEGIN || ma.State == StateDML {
 					ma.State = StateDML
-
-					ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationDMLInsert, Value: 1}
-
-					if ma.ReplicateNotExecute(op.Database, op.Table) {
-						ma.Logger.Debug("OnDMLInsert -- SchemaContext: %s, Table: %s, Skip", op.Database, op.Table)
-
-						ma.metricCh <- MetricUnit{Name: MetricDestDMLInsertSkip, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
-						ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdateSkip, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
-						ma.metricCh <- MetricUnit{Name: MetricDestDMLDeleteSkip, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
-					} else {
-						if gobRepairColumns, err := GobUint8NilRepair(op.Columns); err != nil {
-							ma.Logger.Error("gob repair []uint8(nil): ", err)
-							return
-						} else {
-							op.Columns = gobRepairColumns
-						}
-						if err := ma.OnDMLInsert(op); err != nil {
-							return
-						}
-						ma.metricCh <- MetricUnit{Name: MetricDestDMLInsert, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
-						ma.metricCh <- MetricUnit{Name: MetricDestDMLDelete, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
-						ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdate, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
-					}
 				} else {
 					ma.Logger.Error("execute DML: last state is '%s'", ma.State)
 					return
 				}
+
+				if ma.ReplicateNotExecute(op.Database, op.Table) {
+					ma.Logger.Debug("OnDMLInsert -- SchemaContext: %s, Table: %s, Skip", op.Database, op.Table)
+
+					ma.metricCh <- MetricUnit{Name: MetricDestDMLInsertSkip, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
+					ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdateSkip, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
+					ma.metricCh <- MetricUnit{Name: MetricDestDMLDeleteSkip, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
+					ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationDMLInsertSkip, Value: 1}
+				} else {
+					if gobRepairColumns, err := GobUint8NilRepair(op.Columns); err != nil {
+						ma.Logger.Error("gob repair []uint8(nil): ", err)
+						return
+					} else {
+						op.Columns = gobRepairColumns
+					}
+					if err := ma.OnDMLInsert(op); err != nil {
+						return
+					}
+					ma.metricCh <- MetricUnit{Name: MetricDestDMLInsert, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
+					ma.metricCh <- MetricUnit{Name: MetricDestDMLDelete, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
+					ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdate, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
+					ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationDMLInsert, Value: 1}
+				}
+				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
 			case MysqlOperationDMLDelete:
 				if ma.State == StateBEGIN || ma.State == StateDML {
 					ma.State = StateDML
-
-					ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationDMLDelete, Value: 1}
-
-					if ma.ReplicateNotExecute(op.Database, op.Table) {
-						ma.Logger.Debug("OnDMLDelete -- SchemaContext: %s, Table: %s, Skip", op.Database, op.Table)
-
-						ma.metricCh <- MetricUnit{Name: MetricDestDMLDeleteSkip, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
-						ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdateSkip, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
-						ma.metricCh <- MetricUnit{Name: MetricDestDMLInsertSkip, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
-					} else {
-						if gobRepairColumns, err := GobUint8NilRepair(op.Columns); err != nil {
-							ma.Logger.Error("gob repair []uint8(nil): ", err)
-							return
-						} else {
-							op.Columns = gobRepairColumns
-						}
-						if err := ma.OnDMLDelete(op); err != nil {
-							return
-						}
-						ma.metricCh <- MetricUnit{Name: MetricDestDMLInsert, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
-						ma.metricCh <- MetricUnit{Name: MetricDestDMLDelete, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
-						ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdate, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
-					}
 				} else {
 					ma.Logger.Error("execute DML: last state is '%s'", ma.State)
 					return
 				}
+
+				if ma.ReplicateNotExecute(op.Database, op.Table) {
+					ma.Logger.Debug("OnDMLDelete -- SchemaContext: %s, Table: %s, Skip", op.Database, op.Table)
+
+					ma.metricCh <- MetricUnit{Name: MetricDestDMLDeleteSkip, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
+					ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdateSkip, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
+					ma.metricCh <- MetricUnit{Name: MetricDestDMLInsertSkip, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
+
+					ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationDMLDeleteSkip, Value: 1}
+				} else {
+					if gobRepairColumns, err := GobUint8NilRepair(op.Columns); err != nil {
+						ma.Logger.Error("gob repair []uint8(nil): ", err)
+						return
+					} else {
+						op.Columns = gobRepairColumns
+					}
+					if err := ma.OnDMLDelete(op); err != nil {
+						return
+					}
+					ma.metricCh <- MetricUnit{Name: MetricDestDMLInsert, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
+					ma.metricCh <- MetricUnit{Name: MetricDestDMLDelete, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
+					ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdate, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
+					ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationDMLDelete, Value: 1}
+				}
+				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
 			case MysqlOperationDMLUpdate:
 				if ma.State == StateBEGIN || ma.State == StateDML {
 					ma.State = StateDML
-
-					ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationDMLUpdate, Value: 1}
-
-					if ma.ReplicateNotExecute(op.Database, op.Table) {
-						ma.Logger.Debug("OnDMLUpdate -- SchemaContext: %s, Table: %s, Skip", op.Database, op.Table)
-
-						ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdateSkip, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
-						ma.metricCh <- MetricUnit{Name: MetricDestDMLInsertSkip, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
-						ma.metricCh <- MetricUnit{Name: MetricDestDMLInsertSkip, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
-
-					} else {
-						if gobRepairColumns, err := GobUint8NilRepair(op.AfterColumns); err != nil {
-							ma.Logger.Error("gob repair []uint8(nil): ", err)
-							return
-						} else {
-							op.AfterColumns = gobRepairColumns
-						}
-						if gobRepairColumns, err := GobUint8NilRepair(op.BeforeColumns); err != nil {
-							ma.Logger.Error("gob repair []uint8(nil): ", err)
-							return
-						} else {
-							op.BeforeColumns = gobRepairColumns
-						}
-						if err := ma.OnDMLUpdate(op); err != nil {
-							return
-						}
-						ma.metricCh <- MetricUnit{Name: MetricDestDMLInsert, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
-						ma.metricCh <- MetricUnit{Name: MetricDestDMLDelete, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
-						ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdate, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
-					}
 				} else {
 					ma.Logger.Error("execute DML: last state is '%s'", ma.State)
 					return
 				}
+
+				if ma.ReplicateNotExecute(op.Database, op.Table) {
+					ma.Logger.Debug("OnDMLUpdate -- SchemaContext: %s, Table: %s, Skip", op.Database, op.Table)
+
+					ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdateSkip, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
+					ma.metricCh <- MetricUnit{Name: MetricDestDMLInsertSkip, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
+					ma.metricCh <- MetricUnit{Name: MetricDestDMLInsertSkip, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
+					ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationDMLUpdateSkip, Value: 1}
+				} else {
+					if gobRepairColumns, err := GobUint8NilRepair(op.AfterColumns); err != nil {
+						ma.Logger.Error("gob repair []uint8(nil): ", err)
+						return
+					} else {
+						op.AfterColumns = gobRepairColumns
+					}
+					if gobRepairColumns, err := GobUint8NilRepair(op.BeforeColumns); err != nil {
+						ma.Logger.Error("gob repair []uint8(nil): ", err)
+						return
+					} else {
+						op.BeforeColumns = gobRepairColumns
+					}
+					if err := ma.OnDMLUpdate(op); err != nil {
+						return
+					}
+					ma.metricCh <- MetricUnit{Name: MetricDestDMLInsert, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
+					ma.metricCh <- MetricUnit{Name: MetricDestDMLDelete, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
+					ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdate, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
+					ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationDMLUpdate, Value: 1}
+				}
+				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
 			case MysqlOperationXid:
 				ma.LastCheckpointTimestamp = op.Timestamp
 				if ma.State == StateDML || ma.State == StateBEGIN {
 					ma.State = StateXID
-
-					ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationXid, Value: 1}
-
-					ma.AllowCommit = true
-					if err := ma.OnXID(op); err != nil {
-						return
-					}
-					ma.metricCh <- MetricUnit{Name: MetricDestTrx, Value: 1}
-
 				} else {
 					ma.Logger.Error("event Xid: last state is '%s'", ma.State)
 					return
 				}
+
+				ma.AllowCommit = true
+				if err := ma.OnXID(op); err != nil {
+					return
+				}
+				ma.metricCh <- MetricUnit{Name: MetricDestTrx, Value: 1}
+				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
 			case MysqlOperationGTID:
 				if ma.State == StateXID || ma.State == StateDDL || ma.State == StateNULL {
 					ma.State = StateGTID
-
-					ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationGtid, Value: 1}
-
-					if err := ma.OnGTID(op); err != nil {
-						return
-					}
 				} else {
 					ma.Logger.Error("operation(gtid): last state is '%s'", ma.State)
 					return
 				}
-			case MysqlOperationHeartbeat:
-				ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationHeartbeat, Value: 1}
 
+				if err := ma.OnGTID(op); err != nil {
+					return
+				}
+				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
+			case MysqlOperationHeartbeat:
 				if err := ma.OnHeartbeat(op); err != nil {
 					return
 				}
 				ma.State = StateNULL
 				ma.metricCh <- MetricUnit{Name: MetricDestCheckpointTimestamp, Value: uint(op.GetTimestamp())}
+				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
 			case MysqlOperationBegin:
 				if ma.State == StateGTID {
 					ma.State = StateBEGIN
-
-					ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationBegin, Value: 1}
-
-					if !ma.AllowCommit {
-						if err := ma.OnBegin(op); err != nil {
-							return
-						}
-					} else {
-						ma.Logger.Debug("Skip begin because merge commit.")
-					}
 				} else {
 					ma.Logger.Error("operation(begin): last state is '%s'", ma.State)
 					return
 				}
+
+				if !ma.AllowCommit {
+					if err := ma.OnBegin(op); err != nil {
+						return
+					}
+				} else {
+					ma.Logger.Debug("Skip begin because merge commit.")
+				}
+				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
 			case MysqlOperationBinLogPos:
-				ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationBinLogPos, Value: 1}
 				ma.ckpt.SetBinlogPos(op.File, op.Pos)
 				ma.Logger.Debug("Operation[binlogpos], file: %s, pos: %d", op.File, op.Pos)
-				continue // MetricDestApplierTimestamp, operation[binlogpos] always is 0.
 			default:
 				ma.Logger.Error("unknow operation.")
 				return
 			}
 
-			ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
+			ma.metricCh <- MetricUnit{Name: MetricDestApplierOperations, Value: 1}
 		}
 	}
 }

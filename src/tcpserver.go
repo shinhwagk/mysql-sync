@@ -213,7 +213,7 @@ func (ts *TCPServer) distributor() {
 			fetchStartTs := time.Now()
 			mos := ts.fetchMos(fetchCount)
 			fetchElapsedMs := int(time.Since(fetchStartTs).Milliseconds())
-			ts.Logger.Debug("Fetch mos(%d) elapsed ms(%d)", fetchCount, fetchElapsedMs)
+			ts.Logger.Debug("Fetch mos(%d) from mo cache, elapsed ms(%d)", fetchCount, fetchElapsedMs)
 			ts.BatchID += 1
 			sendStartTs = time.Now()
 			ts.ClientsPush(mos)
