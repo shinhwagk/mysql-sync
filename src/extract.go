@@ -21,6 +21,7 @@ type BinlogExtract struct {
 	moCh               chan<- MysqlOperation
 	metricCh           chan<- MetricUnit
 	StartSyncGtidsets  string
+	BinlogFile         string
 }
 
 func NewBinlogExtract(logLevel int, config ReplicationConfig, startSyncGtidsets string, moCh chan<- MysqlOperation, metricCh chan<- MetricUnit) *BinlogExtract {
@@ -43,6 +44,7 @@ func NewBinlogExtract(logLevel int, config ReplicationConfig, startSyncGtidsets 
 		moCh:               moCh,
 		metricCh:           metricCh,
 		StartSyncGtidsets:  startSyncGtidsets,
+		BinlogFile:         "",
 	}
 }
 
@@ -73,8 +75,6 @@ func (bext *BinlogExtract) Start(ctx context.Context) {
 	}
 	bext.Logger.Info("Start streamer from gtidsets: '%s'.", gtidSet.String())
 
-	binlogfile := ""
-
 	for {
 		ev, err := streamer.GetEvent(ctx)
 
@@ -92,7 +92,7 @@ func (bext *BinlogExtract) Start(ctx context.Context) {
 
 		switch e := ev.Event.(type) {
 		case *replication.RowsEvent:
-			bext.Logger.Debug("Operation[binlogpos], event: %s, file: %s, pos: %d", ev.Header.EventType.String(), binlogfile, ev.Header.LogPos)
+			bext.Logger.Debug("Operation[binlogpos], event: %s, file: %s, pos: %d", ev.Header.EventType.String(), bext.BinlogFile, ev.Header.LogPos)
 
 			switch ev.Header.EventType {
 			case replication.WRITE_ROWS_EVENTv0, replication.WRITE_ROWS_EVENTv1, replication.WRITE_ROWS_EVENTv2:
@@ -103,28 +103,24 @@ func (bext *BinlogExtract) Start(ctx context.Context) {
 				bext.handleEventDeleteRows(e, ev.Header)
 			}
 		case *replication.GTIDEvent:
-			bext.Logger.Debug("Operation[binlogpos], event: %s, file: %s, pos: %d", ev.Header.EventType.String(), binlogfile, ev.Header.LogPos)
+			bext.Logger.Debug("Operation[binlogpos], event: %s, file: %s, pos: %d", ev.Header.EventType.String(), bext.BinlogFile, ev.Header.LogPos)
 
 			if err := bext.handleEventGtid(e, ev.Header); err != nil {
 				bext.Logger.Error("event: %s.", err)
 				return
 			}
 		case *replication.QueryEvent:
-			bext.Logger.Debug("Operation[binlogpos], event: %s, file: %s, pos: %d", ev.Header.EventType.String(), binlogfile, ev.Header.LogPos)
-
-			// Used for checkpoint binlogpos
-			bext.toMoCh(MysqlOperationBinLogPos{binlogfile, ev.Header.LogPos, ev.Header.Timestamp})
-			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationBinLogPos, Value: 1}
+			bext.Logger.Debug("Operation[binlogpos], event: %s, file: %s, pos: %d", ev.Header.EventType.String(), bext.BinlogFile, ev.Header.LogPos)
 
 			if err := bext.handleQueryEvent(e, ev.Header); err != nil {
 				bext.Logger.Error("event: %s.", err)
 				return
 			}
 		case *replication.XIDEvent:
-			bext.Logger.Debug("Operation[binlogpos], event: %s, file: %s, pos: %d", ev.Header.EventType.String(), binlogfile, ev.Header.LogPos)
+			bext.Logger.Debug("Operation[binlogpos], event: %s, file: %s, pos: %d", ev.Header.EventType.String(), bext.BinlogFile, ev.Header.LogPos)
 
 			// Used for checkpoint binlogpos
-			bext.toMoCh(MysqlOperationBinLogPos{binlogfile, ev.Header.LogPos, ev.Header.Timestamp})
+			bext.toMoCh(MysqlOperationBinLogPos{bext.BinlogFile, ev.Header.LogPos, ev.Header.Timestamp})
 			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationBinLogPos, Value: 1}
 
 			bext.toMoCh(MysqlOperationXid{ev.Header.Timestamp})
@@ -134,7 +130,7 @@ func (bext *BinlogExtract) Start(ctx context.Context) {
 			switch ev.Header.EventType {
 			case replication.ROTATE_EVENT:
 				// if ev.Header.Timestamp >= 1 {
-				binlogfile = string(e.NextLogName)
+				bext.BinlogFile = string(e.NextLogName)
 				// }
 			default:
 				bext.Logger.Warning("other RotateEvent", e)
@@ -256,6 +252,10 @@ func (bext *BinlogExtract) handleQueryEvent(e *replication.QueryEvent, eh *repli
 	for _, stmt := range stmts {
 		switch t := stmt.(type) {
 		case *ast.RenameTableStmt:
+			// Used for checkpoint binlogpos
+			bext.toMoCh(MysqlOperationBinLogPos{bext.BinlogFile, eh.LogPos, eh.Timestamp})
+			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationBinLogPos, Value: 1}
+
 			oldSchema := string(e.Schema)
 			newSchema := string(e.Schema)
 
@@ -275,6 +275,10 @@ func (bext *BinlogExtract) handleQueryEvent(e *replication.QueryEvent, eh *repli
 				bext.Logger.Debug("Operation[ddltable], DDL:RENAME, SchemaContext: %s, Table: %s", oldSchema, tab.OldTable.Name.O)
 			}
 		case *ast.AlterTableStmt:
+			// Used for checkpoint binlogpos
+			bext.toMoCh(MysqlOperationBinLogPos{bext.BinlogFile, eh.LogPos, eh.Timestamp})
+			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationBinLogPos, Value: 1}
+
 			schema := string(e.Schema)
 			if len(schema) == 0 {
 				schema = t.Table.Schema.O
@@ -284,6 +288,10 @@ func (bext *BinlogExtract) handleQueryEvent(e *replication.QueryEvent, eh *repli
 			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationDDLTable, Value: 1}
 			bext.Logger.Debug("Operation[ddltable], DDL:ALTER, SchemaContext: %s, Table: %s", schema, t.Table.Name.O)
 		case *ast.DropTableStmt:
+			// Used for checkpoint binlogpos
+			bext.toMoCh(MysqlOperationBinLogPos{bext.BinlogFile, eh.LogPos, eh.Timestamp})
+			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationBinLogPos, Value: 1}
+
 			schema := string(e.Schema)
 			for _, tab := range t.Tables {
 				if len(schema) == 0 {
@@ -296,6 +304,10 @@ func (bext *BinlogExtract) handleQueryEvent(e *replication.QueryEvent, eh *repli
 				bext.Logger.Debug("Operation[ddltable], DDL:DROPTABLE, SchemaContext: %s, Table: %s", schema, tab.Name.O)
 			}
 		case *ast.CreateTableStmt:
+			// Used for checkpoint binlogpos
+			bext.toMoCh(MysqlOperationBinLogPos{bext.BinlogFile, eh.LogPos, eh.Timestamp})
+			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationBinLogPos, Value: 1}
+
 			schema := string(e.Schema)
 			if len(schema) == 0 {
 				schema = t.Table.Schema.O
@@ -305,6 +317,10 @@ func (bext *BinlogExtract) handleQueryEvent(e *replication.QueryEvent, eh *repli
 			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationDDLTable, Value: 1}
 			bext.Logger.Debug("Operation[ddltable], DDL:CREATE, SchemaContext: %s, Table: %s", schema, t.Table.Name.O)
 		case *ast.TruncateTableStmt:
+			// Used for checkpoint binlogpos
+			bext.toMoCh(MysqlOperationBinLogPos{bext.BinlogFile, eh.LogPos, eh.Timestamp})
+			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationBinLogPos, Value: 1}
+
 			schema := string(e.Schema)
 			if len(schema) == 0 {
 				schema = t.Table.Schema.O
@@ -314,6 +330,10 @@ func (bext *BinlogExtract) handleQueryEvent(e *replication.QueryEvent, eh *repli
 			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationDDLTable, Value: 1}
 			bext.Logger.Debug("Operation[ddltable], DDL:TRUNCATE, SchemaContext: %s, Table: %s", schema, t.Table.Name.O)
 		case *ast.DropIndexStmt:
+			// Used for checkpoint binlogpos
+			bext.toMoCh(MysqlOperationBinLogPos{bext.BinlogFile, eh.LogPos, eh.Timestamp})
+			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationBinLogPos, Value: 1}
+
 			schema := string(e.Schema)
 			if len(schema) == 0 {
 				schema = t.Table.Schema.O
@@ -323,6 +343,10 @@ func (bext *BinlogExtract) handleQueryEvent(e *replication.QueryEvent, eh *repli
 			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationDDLTable, Value: 1}
 			bext.Logger.Debug("Operation[ddltable], DDL:DROPINDEX, SchemaContext: %s, Table: %s", schema, t.Table.Name.O)
 		case *ast.CreateIndexStmt:
+			// Used for checkpoint binlogpos
+			bext.toMoCh(MysqlOperationBinLogPos{bext.BinlogFile, eh.LogPos, eh.Timestamp})
+			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationBinLogPos, Value: 1}
+
 			schema := string(e.Schema)
 			if len(schema) == 0 {
 				schema = t.Table.Schema.O
@@ -332,16 +356,28 @@ func (bext *BinlogExtract) handleQueryEvent(e *replication.QueryEvent, eh *repli
 			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationDDLTable, Value: 1}
 			bext.Logger.Debug("Operation[ddltable], DDL:CREATEINDEX, SchemaContext: %s, Table: %s", schema, t.Table.Name.O)
 		case *ast.CreateDatabaseStmt:
+			// Used for checkpoint binlogpos
+			bext.toMoCh(MysqlOperationBinLogPos{bext.BinlogFile, eh.LogPos, eh.Timestamp})
+			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationBinLogPos, Value: 1}
+
 			bext.toMoCh(MysqlOperationDDLDatabase{Schema: t.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})
 			bext.metricCh <- MetricUnit{Name: MetricReplDDLDatabase, Value: 1, LabelPair: map[string]string{"database": t.Name.O}}
 			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationDDLDatabase, Value: 1}
 			bext.Logger.Debug("Operation[ddldatabase], DDL:CREATE, Database: %s", t.Name.O)
 		case *ast.AlterDatabaseStmt:
+			// Used for checkpoint binlogpos
+			bext.toMoCh(MysqlOperationBinLogPos{bext.BinlogFile, eh.LogPos, eh.Timestamp})
+			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationBinLogPos, Value: 1}
+
 			bext.toMoCh(MysqlOperationDDLDatabase{Schema: t.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})
 			bext.metricCh <- MetricUnit{Name: MetricReplDDLDatabase, Value: 1, LabelPair: map[string]string{"database": t.Name.O}}
 			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationDDLDatabase, Value: 1}
 			bext.Logger.Debug("Operation[ddldatabase], DDL:ALTER, Database: %s", t.Name.O)
 		case *ast.DropDatabaseStmt:
+			// Used for checkpoint binlogpos
+			bext.toMoCh(MysqlOperationBinLogPos{bext.BinlogFile, eh.LogPos, eh.Timestamp})
+			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationBinLogPos, Value: 1}
+
 			bext.toMoCh(MysqlOperationDDLDatabase{Schema: t.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})
 			bext.metricCh <- MetricUnit{Name: MetricReplDDLDatabase, Value: 1, LabelPair: map[string]string{"database": t.Name.O}}
 			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationDDLDatabase, Value: 1}
