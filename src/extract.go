@@ -90,6 +90,10 @@ func (bext *BinlogExtract) Start(ctx context.Context) {
 			return
 		}
 
+		bext.toMoCh(MysqlOperationBinLogPos{binlogfile, ev.Header.LogPos, ev.Header.Timestamp})
+		bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationBinLogPos, Value: 1}
+		bext.Logger.Debug("Operation[binlogpos], event: %s, file: %s, pos: %d", ev.Header.EventType.String(), binlogfile, ev.Header.LogPos)
+
 		switch e := ev.Event.(type) {
 		case *replication.RowsEvent:
 			switch ev.Header.EventType {
@@ -111,9 +115,6 @@ func (bext *BinlogExtract) Start(ctx context.Context) {
 				return
 			}
 		case *replication.XIDEvent:
-			bext.toMoCh(MysqlOperationBinLogPos{binlogfile, ev.Header.LogPos, ev.Header.Timestamp})
-			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationBinLogPos, Value: 1}
-
 			bext.toMoCh(MysqlOperationXid{ev.Header.Timestamp})
 			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationXid, Value: 1}
 		case *replication.RotateEvent:
@@ -131,8 +132,8 @@ func (bext *BinlogExtract) Start(ctx context.Context) {
 				bext.toMoCh(MysqlOperationHeartbeat{uint32(time.Now().Unix())})
 				bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationHeartbeat, Value: 1}
 			}
-		default:
-			bext.Logger.Debug("unprocess envet %s", ev.Header.EventType.String())
+			// default:
+			// bext.Logger.Debug("unprocess envet %s", ev.Header.EventType.String())
 		}
 	}
 }

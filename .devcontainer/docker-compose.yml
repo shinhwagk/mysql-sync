@@ -6,6 +6,10 @@ services:
     volumes:
       - ../:/workspace:cached
     command: sleep infinity
+  consul:
+    image: hashicorp/consul:1.19.1
+    ports:
+      - 8500:8500
   #   environment:
   #     ARGS_SOURCE_HOST: db1
   #     ARGS_SOURCE_PORT: 3306
