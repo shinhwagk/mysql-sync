@@ -90,10 +90,10 @@ func (bext *BinlogExtract) Start(ctx context.Context) {
 			return
 		}
 
-		bext.Logger.Debug("Operation[binlogpos], event: %s, file: %s, pos: %d", ev.Header.EventType.String(), binlogfile, ev.Header.LogPos)
-
 		switch e := ev.Event.(type) {
 		case *replication.RowsEvent:
+			bext.Logger.Debug("Operation[binlogpos], event: %s, file: %s, pos: %d", ev.Header.EventType.String(), binlogfile, ev.Header.LogPos)
+
 			switch ev.Header.EventType {
 			case replication.WRITE_ROWS_EVENTv0, replication.WRITE_ROWS_EVENTv1, replication.WRITE_ROWS_EVENTv2:
 				bext.handleEventWriteRows(e, ev.Header)
@@ -103,11 +103,15 @@ func (bext *BinlogExtract) Start(ctx context.Context) {
 				bext.handleEventDeleteRows(e, ev.Header)
 			}
 		case *replication.GTIDEvent:
+			bext.Logger.Debug("Operation[binlogpos], event: %s, file: %s, pos: %d", ev.Header.EventType.String(), binlogfile, ev.Header.LogPos)
+
 			if err := bext.handleEventGtid(e, ev.Header); err != nil {
 				bext.Logger.Error("event: %s.", err)
 				return
 			}
 		case *replication.QueryEvent:
+			bext.Logger.Debug("Operation[binlogpos], event: %s, file: %s, pos: %d", ev.Header.EventType.String(), binlogfile, ev.Header.LogPos)
+
 			// Used for checkpoint binlogpos
 			bext.toMoCh(MysqlOperationBinLogPos{binlogfile, ev.Header.LogPos, ev.Header.Timestamp})
 			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationBinLogPos, Value: 1}
@@ -117,6 +121,8 @@ func (bext *BinlogExtract) Start(ctx context.Context) {
 				return
 			}
 		case *replication.XIDEvent:
+			bext.Logger.Debug("Operation[binlogpos], event: %s, file: %s, pos: %d", ev.Header.EventType.String(), binlogfile, ev.Header.LogPos)
+
 			// Used for checkpoint binlogpos
 			bext.toMoCh(MysqlOperationBinLogPos{binlogfile, ev.Header.LogPos, ev.Header.Timestamp})
 			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationBinLogPos, Value: 1}
@@ -124,6 +130,8 @@ func (bext *BinlogExtract) Start(ctx context.Context) {
 			bext.toMoCh(MysqlOperationXid{ev.Header.Timestamp})
 			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationXid, Value: 1}
 		case *replication.RotateEvent:
+			bext.Logger.Debug("Operation[binlogpos], event: %s, file: %s, pos: %d", ev.Header.EventType.String(), binlogfile, ev.Header.LogPos)
+
 			switch ev.Header.EventType {
 			case replication.ROTATE_EVENT:
 				// if ev.Header.Timestamp >= 1 {
