@@ -327,8 +327,6 @@ func (ma *MysqlApplier) OnDMLUpdate(op MysqlOperationDMLUpdate) error {
 		return nil
 	}
 
-	ma.Logger.Debug("OnDMLUpdate -- SchemaContext: %s, Table: %s", op.Database, op.Table)
-
 	query, params := BuildDMLUpdateQuery(op.Database, op.Table, op.AfterColumns, op.BeforeColumns, op.PrimaryKey)
 	ma.Logger.Debug("OnDMLUpdate -- SchemaContext: %s, Table: %s", op.Database, op.Table)
 	ma.Logger.Trace("OnDMLUpdate -- SchemaContext: %s, Table: %s, Query: %s, Params: %v", op.Database, op.Table, query, params)
@@ -500,19 +498,6 @@ func BuildDMLUpdateQuery(datbaseName string, tableName string, afterColumns []My
 	var setParams []interface{}
 
 	for i, col := range afterColumns {
-		// skip := false
-		// for pk := range primaryKey {
-		// 	if i == pk {
-		// 		if afterColumns[i].ColumnValue == beforeColumns[i].ColumnValue {
-		// 			skip = true
-		// 		}
-		// 	}
-		// }
-
-		// if skip {
-		// 	continue
-		// }
-
 		setClauses = append(setClauses, fmt.Sprintf("`%s` = ?", col.ColumnName))
 		setParams = append(setParams, afterColumns[i].ColumnValue)
 	}
