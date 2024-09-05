@@ -329,6 +329,27 @@ func (ma *MysqlApplier) OnDMLUpdate(op MysqlOperationDMLUpdate) error {
 
 	ma.Logger.Debug("OnDMLUpdate -- SchemaContext: %s, Table: %s", op.Database, op.Table)
 
+	query, params := BuildDMLUpdateQuery(op.Database, op.Table, op.AfterColumns, op.BeforeColumns, op.PrimaryKey)
+	ma.Logger.Debug("OnDMLUpdate -- SchemaContext: %s, Table: %s", op.Database, op.Table)
+	ma.Logger.Trace("OnDMLUpdate -- SchemaContext: %s, Table: %s, Query: %s, Params: %v", op.Database, op.Table, query, params)
+
+	if err := ma.mysqlClient.ExecuteDML(query, params); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// delete first, then insert
+func (ma *MysqlApplier) OnDMLUpdate2(op MysqlOperationDMLUpdate) error {
+	// todo
+	if len(op.PrimaryKey) == 0 {
+		ma.Logger.Warning("OnDMLUpdate -- Not Primarykey -- SchemaContext: %s, Table: %s, BeforeColumne: %v, AfterColume: %v", op.Database, op.Table, op.BeforeColumns, op.AfterColumns)
+		return nil
+	}
+
+	ma.Logger.Debug("OnDMLUpdate -- SchemaContext: %s, Table: %s", op.Database, op.Table)
+
 	query, params := BuildDMLDeleteQuery(op.Database, op.Table, op.BeforeColumns, op.PrimaryKey)
 	ma.Logger.Trace("OnDMLUpdate -- Delete -- SchemaContext: %s, Table: %s, Query: %s, Params: %v", op.Database, op.Table, query, params)
 	if err := ma.mysqlClient.ExecuteDML(query, params); err != nil {
@@ -470,6 +491,35 @@ func BuildDMLDeleteQuery(datbaseName string, tableName string, columns []MysqlOp
 	sql := fmt.Sprintf("DELETE FROM `%s`.`%s` WHERE %s", datbaseName, tableName, wherePlaceholder)
 
 	return sql, whereParams
+}
+
+func BuildDMLUpdateQuery(datbaseName string, tableName string, afterColumns []MysqlOperationDMLColumn, beforeColumns []MysqlOperationDMLColumn, primaryKey []uint64) (string, []interface{}) {
+	wherePlaceholder, whereParams := GenerateConditionAndValues(primaryKey, beforeColumns)
+
+	var setClauses []string
+	var setParams []interface{}
+
+	for i, col := range afterColumns {
+		// skip := false
+		// for pk := range primaryKey {
+		// 	if i == pk {
+		// 		if afterColumns[i].ColumnValue == beforeColumns[i].ColumnValue {
+		// 			skip = true
+		// 		}
+		// 	}
+		// }
+
+		// if skip {
+		// 	continue
+		// }
+
+		setClauses = append(setClauses, fmt.Sprintf("`%s` = ?", col.ColumnName))
+		setParams = append(setParams, afterColumns[i].ColumnValue)
+	}
+
+	sql := fmt.Sprintf("UPDATE `%s`.`%s` SET %s WHERE %s", datbaseName, tableName, strings.Join(setClauses, ", "), wherePlaceholder)
+
+	return sql, append(setParams, whereParams...)
 }
 
 func GenerateConditionAndValues(primaryKeys []uint64, columns []MysqlOperationDMLColumn) (string, []interface{}) {
