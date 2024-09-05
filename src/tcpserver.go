@@ -165,7 +165,7 @@ func (ts *TCPServer) distributor() {
 			return
 		default:
 			if !ts.clientsReady() {
-				noReadyMs = int(math.Min(float64(noReadyMs+10), 1000))
+				noReadyMs = int(math.Min(float64(noReadyMs+100), 1000))
 				ts.Logger.Debug("Clients not ready sleep: %d ms.", noReadyMs)
 				time.Sleep(time.Millisecond * time.Duration(noReadyMs))
 				continue
