@@ -90,8 +90,6 @@ func (bext *BinlogExtract) Start(ctx context.Context) {
 			return
 		}
 
-		bext.toMoCh(MysqlOperationBinLogPos{binlogfile, ev.Header.LogPos, ev.Header.Timestamp})
-		bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationBinLogPos, Value: 1}
 		bext.Logger.Debug("Operation[binlogpos], event: %s, file: %s, pos: %d", ev.Header.EventType.String(), binlogfile, ev.Header.LogPos)
 
 		switch e := ev.Event.(type) {
@@ -110,11 +108,19 @@ func (bext *BinlogExtract) Start(ctx context.Context) {
 				return
 			}
 		case *replication.QueryEvent:
+			// Used for checkpoint binlogpos
+			bext.toMoCh(MysqlOperationBinLogPos{binlogfile, ev.Header.LogPos, ev.Header.Timestamp})
+			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationBinLogPos, Value: 1}
+
 			if err := bext.handleQueryEvent(e, ev.Header); err != nil {
 				bext.Logger.Error("event: %s.", err)
 				return
 			}
 		case *replication.XIDEvent:
+			// Used for checkpoint binlogpos
+			bext.toMoCh(MysqlOperationBinLogPos{binlogfile, ev.Header.LogPos, ev.Header.Timestamp})
+			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationBinLogPos, Value: 1}
+
 			bext.toMoCh(MysqlOperationXid{ev.Header.Timestamp})
 			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationXid, Value: 1}
 		case *replication.RotateEvent:
