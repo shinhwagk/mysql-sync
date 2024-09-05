@@ -129,9 +129,8 @@ func (bext *BinlogExtract) Start(ctx context.Context) {
 
 			bext.toMoCh(MysqlOperationXid{ev.Header.Timestamp})
 			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationXid, Value: 1}
+			bext.Logger.Debug("Operation[Xid]")
 		case *replication.RotateEvent:
-			bext.Logger.Debug("Operation[binlogpos], event: %s, file: %s, pos: %d", ev.Header.EventType.String(), binlogfile, ev.Header.LogPos)
-
 			switch ev.Header.EventType {
 			case replication.ROTATE_EVENT:
 				// if ev.Header.Timestamp >= 1 {
@@ -173,6 +172,7 @@ func (bext *BinlogExtract) handleEventWriteRows(e *replication.RowsEvent, eh *re
 		bext.toMoCh(mod)
 		bext.metricCh <- MetricUnit{Name: MetricReplDMLInsert, Value: 1, LabelPair: map[string]string{"database": string(e.Table.Schema), "table": string(e.Table.Table)}}
 		bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationDMLInsert, Value: 1}
+		bext.Logger.Debug("Operation[DMLInsert], SchemaContext: %s, Table: %s", string(e.Table.Schema), string(e.Table.Table))
 	}
 }
 
@@ -191,6 +191,7 @@ func (bext *BinlogExtract) handleEventDeleteRows(e *replication.RowsEvent, eh *r
 		bext.toMoCh(mod)
 		bext.metricCh <- MetricUnit{Name: MetricReplDMLDelete, Value: 1, LabelPair: map[string]string{"database": string(e.Table.Schema), "table": string(e.Table.Table)}}
 		bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationDMLDelete, Value: 1}
+		bext.Logger.Debug("Operation[DMLDelete], SchemaContext: %s, Table: %s", string(e.Table.Schema), string(e.Table.Table))
 	}
 }
 
@@ -215,6 +216,7 @@ func (bext *BinlogExtract) handleEventUpdateRows(e *replication.RowsEvent, eh *r
 		bext.toMoCh(mod)
 		bext.metricCh <- MetricUnit{Name: MetricReplDMLUpdate, Value: 1, LabelPair: map[string]string{"database": string(e.Table.Schema), "table": string(e.Table.Table)}}
 		bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationDMLUpdate, Value: 1}
+		bext.Logger.Debug("Operation[DMLUpdate], SchemaContext: %s, Table: %s", string(e.Table.Schema), string(e.Table.Table))
 	}
 }
 
@@ -232,6 +234,7 @@ func (bext *BinlogExtract) handleEventGtid(e *replication.GTIDEvent, eh *replica
 			} else {
 				bext.toMoCh(MysqlOperationGTID{e.LastCommitted, eh.ServerID, eh.Timestamp, parts[0], xid})
 				bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationGtid, Value: 1}
+				bext.Logger.Debug("Operation[Gtid], gtid: %s:%d", parts[0], xid)
 				return nil
 			}
 		}
@@ -269,6 +272,7 @@ func (bext *BinlogExtract) handleQueryEvent(e *replication.QueryEvent, eh *repli
 				bext.toMoCh(MysqlOperationDDLTable{SchemaContext: string(e.Schema), Schema: oldSchema, Table: tab.OldTable.Name.O, Query: Query, Timestamp: eh.Timestamp})
 				bext.metricCh <- MetricUnit{Name: MetricReplDDLTable, Value: 1, LabelPair: map[string]string{"database": oldSchema, "table": tab.OldTable.Name.O}}
 				bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationDDLTable, Value: 1}
+				bext.Logger.Debug("Operation[DDLTable], DDL:RENAME, SchemaContext: %s, Table: %s", oldSchema, tab.OldTable.Name.O)
 			}
 		case *ast.AlterTableStmt:
 			schema := string(e.Schema)
@@ -278,6 +282,7 @@ func (bext *BinlogExtract) handleQueryEvent(e *replication.QueryEvent, eh *repli
 			bext.toMoCh(MysqlOperationDDLTable{SchemaContext: string(e.Schema), Schema: schema, Table: t.Table.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})
 			bext.metricCh <- MetricUnit{Name: MetricReplDDLTable, Value: 1, LabelPair: map[string]string{"database": schema, "table": t.Table.Name.O}}
 			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationDDLTable, Value: 1}
+			bext.Logger.Debug("Operation[DDLTable], DDL:ALTER, SchemaContext: %s, Table: %s", schema, t.Table.Name.O)
 		case *ast.DropTableStmt:
 			schema := string(e.Schema)
 			for _, tab := range t.Tables {
@@ -288,6 +293,7 @@ func (bext *BinlogExtract) handleQueryEvent(e *replication.QueryEvent, eh *repli
 				bext.toMoCh(MysqlOperationDDLTable{SchemaContext: string(e.Schema), Schema: schema, Table: tab.Name.O, Query: Query, Timestamp: eh.Timestamp})
 				bext.metricCh <- MetricUnit{Name: MetricReplDDLTable, Value: 1, LabelPair: map[string]string{"database": schema, "table": tab.Name.O}}
 				bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationDDLTable, Value: 1}
+				bext.Logger.Debug("Operation[DDLTable], DDL:DROPTABLE, SchemaContext: %s, Table: %s", schema, tab.Name.O)
 			}
 		case *ast.CreateTableStmt:
 			schema := string(e.Schema)
@@ -297,6 +303,7 @@ func (bext *BinlogExtract) handleQueryEvent(e *replication.QueryEvent, eh *repli
 			bext.toMoCh(MysqlOperationDDLTable{SchemaContext: string(e.Schema), Schema: schema, Table: t.Table.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})
 			bext.metricCh <- MetricUnit{Name: MetricReplDDLTable, Value: 1, LabelPair: map[string]string{"database": schema, "table": t.Table.Name.O}}
 			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationDDLTable, Value: 1}
+			bext.Logger.Debug("Operation[DDLTable], DDL:CREATE, SchemaContext: %s, Table: %s", schema, t.Table.Name.O)
 		case *ast.TruncateTableStmt:
 			schema := string(e.Schema)
 			if len(schema) == 0 {
@@ -305,6 +312,7 @@ func (bext *BinlogExtract) handleQueryEvent(e *replication.QueryEvent, eh *repli
 			bext.toMoCh(MysqlOperationDDLTable{SchemaContext: string(e.Schema), Schema: schema, Table: t.Table.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})
 			bext.metricCh <- MetricUnit{Name: MetricReplDDLTable, Value: 1, LabelPair: map[string]string{"database": schema, "table": t.Table.Name.O}}
 			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationDDLTable, Value: 1}
+			bext.Logger.Debug("Operation[DDLTable], DDL:TRUNCATE, SchemaContext: %s, Table: %s", schema, t.Table.Name.O)
 		case *ast.DropIndexStmt:
 			schema := string(e.Schema)
 			if len(schema) == 0 {
@@ -313,6 +321,7 @@ func (bext *BinlogExtract) handleQueryEvent(e *replication.QueryEvent, eh *repli
 			bext.toMoCh(MysqlOperationDDLTable{SchemaContext: string(e.Schema), Schema: schema, Table: t.Table.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})
 			bext.metricCh <- MetricUnit{Name: MetricReplDDLTable, Value: 1, LabelPair: map[string]string{"database": schema, "table": t.Table.Name.O}}
 			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationDDLTable, Value: 1}
+			bext.Logger.Debug("Operation[DDLTable], DDL:DROPINDEX, SchemaContext: %s, Table: %s", schema, t.Table.Name.O)
 		case *ast.CreateIndexStmt:
 			schema := string(e.Schema)
 			if len(schema) == 0 {
@@ -321,21 +330,26 @@ func (bext *BinlogExtract) handleQueryEvent(e *replication.QueryEvent, eh *repli
 			bext.toMoCh(MysqlOperationDDLTable{SchemaContext: string(e.Schema), Schema: schema, Table: t.Table.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})
 			bext.metricCh <- MetricUnit{Name: MetricReplDDLTable, Value: 1, LabelPair: map[string]string{"database": schema, "table": t.Table.Name.O}}
 			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationDDLTable, Value: 1}
+			bext.Logger.Debug("Operation[DDLTable], DDL:CREATEINDEX, SchemaContext: %s, Table: %s", schema, t.Table.Name.O)
 		case *ast.CreateDatabaseStmt:
 			bext.toMoCh(MysqlOperationDDLDatabase{Schema: t.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})
 			bext.metricCh <- MetricUnit{Name: MetricReplDDLDatabase, Value: 1, LabelPair: map[string]string{"database": t.Name.O}}
 			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationDDLDatabase, Value: 1}
+			bext.Logger.Debug("Operation[DDLDatabase], DDL:CREATE, Database: %s", t.Name.O)
 		case *ast.AlterDatabaseStmt:
 			bext.toMoCh(MysqlOperationDDLDatabase{Schema: t.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})
 			bext.metricCh <- MetricUnit{Name: MetricReplDDLDatabase, Value: 1, LabelPair: map[string]string{"database": t.Name.O}}
 			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationDDLDatabase, Value: 1}
+			bext.Logger.Debug("Operation[DDLDatabase], DDL:ALTER, Database: %s", t.Name.O)
 		case *ast.DropDatabaseStmt:
 			bext.toMoCh(MysqlOperationDDLDatabase{Schema: t.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})
 			bext.metricCh <- MetricUnit{Name: MetricReplDDLDatabase, Value: 1, LabelPair: map[string]string{"database": t.Name.O}}
 			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationDDLDatabase, Value: 1}
+			bext.Logger.Debug("Operation[DDLDatabase], DDL:DROP, Database: %s", t.Name.O)
 		case *ast.BeginStmt:
 			bext.toMoCh(MysqlOperationBegin{Timestamp: eh.Timestamp})
 			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationBegin, Value: 1}
+			bext.Logger.Debug("Operation[Begin]")
 		case *ast.CommitStmt:
 			bext.Logger.Warning("event query: %s", string(e.Query))
 		}
