@@ -1,13 +1,11 @@
-FROM golang:1.22.4 as builder
+FROM docker.io/library/golang:1.22.4 as builder
 
 WORKDIR /build
 COPY go.mod .
 COPY go.sum .
 COPY src/ .
-COPY vendor vendor
 
 RUN go mod tidy
-RUN go mod vendor
 # RUN go build -ldflags="-s -w" -o mysqlsync ./*.go
 RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags="-s -w" -o mysqlsync ./*.go
 
