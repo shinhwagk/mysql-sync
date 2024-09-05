@@ -90,9 +90,6 @@ func (bext *BinlogExtract) Start(ctx context.Context) {
 			return
 		}
 
-		bext.toMoCh(MysqlOperationBinLogPos{binlogfile, ev.Header.LogPos, ev.Header.Timestamp})
-		bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationBinLogPos, Value: 1}
-
 		switch e := ev.Event.(type) {
 		case *replication.RowsEvent:
 			switch ev.Header.EventType {
@@ -103,7 +100,6 @@ func (bext *BinlogExtract) Start(ctx context.Context) {
 			case replication.DELETE_ROWS_EVENTv0, replication.DELETE_ROWS_EVENTv1, replication.DELETE_ROWS_EVENTv2:
 				bext.handleEventDeleteRows(e, ev.Header)
 			}
-		case *replication.TableMapEvent:
 		case *replication.GTIDEvent:
 			if err := bext.handleEventGtid(e, ev.Header); err != nil {
 				bext.Logger.Error("event: %s.", err)
@@ -115,6 +111,9 @@ func (bext *BinlogExtract) Start(ctx context.Context) {
 				return
 			}
 		case *replication.XIDEvent:
+			bext.toMoCh(MysqlOperationBinLogPos{binlogfile, ev.Header.LogPos, ev.Header.Timestamp})
+			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationBinLogPos, Value: 1}
+
 			bext.toMoCh(MysqlOperationXid{ev.Header.Timestamp})
 			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationXid, Value: 1}
 		case *replication.RotateEvent:
