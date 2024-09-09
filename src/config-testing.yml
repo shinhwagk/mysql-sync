@@ -1,4 +1,4 @@
-loglevel: debug
+loglevel: trace
 consul:
   addr: consul:8500
 replication:
@@ -30,6 +30,8 @@ destination:
           do_db: test
           ignore_tab: test.year_table
         gtidsets: ""
+        # update_mode: replace # replace
+        # insert_mode: replace # replace
       prom:
         export: 9092
     db3:
@@ -37,5 +39,7 @@ destination:
         dsn: "root:root_password@tcp(192.168.161.93:33028)/"
       sync:
         gtidsets: ""
+        update_mode: replace # replace
+        insert_mode: replace # replace
       prom:
         export: 9093

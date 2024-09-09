@@ -59,26 +59,18 @@ func (dest *Destination) Start(ctx context.Context, cancel context.CancelFunc) {
 	go func() {
 		defer cancelMa()
 		defer cancel()
-		replicateFilter := NewReplicateFilter(destConf.Sync.Replicate)
-		mysqlClient, err := NewMysqlClient(dest.Logger.Level, destConf.Mysql)
-		if err != nil {
-			dest.Logger.Error("NewMysqlClient: %s.", err)
-			return
+		if mysqlApplier, err := NewMysqlApplier(dest.Logger.Level, ckpt, destConf, metricCh); err == nil {
+			mysqlApplier.Start(ctx, moCh)
 		}
-		defer mysqlClient.Close()
-		mysqlApplier := NewMysqlApplier(dest.Logger.Level, ckpt, mysqlClient, replicateFilter, metricCh)
-		mysqlApplier.Start(ctx, moCh)
 	}()
 
 	go func() {
 		defer cancelTc()
 		defer cancel()
-		tcpClient, err := NewTCPClient(dest.Logger.Level, tcpAddr, dest.Name, moCh, metricCh, GetGtidSetsRangeStrFromGtidSetsMap(ckpt.GtidSetsMap))
-		if err != nil {
-			dest.Logger.Error("NewTCPClient: %s.", err)
-			return
+		startGtidSets := GetGtidSetsRangeStrFromGtidSetsMap(ckpt.GtidSetsMap)
+		if tcpClient, err := NewTCPClient(dest.Logger.Level, tcpAddr, dest.Name, moCh, metricCh, startGtidSets); err == nil {
+			tcpClient.Start(ctx)
 		}
-		tcpClient.Start(ctx)
 	}()
 
 	<-ctxMd.Done()

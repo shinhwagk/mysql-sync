@@ -15,18 +15,30 @@ const (
 	StateGTID  = "gtid"
 )
 
-func NewMysqlApplier(logLevel int, ckpt *Checkpoint, mysqlClient *MysqlClient, replicate *Replicate, metricCh chan<- MetricUnit) *MysqlApplier {
-	return &MysqlApplier{
-		Logger:                  NewLogger(logLevel, "mysql-applier"),
-		ckpt:                    ckpt,
-		mysqlClient:             mysqlClient,
-		replicate:               replicate,
-		LastCommitted:           0,
-		LastCheckpointTimestamp: 0,
-		AllowCommit:             false,
-		metricCh:                metricCh,
-		GtidSkip:                false,
-		State:                   StateNULL,
+func NewMysqlApplier(logLevel int, ckpt *Checkpoint, destConf DestinationConfig, metricCh chan<- MetricUnit) (*MysqlApplier, error) {
+	logger := NewLogger(logLevel, "mysql-applier")
+
+	replicateFilter := NewReplicateFilter(destConf.Sync.Replicate)
+
+	if mysqlClient, err := NewMysqlClient(logLevel, destConf.Mysql); err != nil {
+		logger.Error("create mysql client: %s", err)
+		mysqlClient.Close()
+		return nil, err
+	} else {
+		return &MysqlApplier{
+			Logger:                  logger,
+			ckpt:                    ckpt,
+			mysqlClient:             mysqlClient,
+			replicate:               replicateFilter,
+			updateMode:              destConf.Sync.UpdateMode,
+			insertMode:              destConf.Sync.InsertMode,
+			LastCommitted:           0,
+			LastCheckpointTimestamp: 0,
+			AllowCommit:             false,
+			metricCh:                metricCh,
+			GtidSkip:                false,
+			State:                   StateNULL,
+		}, nil
 	}
 }
 
@@ -34,6 +46,8 @@ type MysqlApplier struct {
 	Logger                  *Logger
 	mysqlClient             *MysqlClient
 	replicate               *Replicate
+	updateMode              string
+	insertMode              string
 	ckpt                    *Checkpoint
 	LastCommitted           int64
 	LastCheckpointTimestamp uint32
@@ -151,8 +165,14 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					} else {
 						op.Columns = gobRepairColumns
 					}
-					if err := ma.OnDMLInsert(op); err != nil {
-						return
+					if ma.insertMode == "replace" {
+						if err := ma.OnDMLInsert2(op); err != nil {
+							return
+						}
+					} else {
+						if err := ma.OnDMLInsert(op); err != nil {
+							return
+						}
 					}
 					ma.metricCh <- MetricUnit{Name: MetricDestDMLInsert, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 					ma.metricCh <- MetricUnit{Name: MetricDestDMLDelete, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
@@ -220,8 +240,14 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					} else {
 						op.BeforeColumns = gobRepairColumns
 					}
-					if err := ma.OnDMLUpdate2(op); err != nil {
-						return
+					if ma.updateMode == "replace" {
+						if err := ma.OnDMLUpdate2(op); err != nil {
+							return
+						}
+					} else {
+						if err := ma.OnDMLUpdate(op); err != nil {
+							return
+						}
 					}
 					ma.metricCh <- MetricUnit{Name: MetricDestDMLInsert, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 					ma.metricCh <- MetricUnit{Name: MetricDestDMLDelete, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
@@ -302,6 +328,16 @@ func (ma *MysqlApplier) OnDMLInsert(op MysqlOperationDMLInsert) error {
 	return nil
 }
 
+func (ma *MysqlApplier) OnDMLInsert2(op MysqlOperationDMLInsert) error {
+	query, params := BuildDMLReplaceIntoQuery(op.Database, op.Table, op.Columns)
+	ma.Logger.Debug("OnDMLInsert -- Replace Into -- SchemaContext: %s, Table: %s", op.Database, op.Table)
+	ma.Logger.Trace("OnDMLInsert -- Replace Into -- SchemaContext: %s, Table: %s, Query: %s, Params: %#v", op.Database, op.Table, query, params)
+	if err := ma.mysqlClient.ExecuteDML(query, params); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (ma *MysqlApplier) OnDMLDelete(op MysqlOperationDMLDelete) error {
 	// todo
 	if len(op.PrimaryKey) == 0 {
@@ -345,16 +381,9 @@ func (ma *MysqlApplier) OnDMLUpdate2(op MysqlOperationDMLUpdate) error {
 		return nil
 	}
 
-	query, params := BuildDMLDeleteQuery(op.Database, op.Table, op.BeforeColumns, op.PrimaryKey)
-	ma.Logger.Debug("OnDMLUpdate -- Delete -- SchemaContext: %s, Table: %s", op.Database, op.Table)
-	ma.Logger.Trace("OnDMLUpdate -- Delete -- SchemaContext: %s, Table: %s, Query: %s, Params: %v", op.Database, op.Table, query, params)
-	if err := ma.mysqlClient.ExecuteDML(query, params); err != nil {
-		return err
-	}
-
-	query, params = BuildDMLInsertQuery(op.Database, op.Table, op.AfterColumns)
-	ma.Logger.Debug("OnDMLUpdate -- Insert -- SchemaContext: %s, Table: %s", op.Database, op.Table)
-	ma.Logger.Trace("OnDMLUpdate -- Insert -- SchemaContext: %s, Table: %s, Query: %s, Params: %v", op.Database, op.Table, query, params)
+	query, params := BuildDMLReplaceIntoQuery(op.Database, op.Table, op.AfterColumns)
+	ma.Logger.Debug("OnDMLUpdate -- Replace Into -- SchemaContext: %s, Table: %s", op.Database, op.Table)
+	ma.Logger.Trace("OnDMLUpdate -- Replace Into -- SchemaContext: %s, Table: %s, Query: %s, Params: %v", op.Database, op.Table, query, params)
 	if err := ma.mysqlClient.ExecuteDML(query, params); err != nil {
 		return err
 	}
@@ -366,7 +395,7 @@ func (ma *MysqlApplier) OnDDLDatabase(op MysqlOperationDDLDatabase) error {
 	ma.Logger.Debug("OnDDLDatabase -- query: '%s'", op.Query)
 
 	if err := ma.mysqlClient.ExecuteOnDatabase(op.Query); err != nil {
-		ma.Logger.Error("OnDDLDatabase: %s.", err)
+		ma.Logger.Error("OnDDLDatabase: %s, query: %s", err, op.Query)
 		return err
 	}
 
@@ -467,6 +496,22 @@ func (ma *MysqlApplier) Checkpoint() error {
 }
 
 func BuildDMLInsertQuery(datbaseName string, tableName string, columns []MysqlOperationDMLColumn) (string, []interface{}) {
+	var keys []string
+	var params []interface{}
+	var placeholders []string
+
+	for _, col := range columns {
+		keys = append(keys, "`"+col.ColumnName+"`")
+		params = append(params, col.ColumnValue)
+		placeholders = append(placeholders, "?")
+	}
+
+	sql := fmt.Sprintf("INSERT INTO `%s`.`%s` (%s) VALUES (%s)", datbaseName, tableName, strings.Join(keys, ", "), strings.Join(placeholders, ", "))
+
+	return sql, params
+}
+
+func BuildDMLReplaceIntoQuery(datbaseName string, tableName string, columns []MysqlOperationDMLColumn) (string, []interface{}) {
 	var keys []string
 	var params []interface{}
 	var placeholders []string

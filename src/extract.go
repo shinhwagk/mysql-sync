@@ -352,7 +352,7 @@ func (bext *BinlogExtract) handleQueryEvent(e *replication.QueryEvent, eh *repli
 			bext.toMoCh(MysqlOperationDDLDatabase{Schema: t.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})
 			bext.metricCh <- MetricUnit{Name: MetricReplDDLDatabase, Value: 1, LabelPair: map[string]string{"database": t.Name.O}}
 			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationDDLDatabase, Value: 1}
-			bext.Logger.Debug("Operation[ddldatabase], DDL:CREATE, Database: %s", t.Name.O)
+			bext.Logger.Debug("Operation[ddldatabase], DDL:CREATE, Database: %s, Query: %s", t.Name.O, string(e.Query))
 		case *ast.AlterDatabaseStmt:
 			// Used for checkpoint binlogpos
 			bext.toMoCh(MysqlOperationBinLogPos{bext.BinlogFile, eh.LogPos, eh.Timestamp})
@@ -360,7 +360,7 @@ func (bext *BinlogExtract) handleQueryEvent(e *replication.QueryEvent, eh *repli
 			bext.toMoCh(MysqlOperationDDLDatabase{Schema: t.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})
 			bext.metricCh <- MetricUnit{Name: MetricReplDDLDatabase, Value: 1, LabelPair: map[string]string{"database": t.Name.O}}
 			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationDDLDatabase, Value: 1}
-			bext.Logger.Debug("Operation[ddldatabase], DDL:ALTER, Database: %s", t.Name.O)
+			bext.Logger.Debug("Operation[ddldatabase], DDL:ALTER, Database: %s, Query: %s", t.Name.O, string(e.Query))
 		case *ast.DropDatabaseStmt:
 			// Used for checkpoint binlogpos
 			bext.toMoCh(MysqlOperationBinLogPos{bext.BinlogFile, eh.LogPos, eh.Timestamp})
@@ -368,7 +368,7 @@ func (bext *BinlogExtract) handleQueryEvent(e *replication.QueryEvent, eh *repli
 			bext.toMoCh(MysqlOperationDDLDatabase{Schema: t.Name.O, Query: string(e.Query), Timestamp: eh.Timestamp})
 			bext.metricCh <- MetricUnit{Name: MetricReplDDLDatabase, Value: 1, LabelPair: map[string]string{"database": t.Name.O}}
 			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationDDLDatabase, Value: 1}
-			bext.Logger.Debug("Operation[ddldatabase], DDL:DROP, Database: %s", t.Name.O)
+			bext.Logger.Debug("Operation[ddldatabase], DDL:DROP, Database: %s, Query: %s", t.Name.O, string(e.Query))
 		case *ast.BeginStmt:
 			bext.toMoCh(MysqlOperationBegin{Timestamp: eh.Timestamp})
 			bext.Logger.Debug("Operation[begin]")

@@ -45,6 +45,8 @@ type DestinationMysqlConfig struct {
 type DestinationSyncConfig struct {
 	Replicate            DestinationReplicateConfig `yaml:"replicate"`
 	InitGtidSetsRangeStr string                     `yaml:"gtidsets"`
+	UpdateMode           string                     `yaml:"update_mode"`
+	InsertMode           string                     `yaml:"insert_mode"`
 }
 
 type PrometheusConfig struct {
