@@ -72,7 +72,7 @@ func (mc *MysqlClient) SkipError(err error) error {
 
 func (mc *MysqlClient) Close() error {
 	if err := mc.db.Close(); err != nil {
-		mc.Logger.Error("Connection close: %s.", err)
+		mc.Logger.Error("Connection close: %s", err)
 		return err
 	}
 	return nil

@@ -58,6 +58,7 @@ func NewTCPClient(logLevel int, serverAddress string, destName string, moCh chan
 
 	zstdReader, err := zstd.NewReader(conn)
 	if err != nil {
+		logger.Error("zstd new reader: %s", err)
 		return nil, err
 	}
 	decoder := gob.NewDecoder(zstdReader)
