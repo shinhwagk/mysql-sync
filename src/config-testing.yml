@@ -30,8 +30,8 @@ destination:
           do_db: test
           ignore_tab: test.year_table
         gtidsets: ""
-        # update_mode: replace # replace
-        # insert_mode: replace # replace
+        # update_mode: replace # update, replace
+        # insert_mode: replace # insert, replace
       prom:
         export: 9092
     db3:
