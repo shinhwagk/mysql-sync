@@ -95,7 +95,7 @@ func (bext *BinlogExtract) Start(ctx context.Context) {
 
 		switch e := ev.Event.(type) {
 		case *replication.RowsEvent:
-			bext.Logger.Debug("Operation[binlogpos] -- server id: %d, event: %s, file: %s, pos: %d", moblp.ServerID, moblp.Event, moblp.File, moblp.Pos)
+			bext.Logger.Debug("Operation[binlogpos] -- server id: %d, file: %s, pos: %d, event: %s", moblp.ServerID, moblp.File, moblp.Pos, moblp.Event)
 
 			bext.toMoCh(moblp)
 
@@ -108,7 +108,7 @@ func (bext *BinlogExtract) Start(ctx context.Context) {
 				bext.handleEventDeleteRows(e, ev.Header)
 			}
 		case *replication.GTIDEvent:
-			bext.Logger.Debug("Operation[binlogpos] -- server id: %d, event: %s, file: %s, pos: %d", moblp.ServerID, moblp.Event, moblp.File, moblp.Pos)
+			bext.Logger.Debug("Operation[binlogpos] -- server id: %d, file: %s, pos: %d, event: %s", moblp.ServerID, moblp.File, moblp.Pos, moblp.Event)
 
 			bext.toMoCh(moblp)
 
@@ -117,7 +117,7 @@ func (bext *BinlogExtract) Start(ctx context.Context) {
 				return
 			}
 		case *replication.QueryEvent:
-			bext.Logger.Debug("Operation[binlogpos] -- server id: %d, event: %s, file: %s, pos: %d", moblp.ServerID, moblp.Event, moblp.File, moblp.Pos)
+			bext.Logger.Debug("Operation[binlogpos] -- server id: %d, file: %s, pos: %d, event: %s", moblp.ServerID, moblp.File, moblp.Pos, moblp.Event)
 
 			bext.toMoCh(moblp)
 
@@ -126,14 +126,14 @@ func (bext *BinlogExtract) Start(ctx context.Context) {
 				return
 			}
 		case *replication.XIDEvent:
-			bext.Logger.Debug("Operation[binlogpos] -- server id: %d, event: %s, file: %s, pos: %d", moblp.ServerID, moblp.Event, moblp.File, moblp.Pos)
+			bext.Logger.Debug("Operation[binlogpos] -- server id: %d, file: %s, pos: %d, event: %s", moblp.ServerID, moblp.File, moblp.Pos, moblp.Event)
 
 			bext.toMoCh(moblp)
 
 			bext.toMoCh(MysqlOperationXid{ev.Header.Timestamp})
 			bext.Logger.Debug("Operation[Xid]")
 		case *replication.RotateEvent:
-			bext.Logger.Debug("Operation[binlogpos] -- server id: %d, event: %s, file: %s, pos: %d", moblp.ServerID, moblp.Event, moblp.File, moblp.Pos)
+			bext.Logger.Debug("Operation[binlogpos] -- server id: %d, file: %s, pos: %d, event: %s", moblp.ServerID, moblp.File, moblp.Pos, moblp.Event)
 
 			bext.toMoCh(moblp)
 
