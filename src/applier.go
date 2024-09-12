@@ -35,7 +35,7 @@ func NewMysqlApplier(logLevel int, ckpt *Checkpoint, destConf DestinationConfig,
 			insertMode:              destConf.Sync.InsertMode,
 			LastCommitted:           0,
 			LastCheckpointTimestamp: 0,
-			AllowCommit:             false,
+			CommitCount:             0,
 			metricCh:                metricCh,
 			GtidSkip:                false,
 			State:                   StateNULL,
@@ -52,7 +52,7 @@ type MysqlApplier struct {
 	ckpt                    *Checkpoint
 	LastCommitted           int64
 	LastCheckpointTimestamp uint32
-	AllowCommit             bool
+	CommitCount             uint
 	metricCh                chan<- MetricUnit
 	GtidSkip                bool
 	State                   string
@@ -300,7 +300,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				}
 
 				ma.Logger.Debug("Execute[xid] -- do nothing")
-				ma.AllowCommit = true
+				ma.CommitCount++
 				if err := ma.OnXID(op); err != nil {
 					return
 				}
@@ -346,7 +346,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					return
 				}
 
-				if !ma.AllowCommit {
+				if ma.CommitCount == 0 {
 					ma.Logger.Debug("Execute[begin]")
 					if err := ma.OnBegin(op); err != nil {
 						return
@@ -544,17 +544,17 @@ func (ma *MysqlApplier) OnHeartbeat(op MysqlOperationHeartbeat) error {
 }
 
 func (ma *MysqlApplier) MergeCommit() error {
-	if ma.AllowCommit {
+	if ma.CommitCount >= 1 {
 		if err := ma.mysqlClient.Commit(); err != nil {
 			ma.Logger.Error("Merge commit: %", err)
 			return err
 		}
-		ma.Logger.Debug("Execute[trx] -- merge commit")
+		ma.Logger.Debug("Execute[trx] -- merge commit: %d", ma.CommitCount)
 
 		ma.Checkpoint()
 
 		ma.metricCh <- MetricUnit{Name: MetricDestMergeTrx, Value: 1}
-		ma.AllowCommit = false
+		ma.CommitCount = 0
 	}
 
 	return nil
