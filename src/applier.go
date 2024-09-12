@@ -374,7 +374,7 @@ func (ma *MysqlApplier) OnDMLDelete(op MysqlOperationDMLDelete) error {
 
 	// todo
 	if len(op.PrimaryKey) == 0 {
-		ma.Logger.Warning("Execute[dmldelete] -- Not Primarykey -- SchemaContext: %s, Table: %s, Columne: %v", op.Database, op.Table, op.Columns)
+		ma.Logger.Warning("Execute[dmldelete] -- Not Primarykey -- SchemaContext: %s, Table: %s, Columne: %#v", op.Database, op.Table, op.Columns)
 		return nil
 	}
 
@@ -509,7 +509,7 @@ func (ma *MysqlApplier) MergeCommit() error {
 			ma.Logger.Error("Merge commit: %", err)
 			return err
 		}
-		ma.Logger.Debug("Execute[trx] -- merge commit complate.")
+		ma.Logger.Debug("Execute[trx] -- merge commit complate")
 
 		ma.Checkpoint()
 
