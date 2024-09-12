@@ -321,7 +321,8 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				}
 				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
 			case MysqlOperationBinLogPos:
-				ma.Logger.Debug("Operation[binlogpos] -- event: %s, file: %s, pos: %d", op.Event, op.File, op.Pos)
+				ma.Logger.Debug("Operation[binlogpos] -- server id: %d, file: %s, pos: %d, event: %s", op.ServerID, op.File, op.Pos, op.Event)
+
 				if op.Event != "RotateEvent" {
 					ma.ckpt.SetBinlogPos(op.File, op.Pos)
 				}
