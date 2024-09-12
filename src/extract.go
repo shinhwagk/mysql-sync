@@ -361,21 +361,21 @@ func (bext *BinlogExtract) handleQueryEvent(e *replication.QueryEvent, eh *repli
 			bext.toMoCh(MysqlOperationDDLDatabase{Database: database, Query: string(e.Query), Timestamp: eh.Timestamp})
 			bext.metricCh <- MetricUnit{Name: MetricReplDDLDatabase, Value: 1, LabelPair: map[string]string{"database": database}}
 			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationDDLDatabase, Value: 1}
-			bext.Logger.Debug("Operation[ddldatabase], DDL:DatabaseCreate, Database: %s, Query: %s", database, string(e.Query))
+			bext.Logger.Debug("Operation[ddldatabase], Database: %s, Query: %s", database, string(e.Query))
 		case *ast.AlterDatabaseStmt:
 			database := t.Name.O
 
 			bext.toMoCh(MysqlOperationDDLDatabase{Database: database, Query: string(e.Query), Timestamp: eh.Timestamp})
 			bext.metricCh <- MetricUnit{Name: MetricReplDDLDatabase, Value: 1, LabelPair: map[string]string{"database": database}}
 			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationDDLDatabase, Value: 1}
-			bext.Logger.Debug("Operation[ddldatabase], DDL:DatabaseAlter, Database: %s, Query: %s", database, string(e.Query))
+			bext.Logger.Debug("Operation[ddldatabase], Database: %s, Query: %s", database, string(e.Query))
 		case *ast.DropDatabaseStmt:
 			database := t.Name.O
 
 			bext.toMoCh(MysqlOperationDDLDatabase{Database: database, Query: string(e.Query), Timestamp: eh.Timestamp})
 			bext.metricCh <- MetricUnit{Name: MetricReplDDLDatabase, Value: 1, LabelPair: map[string]string{"database": database}}
 			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationDDLDatabase, Value: 1}
-			bext.Logger.Debug("Operation[ddldatabase], DDL:DatabaseDrop, Database: %s, Query: %s", database, string(e.Query))
+			bext.Logger.Debug("Operation[ddldatabase], Database: %s, Query: %s", database, string(e.Query))
 		case *ast.CreateUserStmt, *ast.DropUserStmt, *ast.GrantStmt, *ast.RevokeStmt:
 			schemaContext := string(e.Schema)
 
