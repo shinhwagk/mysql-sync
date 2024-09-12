@@ -299,7 +299,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					return
 				}
 
-				ma.Logger.Debug("Execute[xid]")
+				ma.Logger.Debug("Execute[xid] -- do nothing")
 				ma.AllowCommit = true
 				if err := ma.OnXID(op); err != nil {
 					return
