@@ -458,8 +458,6 @@ func (ma *MysqlApplier) OnDDLTable(op MysqlOperationDDLTable) error {
 }
 
 func (ma *MysqlApplier) OnXID(op MysqlOperationXid) error {
-	ma.Logger.Debug("OnXID")
-
 	return nil
 }
 
