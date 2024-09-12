@@ -509,7 +509,7 @@ func (ma *MysqlApplier) MergeCommit() error {
 			ma.Logger.Error("Merge commit: %", err)
 			return err
 		}
-		ma.Logger.Debug("Merge commit complate.")
+		ma.Logger.Debug("Execute[trx] -- merge commit complate.")
 
 		ma.Checkpoint()
 
