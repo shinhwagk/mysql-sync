@@ -148,7 +148,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				}
 				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
 			case MysqlOperationDMLInsert:
-				ma.Logger.Debug("Operation[dmlinsert] -- SchemaContext: %s, Table: %s", op.Database, op.Table)
+				ma.Logger.Debug("Operation[dmlinsert] -- SchemaContext: %s, Table: %s, Mode: %s", op.Database, op.Table, ma.insertMode)
 
 				if ma.State == StateBEGIN || ma.State == StateDML {
 					ma.State = StateDML
@@ -215,7 +215,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				}
 				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
 			case MysqlOperationDMLUpdate:
-				ma.Logger.Debug("Operation[dmlupdate] -- SchemaContext: %s, Table: %s", op.Database, op.Table)
+				ma.Logger.Debug("Operation[dmlupdate] -- SchemaContext: %s, Table: %s, Mode: %s", op.Database, op.Table, ma.updateMode)
 
 				if ma.State == StateBEGIN || ma.State == StateDML {
 					ma.State = StateDML
