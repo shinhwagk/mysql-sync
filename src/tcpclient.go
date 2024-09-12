@@ -12,9 +12,10 @@ import (
 
 func init() {
 	gob.Register(MysqlOperationHeartbeat{})
-	gob.Register(MysqlOperationDDLDatabase{})
 	gob.Register(MysqlOperationGTID{})
+	gob.Register(MysqlOperationDDLDatabase{})
 	gob.Register(MysqlOperationDDLTable{})
+	gob.Register(MysqlOperationDCLUser{})
 	gob.Register(MysqlOperationDMLInsert{})
 	gob.Register(MysqlOperationDMLUpdate{})
 	gob.Register(MysqlOperationDMLDelete{})

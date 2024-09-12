@@ -51,6 +51,20 @@ func (op MysqlOperationDDLDatabase) GetTimestamp() uint32 {
 	return op.Timestamp
 }
 
+type MysqlOperationDCLUser struct {
+	SchemaContext string
+	Query         string
+	Timestamp     uint32
+}
+
+func (op MysqlOperationDCLUser) OperationType() string {
+	return "MysqlOperationDCLUser"
+}
+
+func (op MysqlOperationDCLUser) GetTimestamp() uint32 {
+	return op.Timestamp
+}
+
 type MysqlOperationDMLColumn struct {
 	ColumnName       string
 	ColumnType       byte
