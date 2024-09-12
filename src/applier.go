@@ -86,22 +86,25 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				if _, ok := oper.(MysqlOperationGTID); !ok {
 					continue
 				}
+				ma.State = StateNULL
 			}
 
 			switch op := oper.(type) {
 			case MysqlOperationDDLDatabase:
+				ma.Logger.Debug("Operation[ddldatabase] -- DDL:Database, Database: %s, Query: %s", op.Database, op.Query)
+
 				ma.LastCheckpointTimestamp = op.Timestamp
 				if ma.State == StateGTID {
 					ma.State = StateDDL
 				} else {
-					ma.Logger.Error("execute DDL(database): last state is '%s'", ma.State)
+					ma.Logger.Error("Execute[ddldatabase] -- last state is '%s'", ma.State)
 					return
 				}
 
-				if ma.ReplicateNotExecute(op.Schema, "") {
-					ma.Logger.Debug("OnDDLDatabase -- query: '%s', Skip", op.Query)
+				if ma.ReplicateNotExecute(op.Database, "") {
+					ma.Logger.Debug("Execute[ddldatabase] -- replicate filter: skip")
 
-					ma.metricCh <- MetricUnit{Name: MetricDestDDLDatabaseSkip, Value: 1, LabelPair: map[string]string{"database": op.Schema}}
+					ma.metricCh <- MetricUnit{Name: MetricDestDDLDatabaseSkip, Value: 1, LabelPair: map[string]string{"database": op.Database}}
 					ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationDDLDatabaseSkip, Value: 1}
 				} else {
 					// Submit dml before ddl execution
@@ -111,24 +114,26 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					if err := ma.OnDDLDatabase(op); err != nil {
 						return
 					}
-					ma.metricCh <- MetricUnit{Name: MetricDestDDLDatabase, Value: 1, LabelPair: map[string]string{"database": op.Schema}}
+					ma.metricCh <- MetricUnit{Name: MetricDestDDLDatabase, Value: 1, LabelPair: map[string]string{"database": op.Database}}
 					ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationDDLDatabase, Value: 1}
 				}
-				ma.Checkpoint()
 				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
 			case MysqlOperationDDLTable:
+				ma.Logger.Debug("Operation[ddltable] -- DDL:TableRename, Database: %s, Table: %s, Query: %s", op.Database, op.Table, op.Query)
+
 				ma.LastCheckpointTimestamp = op.Timestamp
-				if ma.State == StateGTID {
+				if ma.State == StateGTID || ma.State == StateDDL {
 					ma.State = StateDDL
 				} else {
-					ma.Logger.Error("execute DDL(table): last state is '%s'", ma.State)
+					ma.Logger.Error("Execute[ddltable] -- last state is '%s'", ma.State)
+
 					return
 				}
 
-				if ma.ReplicateNotExecute(op.Schema, op.Table) {
-					ma.Logger.Debug("OnDDLTable -- SchemaContext: %s, Database: %s, Query: %s, Skip", op.SchemaContext, op.Schema, op.Query)
+				if ma.ReplicateNotExecute(op.Database, op.Table) {
+					ma.Logger.Debug("Execute[onddltable] -- replicate filter: skip")
 
-					ma.metricCh <- MetricUnit{Name: MetricDestDDLTableSkip, Value: 1, LabelPair: map[string]string{"database": op.Schema, "table": op.Table}}
+					ma.metricCh <- MetricUnit{Name: MetricDestDDLTableSkip, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 					ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationDDLTableSkip, Value: 1}
 				} else {
 					// Submit dml before ddl execution
@@ -138,21 +143,22 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					if err := ma.OnDDLTable(op); err != nil {
 						return
 					}
-					ma.metricCh <- MetricUnit{Name: MetricDestDDLTable, Value: 1, LabelPair: map[string]string{"database": op.Schema, "table": op.Table}}
+					ma.metricCh <- MetricUnit{Name: MetricDestDDLTable, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 					ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationDDLTable, Value: 1}
 				}
-				ma.Checkpoint()
 				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
 			case MysqlOperationDMLInsert:
+				ma.Logger.Debug("Operation[dmlinsert] -- SchemaContext: %s, Table: %s", op.Database, op.Table)
+
 				if ma.State == StateBEGIN || ma.State == StateDML {
 					ma.State = StateDML
 				} else {
-					ma.Logger.Error("execute DML: last state is '%s'", ma.State)
+					ma.Logger.Error("Execute[dmlinsert] -- last state is '%s'", ma.State)
 					return
 				}
 
 				if ma.ReplicateNotExecute(op.Database, op.Table) {
-					ma.Logger.Debug("OnDMLInsert -- SchemaContext: %s, Table: %s, Skip", op.Database, op.Table)
+					ma.Logger.Debug("Execute[dmlinsert] -- replicate filter: skip")
 
 					ma.metricCh <- MetricUnit{Name: MetricDestDMLInsertSkip, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 					ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdateSkip, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
@@ -160,19 +166,13 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationDMLInsertSkip, Value: 1}
 				} else {
 					if gobRepairColumns, err := GobUint8NilRepair(op.Columns); err != nil {
-						ma.Logger.Error("gob repair []uint8(nil): ", err)
+						ma.Logger.Error("Execute[dmlinsert] -- gob repair []uint8(nil): ", err)
 						return
 					} else {
 						op.Columns = gobRepairColumns
 					}
-					if ma.insertMode == "replace" {
-						if err := ma.OnDMLInsert2(op); err != nil {
-							return
-						}
-					} else {
-						if err := ma.OnDMLInsert(op); err != nil {
-							return
-						}
+					if err := ma.OnDMLInsert(op); err != nil {
+						return
 					}
 					ma.metricCh <- MetricUnit{Name: MetricDestDMLInsert, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 					ma.metricCh <- MetricUnit{Name: MetricDestDMLDelete, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
@@ -181,15 +181,17 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				}
 				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
 			case MysqlOperationDMLDelete:
+				ma.Logger.Debug("Operation[dmldelete] -- SchemaContext: %s, Table: %s", op.Database, op.Table)
+
 				if ma.State == StateBEGIN || ma.State == StateDML {
 					ma.State = StateDML
 				} else {
-					ma.Logger.Error("execute DML: last state is '%s'", ma.State)
+					ma.Logger.Error("Execute[dmldelete] -- last state is '%s'", ma.State)
 					return
 				}
 
 				if ma.ReplicateNotExecute(op.Database, op.Table) {
-					ma.Logger.Debug("OnDMLDelete -- SchemaContext: %s, Table: %s, Skip", op.Database, op.Table)
+					ma.Logger.Debug("Execute[dmldelete] -- SchemaContext: %s, Table: %s, Skip", op.Database, op.Table)
 
 					ma.metricCh <- MetricUnit{Name: MetricDestDMLDeleteSkip, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 					ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdateSkip, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
@@ -198,7 +200,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationDMLDeleteSkip, Value: 1}
 				} else {
 					if gobRepairColumns, err := GobUint8NilRepair(op.Columns); err != nil {
-						ma.Logger.Error("gob repair []uint8(nil): ", err)
+						ma.Logger.Error("Execute[dmldelete] -- gob repair []uint8(nil): ", err)
 						return
 					} else {
 						op.Columns = gobRepairColumns
@@ -213,15 +215,17 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				}
 				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
 			case MysqlOperationDMLUpdate:
+				ma.Logger.Debug("Operation[dmlupdate] -- SchemaContext: %s, Table: %s", op.Database, op.Table)
+
 				if ma.State == StateBEGIN || ma.State == StateDML {
 					ma.State = StateDML
 				} else {
-					ma.Logger.Error("execute DML: last state is '%s'", ma.State)
+					ma.Logger.Error("Execute[dmlupdate] -- last state is '%s'", ma.State)
 					return
 				}
 
 				if ma.ReplicateNotExecute(op.Database, op.Table) {
-					ma.Logger.Debug("OnDMLUpdate -- SchemaContext: %s, Table: %s, Skip", op.Database, op.Table)
+					ma.Logger.Debug("Execute[dmlupdate] -- SchemaContext: %s, Table: %s, Skip", op.Database, op.Table)
 
 					ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdateSkip, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 					ma.metricCh <- MetricUnit{Name: MetricDestDMLInsertSkip, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
@@ -229,25 +233,19 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationDMLUpdateSkip, Value: 1}
 				} else {
 					if gobRepairColumns, err := GobUint8NilRepair(op.AfterColumns); err != nil {
-						ma.Logger.Error("gob repair []uint8(nil): ", err)
+						ma.Logger.Error("Execute[dmlupdate] -- gob repair []uint8(nil): ", err)
 						return
 					} else {
 						op.AfterColumns = gobRepairColumns
 					}
 					if gobRepairColumns, err := GobUint8NilRepair(op.BeforeColumns); err != nil {
-						ma.Logger.Error("gob repair []uint8(nil): ", err)
+						ma.Logger.Error("Execute[dmlupdate] -- gob repair []uint8(nil): ", err)
 						return
 					} else {
 						op.BeforeColumns = gobRepairColumns
 					}
-					if ma.updateMode == "replace" {
-						if err := ma.OnDMLUpdate2(op); err != nil {
-							return
-						}
-					} else {
-						if err := ma.OnDMLUpdate(op); err != nil {
-							return
-						}
+					if err := ma.OnDMLUpdate(op); err != nil {
+						return
 					}
 					ma.metricCh <- MetricUnit{Name: MetricDestDMLInsert, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 					ma.metricCh <- MetricUnit{Name: MetricDestDMLDelete, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
@@ -256,14 +254,17 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				}
 				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
 			case MysqlOperationXid:
+				ma.Logger.Debug("Operation[xid]")
+
 				ma.LastCheckpointTimestamp = op.Timestamp
 				if ma.State == StateDML || ma.State == StateBEGIN {
 					ma.State = StateXID
 				} else {
-					ma.Logger.Error("event Xid: last state is '%s'", ma.State)
+					ma.Logger.Error("Execute[xid] -- event Xid: last state is '%s'", ma.State)
 					return
 				}
 
+				ma.Logger.Debug("Execute[xid]")
 				ma.AllowCommit = true
 				if err := ma.OnXID(op); err != nil {
 					return
@@ -271,18 +272,29 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				ma.metricCh <- MetricUnit{Name: MetricDestTrx, Value: 1}
 				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
 			case MysqlOperationGTID:
+				ma.Logger.Debug("Operation[gtid] -- gtid: %s:%d, lastcommitted: %d", op.ServerUUID, op.TrxID, op.LastCommitted)
+
 				if ma.State == StateXID || ma.State == StateDDL || ma.State == StateNULL {
+					if ma.State == StateDDL {
+						ma.Checkpoint()
+					}
 					ma.State = StateGTID
 				} else {
-					ma.Logger.Error("operation(gtid): last state is '%s'", ma.State)
+					ma.Logger.Error("Execute[gtid] -- last state is '%s'", ma.State)
 					return
 				}
 
+				ma.Logger.Debug("Execute[gtid]")
 				if err := ma.OnGTID(op); err != nil {
 					return
 				}
 				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
 			case MysqlOperationHeartbeat:
+				ma.Logger.Trace("Operation[heartbeat]")
+
+				if ma.State == StateDDL {
+					ma.Checkpoint()
+				}
 				if err := ma.OnHeartbeat(op); err != nil {
 					return
 				}
@@ -290,13 +302,16 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				ma.metricCh <- MetricUnit{Name: MetricDestCheckpointTimestamp, Value: uint(op.GetTimestamp())}
 				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
 			case MysqlOperationBegin:
+				ma.Logger.Debug("Operation[begin]")
+
 				if ma.State == StateGTID {
 					ma.State = StateBEGIN
 				} else {
-					ma.Logger.Error("operation(begin): last state is '%s'", ma.State)
+					ma.Logger.Error("Execute[begin] -- last state is '%s'", ma.State)
 					return
 				}
 
+				ma.Logger.Debug("Execute[begin]")
 				if !ma.AllowCommit {
 					if err := ma.OnBegin(op); err != nil {
 						return
@@ -306,8 +321,10 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				}
 				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
 			case MysqlOperationBinLogPos:
-				ma.ckpt.SetBinlogPos(op.File, op.Pos)
-				ma.Logger.Debug("Operation[binlogpos], file: %s, pos: %d", op.File, op.Pos)
+				ma.Logger.Debug("Operation[binlogpos] -- event: %s, file: %s, pos: %d", op.Event, op.File, op.Pos)
+				if op.Event != "RotateEvent" {
+					ma.ckpt.SetBinlogPos(op.File, op.Pos)
+				}
 			default:
 				ma.Logger.Error("unknow operation.")
 				return
@@ -319,10 +336,24 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 }
 
 func (ma *MysqlApplier) OnDMLInsert(op MysqlOperationDMLInsert) error {
+	ma.Logger.Debug("Execute[dmlinsert]")
+
+	if ma.insertMode == "replace" {
+		if err := ma.OnDMLInsert2(op); err != nil {
+			return err
+		}
+	} else {
+		if err := ma.OnDMLInsert1(op); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (ma *MysqlApplier) OnDMLInsert1(op MysqlOperationDMLInsert) error {
 	query, params := BuildDMLInsertQuery(op.Database, op.Table, op.Columns)
-	ma.Logger.Debug("OnDMLInsert -- SchemaContext: %s, Table: %s", op.Database, op.Table)
-	ma.Logger.Trace("OnDMLInsert -- SchemaContext: %s, Table: %s, Query: %s, Params: %#v", op.Database, op.Table, query, params)
-	if err := ma.mysqlClient.ExecuteDML(query, params); err != nil {
+	ma.Logger.Trace("Execute[dmlinsert] -- Query: %s, Params: %#v", query, params)
+	if err := ma.mysqlClient.ExecuteOnDML(query, params); err != nil {
 		return err
 	}
 	return nil
@@ -330,25 +361,25 @@ func (ma *MysqlApplier) OnDMLInsert(op MysqlOperationDMLInsert) error {
 
 func (ma *MysqlApplier) OnDMLInsert2(op MysqlOperationDMLInsert) error {
 	query, params := BuildDMLReplaceIntoQuery(op.Database, op.Table, op.Columns)
-	ma.Logger.Debug("OnDMLInsert -- Replace Into -- SchemaContext: %s, Table: %s", op.Database, op.Table)
-	ma.Logger.Trace("OnDMLInsert -- Replace Into -- SchemaContext: %s, Table: %s, Query: %s, Params: %#v", op.Database, op.Table, query, params)
-	if err := ma.mysqlClient.ExecuteDML(query, params); err != nil {
+	ma.Logger.Trace("Execute[dmlinsert] -- Query: %s, Params: %#v", query, params)
+	if err := ma.mysqlClient.ExecuteOnDML(query, params); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (ma *MysqlApplier) OnDMLDelete(op MysqlOperationDMLDelete) error {
+	ma.Logger.Debug("Execute[dmldelete]")
+
 	// todo
 	if len(op.PrimaryKey) == 0 {
-		ma.Logger.Warning("OnDMLDelete -- Not Primarykey -- SchemaContext: %s, Table: %s, Columne: %v", op.Database, op.Table, op.Columns)
+		ma.Logger.Warning("Execute[dmldelete] -- Not Primarykey -- SchemaContext: %s, Table: %s, Columne: %v", op.Database, op.Table, op.Columns)
 		return nil
 	}
 
 	query, params := BuildDMLDeleteQuery(op.Database, op.Table, op.Columns, op.PrimaryKey)
-	ma.Logger.Debug("OnDMLDelete -- SchemaContext: %s, Table: %s", op.Database, op.Table)
-	ma.Logger.Trace("OnDMLDelete -- SchemaContext: %s, Table: %s, Query: %s, Params: %#v", op.Database, op.Table, query, params)
-	if err := ma.mysqlClient.ExecuteDML(query, params); err != nil {
+	ma.Logger.Trace("Execute[dmldelete] -- Query: %s, Params: %#v", query, params)
+	if err := ma.mysqlClient.ExecuteOnDML(query, params); err != nil {
 		return err
 	}
 
@@ -356,17 +387,30 @@ func (ma *MysqlApplier) OnDMLDelete(op MysqlOperationDMLDelete) error {
 }
 
 func (ma *MysqlApplier) OnDMLUpdate(op MysqlOperationDMLUpdate) error {
+	ma.Logger.Debug("Execute[dmlupdate]")
+
+	if ma.updateMode == "replace" {
+		if err := ma.OnDMLUpdate2(op); err != nil {
+			return err
+		}
+	} else {
+		if err := ma.OnDMLUpdate1(op); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (ma *MysqlApplier) OnDMLUpdate1(op MysqlOperationDMLUpdate) error {
 	// todo
 	if len(op.PrimaryKey) == 0 {
-		ma.Logger.Warning("OnDMLUpdate -- Not Primarykey -- SchemaContext: %s, Table: %s, BeforeColumne: %#v, AfterColume: %#v", op.Database, op.Table, op.BeforeColumns, op.AfterColumns)
+		ma.Logger.Warning("Execute[dmlupdate] -- Not Primarykey -- SchemaContext: %s, Table: %s, BeforeColumne: %#v, AfterColume: %#v", op.Database, op.Table, op.BeforeColumns, op.AfterColumns)
 		return nil
 	}
 
 	query, params := BuildDMLUpdateQuery(op.Database, op.Table, op.AfterColumns, op.BeforeColumns, op.PrimaryKey)
-	ma.Logger.Debug("OnDMLUpdate -- SchemaContext: %s, Table: %s", op.Database, op.Table)
-	ma.Logger.Trace("OnDMLUpdate -- SchemaContext: %s, Table: %s, Query: %s, Params: %#v", op.Database, op.Table, query, params)
-
-	if err := ma.mysqlClient.ExecuteDML(query, params); err != nil {
+	ma.Logger.Trace("Execute[dmlupdate] -- Query: %s, Params: %#v", query, params)
+	if err := ma.mysqlClient.ExecuteOnDML(query, params); err != nil {
 		return err
 	}
 
@@ -377,14 +421,13 @@ func (ma *MysqlApplier) OnDMLUpdate(op MysqlOperationDMLUpdate) error {
 func (ma *MysqlApplier) OnDMLUpdate2(op MysqlOperationDMLUpdate) error {
 	// todo
 	if len(op.PrimaryKey) == 0 {
-		ma.Logger.Warning("OnDMLUpdate -- Not Primarykey -- SchemaContext: %s, Table: %s, BeforeColumne: %#v, AfterColume: %#v", op.Database, op.Table, op.BeforeColumns, op.AfterColumns)
+		ma.Logger.Warning("Execute[dmlupdate] -- Not Primarykey -- SchemaContext: %s, Table: %s, BeforeColumne: %#v, AfterColume: %#v", op.Database, op.Table, op.BeforeColumns, op.AfterColumns)
 		return nil
 	}
 
 	query, params := BuildDMLReplaceIntoQuery(op.Database, op.Table, op.AfterColumns)
-	ma.Logger.Debug("OnDMLUpdate -- Replace Into -- SchemaContext: %s, Table: %s", op.Database, op.Table)
-	ma.Logger.Trace("OnDMLUpdate -- Replace Into -- SchemaContext: %s, Table: %s, Query: %s, Params: %v", op.Database, op.Table, query, params)
-	if err := ma.mysqlClient.ExecuteDML(query, params); err != nil {
+	ma.Logger.Trace("Execute[dmlupdate] -- Query: %s, Params: %#v", query, params)
+	if err := ma.mysqlClient.ExecuteOnDML(query, params); err != nil {
 		return err
 	}
 
@@ -392,10 +435,10 @@ func (ma *MysqlApplier) OnDMLUpdate2(op MysqlOperationDMLUpdate) error {
 }
 
 func (ma *MysqlApplier) OnDDLDatabase(op MysqlOperationDDLDatabase) error {
-	ma.Logger.Debug("OnDDLDatabase -- query: '%s'", op.Query)
+	ma.Logger.Debug("Execute[ddldatabase]")
 
-	if err := ma.mysqlClient.ExecuteOnDatabase(op.Query); err != nil {
-		ma.Logger.Error("OnDDLDatabase: %s, query: %s", err, op.Query)
+	if err := ma.mysqlClient.ExecuteOnDDL("", op.Query); err != nil {
+		ma.Logger.Error("Execute[ddldatabase] error: %s", err)
 		return err
 	}
 
@@ -403,10 +446,10 @@ func (ma *MysqlApplier) OnDDLDatabase(op MysqlOperationDDLDatabase) error {
 }
 
 func (ma *MysqlApplier) OnDDLTable(op MysqlOperationDDLTable) error {
-	ma.Logger.Debug("OnDDLTable -- SchemaContext: %s, Database: %s, Query: %s", op.SchemaContext, op.Schema, op.Query)
+	ma.Logger.Debug("Execute[ddltable]")
 
-	if err := ma.mysqlClient.ExecuteOnTable(op.SchemaContext, op.Query); err != nil {
-		ma.Logger.Error("OnDDLTable: %s.", err)
+	if err := ma.mysqlClient.ExecuteOnDDL(op.SchemaContext, op.Query); err != nil {
+		ma.Logger.Error("Execute[ddltable] error: %s", err)
 		return err
 	}
 
@@ -420,8 +463,6 @@ func (ma *MysqlApplier) OnXID(op MysqlOperationXid) error {
 }
 
 func (ma *MysqlApplier) OnBegin(op MysqlOperationBegin) error {
-	ma.Logger.Debug("OnBegin")
-
 	if err := ma.mysqlClient.Begin(); err != nil {
 		return err
 	}
@@ -430,7 +471,7 @@ func (ma *MysqlApplier) OnBegin(op MysqlOperationBegin) error {
 }
 
 func (ma *MysqlApplier) OnGTID(op MysqlOperationGTID) error {
-	ma.Logger.Debug("OnGTID: %s:%d, lastcommitted: %d", op.ServerUUID, op.TrxID, op.LastCommitted)
+	// ma.Logger.Debug("OnGTID: %s:%d, lastcommitted: %d", op.ServerUUID, op.TrxID, op.LastCommitted)
 	ma.GtidSkip = false
 	if lastTrxID, ok := ma.ckpt.GetTrxIdOfServerUUID(op.ServerUUID); ok {
 		if lastTrxID >= uint(op.TrxID) {
@@ -457,7 +498,6 @@ func (ma *MysqlApplier) OnGTID(op MysqlOperationGTID) error {
 }
 
 func (ma *MysqlApplier) OnHeartbeat(op MysqlOperationHeartbeat) error {
-	ma.Logger.Debug("OnHeartbeat")
 	if err := ma.MergeCommit(); err != nil {
 		return err
 	}
@@ -483,11 +523,11 @@ func (ma *MysqlApplier) MergeCommit() error {
 
 func (ma *MysqlApplier) Checkpoint() error {
 	if err := ma.ckpt.PersistGtidSetsMaptToConsul(); err == nil {
-		ma.Logger.Info("Checkpoint GTID: %s", GetGtidSetsRangeStrFromGtidSetsMap(ma.ckpt.GtidSetsMap))
+		ma.Logger.Info("Checkpoint[gtid] -- gtidsets: %s", GetGtidSetsRangeStrFromGtidSetsMap(ma.ckpt.GtidSetsMap))
 	}
 
 	if err := ma.ckpt.PersistBinLogPosToConsul(); err == nil {
-		ma.Logger.Info("Checkpoint BINLOGPOS: %s:%d", ma.ckpt.BinLogFile, ma.ckpt.BinLogPos)
+		ma.Logger.Info("Checkpoint[binlogpos] -- binlogpos: %s:%d", ma.ckpt.BinLogFile, ma.ckpt.BinLogPos)
 	}
 
 	ma.metricCh <- MetricUnit{Name: MetricDestCheckpointTimestamp, Value: uint(ma.LastCheckpointTimestamp)}

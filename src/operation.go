@@ -6,6 +6,8 @@ type MysqlOperation interface {
 }
 
 type MysqlOperationBinLogPos struct {
+	ServerID  uint32
+	Event     string
 	File      string
 	Pos       uint32
 	Timestamp uint32
@@ -21,7 +23,7 @@ func (op MysqlOperationBinLogPos) GetTimestamp() uint32 {
 
 type MysqlOperationDDLTable struct {
 	SchemaContext string
-	Schema        string
+	Database      string
 	Table         string
 	Query         string
 	Timestamp     uint32
@@ -36,7 +38,7 @@ func (op MysqlOperationDDLTable) GetTimestamp() uint32 {
 }
 
 type MysqlOperationDDLDatabase struct {
-	Schema    string
+	Database  string
 	Query     string
 	Timestamp uint32
 }

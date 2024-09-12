@@ -103,7 +103,7 @@ func (mc *MysqlClient) Begin() error {
 	return nil
 }
 
-func (mc *MysqlClient) ExecuteDML(query string, args []interface{}) error {
+func (mc *MysqlClient) ExecuteOnDML(query string, args []interface{}) error {
 	if mc.tx != nil {
 		if _, err := mc.tx.Exec(query, args...); err != nil {
 			if serr := mc.SkipError(err); serr != nil {
@@ -122,47 +122,26 @@ func (mc *MysqlClient) ExecuteDML(query string, args []interface{}) error {
 	return nil
 }
 
-func (mc *MysqlClient) ExecuteOnTable(db string, query string) error {
+func (mc *MysqlClient) ExecuteOnDDL(schemaContext string, query string) error {
 	if err := mc.Begin(); err != nil {
 		return err
 	}
 
-	if db != "" {
-		if _, err := mc.tx.Exec("USE " + db); err != nil {
-			mc.Logger.Error("execute DDL: %s, Database: %s Query: %s.", err, db, query)
+	if schemaContext != "" {
+		if _, err := mc.tx.Exec("USE " + schemaContext); err != nil {
+			mc.Logger.Error("execute DDL: %s, SchemaContext: %s Query: %s.", err, schemaContext, query)
 			return err
 		}
 	}
 
 	if _, err := mc.tx.Exec(query); err != nil {
 		if serr := mc.SkipError(err); serr != nil {
-			mc.Logger.Error("execute DDL: %s, Database: %s Query: %s.", serr, db, query)
+			mc.Logger.Error("execute DDL: %s, SchemaContext: %s Query: %s.", serr, schemaContext, query)
 			return err
 		} else {
-			mc.Logger.Warning("skip error: %s, Database: %s Query: %s.", err, db, query)
+			mc.Logger.Warning("skip error: %s, SchemaContext: %s Query: %s.", err, schemaContext, query)
 		}
 		return err
-	}
-
-	if err := mc.Commit(); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (mc *MysqlClient) ExecuteOnDatabase(query string) error {
-	if err := mc.Begin(); err != nil {
-		return err
-	}
-
-	if _, err := mc.tx.Exec(query); err != nil {
-		if serr := mc.SkipError(err); serr != nil {
-			mc.Logger.Error("execute DDL: %s, Query: %s.", serr, query)
-			return err
-		} else {
-			mc.Logger.Warning("skip error: %s, Query: %s.", err, query)
-		}
 	}
 
 	if err := mc.Commit(); err != nil {
