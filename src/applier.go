@@ -183,7 +183,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				}
 				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
 			case MysqlOperationDMLInsert:
-				ma.Logger.Debug("Operation[dmlinsert] -- SchemaContext: %s, Table: %s, Mode: %s", op.Database, op.Table, ma.insertMode)
+				ma.Logger.Debug("Operation[dmlinsert] -- Database: %s, Table: %s, Mode: %s", op.Database, op.Table, ma.insertMode)
 
 				if ma.State == StateBEGIN || ma.State == StateDML {
 					ma.State = StateDML
@@ -216,7 +216,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				}
 				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
 			case MysqlOperationDMLDelete:
-				ma.Logger.Debug("Operation[dmldelete] -- SchemaContext: %s, Table: %s", op.Database, op.Table)
+				ma.Logger.Debug("Operation[dmldelete] -- Database: %s, Table: %s", op.Database, op.Table)
 
 				if ma.State == StateBEGIN || ma.State == StateDML {
 					ma.State = StateDML
@@ -226,7 +226,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				}
 
 				if ma.ReplicateNotExecute(op.Database, op.Table) {
-					ma.Logger.Debug("Execute[dmldelete] -- SchemaContext: %s, Table: %s, Skip", op.Database, op.Table)
+					ma.Logger.Debug("Execute[dmldelete] -- replicate filter: skip")
 
 					ma.metricCh <- MetricUnit{Name: MetricDestDMLDeleteSkip, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 					ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdateSkip, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
@@ -250,7 +250,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				}
 				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
 			case MysqlOperationDMLUpdate:
-				ma.Logger.Debug("Operation[dmlupdate] -- SchemaContext: %s, Table: %s, Mode: %s", op.Database, op.Table, ma.updateMode)
+				ma.Logger.Debug("Operation[dmlupdate] -- Database: %s, Table: %s, Mode: %s", op.Database, op.Table, ma.updateMode)
 
 				if ma.State == StateBEGIN || ma.State == StateDML {
 					ma.State = StateDML
@@ -260,7 +260,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				}
 
 				if ma.ReplicateNotExecute(op.Database, op.Table) {
-					ma.Logger.Debug("Execute[dmlupdate] -- SchemaContext: %s, Table: %s, Skip", op.Database, op.Table)
+					ma.Logger.Debug("Execute[dmlupdate] -- replicate filter: skip")
 
 					ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdateSkip, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 					ma.metricCh <- MetricUnit{Name: MetricDestDMLInsertSkip, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
