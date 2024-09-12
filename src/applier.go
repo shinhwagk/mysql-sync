@@ -311,13 +311,13 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					return
 				}
 
-				ma.Logger.Debug("Execute[begin]")
 				if !ma.AllowCommit {
+					ma.Logger.Debug("Execute[begin]")
 					if err := ma.OnBegin(op); err != nil {
 						return
 					}
 				} else {
-					ma.Logger.Debug("Skip begin because merge commit.")
+					ma.Logger.Debug("Execute[begin] -- skipped due to merge commits")
 				}
 				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
 			case MysqlOperationBinLogPos:
