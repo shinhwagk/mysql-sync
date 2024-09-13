@@ -347,10 +347,10 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				}
 
 				if ma.CommitCount == 0 {
-					ma.Logger.Debug("Execute[begin]")
 					if err := ma.OnBegin(op); err != nil {
 						return
 					}
+					ma.Logger.Debug("Execute[begin]")
 				} else {
 					ma.Logger.Debug("Execute[begin] -- skipped due to merge commits")
 				}
