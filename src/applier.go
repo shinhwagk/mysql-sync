@@ -506,7 +506,7 @@ func (ma *MysqlApplier) MergeCommit() error {
 		if err := ma.mysqlClient.Commit(); err != nil {
 			return err
 		}
-		ma.Logger.Debug("Execute[mergetrx] -- merge commit count: %d", ma.CommitCount)
+		ma.Logger.Debug("Execute[mergetrx] -- merge commit count: %d complate", ma.CommitCount)
 
 		ma.Checkpoint()
 

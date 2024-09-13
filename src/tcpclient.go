@@ -96,13 +96,13 @@ func (tc *TCPClient) receiveOperations() {
 				tc.moCh <- oper
 			}
 			tc.metricCh <- MetricUnit{Name: MetricTCPClientReceiveOperations, Value: uint(sig.Count)}
-			tc.Logger.Debug("Ingress -- Batch: %d, operation count: %d", sig.BatchID, len(sig.Mos))
+			tc.Logger.Debug("Ingress -- batch: %d, operation count: %d", sig.BatchID, len(sig.Mos))
 
 			if err := tc.encoder.Encode(Signal2{BatchID: sig.BatchID}); err != nil {
-				tc.Logger.Error("Egress -- Batch: %d, Confirm Signal, Error: %s", sig.BatchID, err)
+				tc.Logger.Error("Egress -- batch: %d, confirm signal, Error: %s", sig.BatchID, err)
 				return
 			}
-			tc.Logger.Debug("Egress -- Batch: %d, Confirm Signal", sig.BatchID)
+			tc.Logger.Debug("Egress -- batch: %d, confirm signal", sig.BatchID)
 			tc.BatchID = sig.BatchID
 		} else {
 			tc.Logger.Error("Receive Server Batch: %s, Client Batch: %s, Count: %d, Mos: %d", sig.BatchID, tc.BatchID, sig.Count, len(sig.Mos))
