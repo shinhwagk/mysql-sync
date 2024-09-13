@@ -36,6 +36,7 @@ func NewMysqlApplier(logLevel int, ckpt *Checkpoint, destConf DestinationConfig,
 			LastCommitted:           0,
 			LastCheckpointTimestamp: 0,
 			CommitCount:             0,
+			GtidCount:               0,
 			metricCh:                metricCh,
 			GtidSkip:                false,
 			State:                   StateNULL,
@@ -53,6 +54,7 @@ type MysqlApplier struct {
 	LastCommitted           int64
 	LastCheckpointTimestamp uint32
 	CommitCount             uint
+	GtidCount               uint
 	metricCh                chan<- MetricUnit
 	GtidSkip                bool
 	State                   string
@@ -323,6 +325,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				if err := ma.OnGTID(op); err != nil {
 					return
 				}
+				ma.GtidCount++
 				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
 			case MysqlOperationHeartbeat:
 				ma.Logger.Trace("Operation[heartbeat]")
@@ -506,12 +509,14 @@ func (ma *MysqlApplier) MergeCommit() error {
 		if err := ma.mysqlClient.Commit(); err != nil {
 			return err
 		}
-		ma.Logger.Debug("Execute[mergetrx] -- merge commit count: %d complate", ma.CommitCount)
+
+		ma.Logger.Debug("Execute[mergetrx] -- merge commit count: %d, gtid count: %d complate", ma.CommitCount, ma.GtidCount)
+		ma.CommitCount = 0
+		ma.GtidCount = 0
 
 		ma.Checkpoint()
 
 		ma.metricCh <- MetricUnit{Name: MetricDestMergeTrx, Value: 1}
-		ma.CommitCount = 0
 	}
 
 	return nil
