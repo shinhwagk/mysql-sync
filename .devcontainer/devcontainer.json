@@ -8,7 +8,8 @@
 			"extensions": [
 				"golang.Go",
 				"ms-azuretools.vscode-docker",
-				"charliermarsh.ruff"
+				"charliermarsh.ruff",
+				"eamodio.gitlens"
 			]
 		}
 	}

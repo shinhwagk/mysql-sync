@@ -133,7 +133,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					return
 				}
 
-				if ma.ReplicateNotExecute(op.SchemaContext, "") && ma.ReplicateNotExecute(op.Database, op.Table) {
+				if ma.ReplicateNotExecute(op.SchemaContext, "") || ma.ReplicateNotExecute(op.Database, op.Table) {
 					ma.Logger.Debug("Execute[ddltable] -- replicate filter: skip")
 
 					ma.metricCh <- MetricUnit{Name: MetricDestDDLTableSkip, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
@@ -183,7 +183,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				}
 				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
 			case MysqlOperationDMLInsert:
-				ma.Logger.Debug("Operation[dmlinsert] -- Database: %s, Table: %s, Mode: %s", op.Database, op.Table, ma.insertMode)
+				ma.Logger.Debug("Operation[dmlinsert] -- database: %s, table: %s, mode: %s", op.Database, op.Table, ma.insertMode)
 
 				if ma.State == StateBEGIN || ma.State == StateDML {
 					ma.State = StateDML
@@ -216,7 +216,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				}
 				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
 			case MysqlOperationDMLDelete:
-				ma.Logger.Debug("Operation[dmldelete] -- Database: %s, Table: %s", op.Database, op.Table)
+				ma.Logger.Debug("Operation[dmldelete] -- database: %s, table: %s", op.Database, op.Table)
 
 				if ma.State == StateBEGIN || ma.State == StateDML {
 					ma.State = StateDML
@@ -250,7 +250,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				}
 				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
 			case MysqlOperationDMLUpdate:
-				ma.Logger.Debug("Operation[dmlupdate] -- Database: %s, Table: %s, Mode: %s", op.Database, op.Table, ma.updateMode)
+				ma.Logger.Debug("Operation[dmlupdate] -- database: %s, table: %s, mode: %s", op.Database, op.Table, ma.updateMode)
 
 				if ma.State == StateBEGIN || ma.State == StateDML {
 					ma.State = StateDML
@@ -295,7 +295,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				if ma.State == StateDML || ma.State == StateBEGIN {
 					ma.State = StateXID
 				} else {
-					ma.Logger.Error("Execute[xid] -- event Xid: last state is '%s'", ma.State)
+					ma.Logger.Error("Execute[xid] -- last state is '%s'", ma.State)
 					return
 				}
 
@@ -375,33 +375,22 @@ func (ma *MysqlApplier) OnDMLInsert(op MysqlOperationDMLInsert) error {
 	ma.Logger.Debug("Execute[dmlinsert]")
 
 	if ma.insertMode == "replace" {
-		if err := ma.OnDMLInsert2(op); err != nil {
-			return err
-		}
-	} else {
-		if err := ma.OnDMLInsert1(op); err != nil {
-			return err
-		}
+		return ma.OnDMLInsert2(op)
 	}
-	return nil
+
+	return ma.OnDMLInsert1(op)
 }
 
 func (ma *MysqlApplier) OnDMLInsert1(op MysqlOperationDMLInsert) error {
 	query, params := BuildDMLInsertQuery(op.Database, op.Table, op.Columns)
 	ma.Logger.Trace("Execute[dmlinsert] -- Query: %s, Params: %#v", query, params)
-	if err := ma.mysqlClient.ExecuteOnDML(query, params); err != nil {
-		return err
-	}
-	return nil
+	return ma.mysqlClient.ExecuteOnDML(query, params)
 }
 
 func (ma *MysqlApplier) OnDMLInsert2(op MysqlOperationDMLInsert) error {
-	query, params := BuildDMLReplaceIntoQuery(op.Database, op.Table, op.Columns)
+	query, params := BuildDMLInsertQueryReplace(op.Database, op.Table, op.Columns)
 	ma.Logger.Trace("Execute[dmlinsert] -- Query: %s, Params: %#v", query, params)
-	if err := ma.mysqlClient.ExecuteOnDML(query, params); err != nil {
-		return err
-	}
-	return nil
+	return ma.mysqlClient.ExecuteOnDML(query, params)
 }
 
 func (ma *MysqlApplier) OnDMLDelete(op MysqlOperationDMLDelete) error {
@@ -409,92 +398,61 @@ func (ma *MysqlApplier) OnDMLDelete(op MysqlOperationDMLDelete) error {
 
 	// todo
 	if len(op.PrimaryKey) == 0 {
-		ma.Logger.Warning("Execute[dmldelete] -- Not Primarykey -- SchemaContext: %s, Table: %s, Columne: %#v", op.Database, op.Table, op.Columns)
+		ma.Logger.Warning("Execute[dmldelete] -- Not Primary Key -- SchemaContext: %s, Table: %s, Columne: %#v", op.Database, op.Table, op.Columns)
 		return nil
 	}
 
 	query, params := BuildDMLDeleteQuery(op.Database, op.Table, op.Columns, op.PrimaryKey)
 	ma.Logger.Trace("Execute[dmldelete] -- Query: %s, Params: %#v", query, params)
-	if err := ma.mysqlClient.ExecuteOnDML(query, params); err != nil {
-		return err
-	}
-
-	return nil
+	return ma.mysqlClient.ExecuteOnDML(query, params)
 }
 
 func (ma *MysqlApplier) OnDMLUpdate(op MysqlOperationDMLUpdate) error {
 	ma.Logger.Debug("Execute[dmlupdate]")
 
 	if ma.updateMode == "replace" {
-		if err := ma.OnDMLUpdate2(op); err != nil {
-			return err
-		}
-	} else {
-		if err := ma.OnDMLUpdate1(op); err != nil {
-			return err
-		}
+		return ma.OnDMLUpdate2(op)
+
 	}
-	return nil
+
+	return ma.OnDMLUpdate1(op)
 }
 
 func (ma *MysqlApplier) OnDMLUpdate1(op MysqlOperationDMLUpdate) error {
 	// todo
 	if len(op.PrimaryKey) == 0 {
-		ma.Logger.Warning("Execute[dmlupdate] -- Not Primarykey -- SchemaContext: %s, Table: %s, BeforeColumne: %#v, AfterColume: %#v", op.Database, op.Table, op.BeforeColumns, op.AfterColumns)
+		ma.Logger.Warning("Execute[dmlupdate] -- Not Primary Key -- SchemaContext: %s, Table: %s, BeforeColumne: %#v, AfterColume: %#v", op.Database, op.Table, op.BeforeColumns, op.AfterColumns)
 		return nil
 	}
 
 	query, params := BuildDMLUpdateQuery(op.Database, op.Table, op.AfterColumns, op.BeforeColumns, op.PrimaryKey)
 	ma.Logger.Trace("Execute[dmlupdate] -- Query: %s, Params: %#v", query, params)
-	if err := ma.mysqlClient.ExecuteOnDML(query, params); err != nil {
-		return err
-	}
-
-	return nil
+	return ma.mysqlClient.ExecuteOnDML(query, params)
 }
 
 // delete first, then insert
 func (ma *MysqlApplier) OnDMLUpdate2(op MysqlOperationDMLUpdate) error {
 	// todo
 	if len(op.PrimaryKey) == 0 {
-		ma.Logger.Warning("Execute[dmlupdate] -- Not Primarykey -- SchemaContext: %s, Table: %s, BeforeColumne: %#v, AfterColume: %#v", op.Database, op.Table, op.BeforeColumns, op.AfterColumns)
+		ma.Logger.Warning("Execute[dmlupdate] -- Not Primary Key -- SchemaContext: %s, Table: %s, BeforeColumne: %#v, AfterColume: %#v", op.Database, op.Table, op.BeforeColumns, op.AfterColumns)
 		return nil
 	}
 
-	query, params := BuildDMLReplaceIntoQuery(op.Database, op.Table, op.AfterColumns)
+	query, params := BuildDMLInsertQueryReplace(op.Database, op.Table, op.AfterColumns)
 	ma.Logger.Trace("Execute[dmlupdate] -- Query: %s, Params: %#v", query, params)
-	if err := ma.mysqlClient.ExecuteOnDML(query, params); err != nil {
-		return err
-	}
-
-	return nil
+	return ma.mysqlClient.ExecuteOnDML(query, params)
 }
 
 func (ma *MysqlApplier) OnDDLDatabase(op MysqlOperationDDLDatabase) error {
-	if err := ma.mysqlClient.ExecuteOnDDL("", op.Query); err != nil {
-		ma.Logger.Error("Execute[ddldatabase] error: %s", err)
-		return err
-	}
-
-	return nil
+	return ma.mysqlClient.ExecuteOnNonDML("", op.Query)
 }
 
 func (ma *MysqlApplier) OnDDLTable(op MysqlOperationDDLTable) error {
-	if err := ma.mysqlClient.ExecuteOnDDL(op.SchemaContext, op.Query); err != nil {
-		ma.Logger.Error("Execute[ddltable] error: %s", err)
-		return err
-	}
-
-	return nil
+	return ma.mysqlClient.ExecuteOnNonDML(op.SchemaContext, op.Query)
 }
 
 func (ma *MysqlApplier) OnDCLUser(op MysqlOperationDCLUser) error {
-	if err := ma.mysqlClient.ExecuteOnDDL(op.SchemaContext, op.Query); err != nil {
-		ma.Logger.Error("Execute[dcluser] error: %s", err)
-		return err
-	}
-
-	return nil
+	return ma.mysqlClient.ExecuteOnNonDML(op.SchemaContext, op.Query)
 }
 
 func (ma *MysqlApplier) OnXID(op MysqlOperationXid) error {
@@ -546,10 +504,9 @@ func (ma *MysqlApplier) OnHeartbeat(op MysqlOperationHeartbeat) error {
 func (ma *MysqlApplier) MergeCommit() error {
 	if ma.CommitCount >= 1 {
 		if err := ma.mysqlClient.Commit(); err != nil {
-			ma.Logger.Error("Merge commit: %", err)
 			return err
 		}
-		ma.Logger.Debug("Execute[trx] -- merge commit: %d", ma.CommitCount)
+		ma.Logger.Debug("Execute[mergetrx] -- merge commit count: %d", ma.CommitCount)
 
 		ma.Checkpoint()
 
@@ -590,7 +547,7 @@ func BuildDMLInsertQuery(datbaseName string, tableName string, columns []MysqlOp
 	return sql, params
 }
 
-func BuildDMLReplaceIntoQuery(datbaseName string, tableName string, columns []MysqlOperationDMLColumn) (string, []interface{}) {
+func BuildDMLInsertQueryReplace(datbaseName string, tableName string, columns []MysqlOperationDMLColumn) (string, []interface{}) {
 	var keys []string
 	var params []interface{}
 	var placeholders []string

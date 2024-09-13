@@ -62,7 +62,6 @@ func (mc *MysqlClient) SkipError(err error) error {
 	if merr, ok := err.(*mysql.MySQLError); ok {
 		for _, v := range mc.SkipErrors {
 			if v == merr.Number {
-				mc.Logger.Error("Skip error: %s.", err)
 				return nil
 			}
 		}
@@ -80,100 +79,115 @@ func (mc *MysqlClient) Close() error {
 
 func (mc *MysqlClient) Begin() error {
 	var err error
-	if mc.tx == nil {
-		if mc.tx, err = mc.db.Begin(); err != nil {
-			mc.Logger.Error("execute Begin: %s.", err)
-			return err
-		} else {
-			for pk, pv := range mc.SessionParams {
-				query := fmt.Sprintf("SET SESSION %s = '%s'", pk, pv)
-				mc.Logger.Debug("execute Begin: init session statement: '%s'", query)
-				if _, err := mc.tx.Exec(query); err != nil {
-					mc.Logger.Error("execute Begin: init session parameter '%s' %s", query, err)
-					return err
-				}
-			}
-		}
-	} else {
-		err := fmt.Errorf("execute Begin: tx is not nil")
-		mc.Logger.Error("%s.", err)
+
+	if mc.tx != nil {
+		err := fmt.Errorf("tx already exists")
+		mc.Logger.Error("Execute[begin] -- Error: %s", err)
 		return err
+	}
+
+	if mc.tx, err = mc.db.Begin(); err != nil {
+		mc.Logger.Error("Execute[begin] -- Error: %s", err)
+		return err
+	}
+
+	for pk, pv := range mc.SessionParams {
+		query := fmt.Sprintf("SET SESSION %s = '%s'", pk, pv)
+		if _, err := mc.tx.Exec(query); err != nil {
+			mc.Logger.Error("Execute[begin] -- set session parameter '%s', Error: %s", query, err)
+			return err
+		}
+		mc.Logger.Debug("Execute[begin] -- set session parameter: '%s'", query)
 	}
 
 	return nil
 }
 
 func (mc *MysqlClient) ExecuteOnDML(query string, args []interface{}) error {
-	if mc.tx != nil {
-		if _, err := mc.tx.Exec(query, args...); err != nil {
-			if serr := mc.SkipError(err); serr != nil {
-				mc.Logger.Error("execute DML: %s, Query: %s, Params: %#v.", serr, query, args)
-				return err
-			} else {
-				mc.Logger.Warning("skip error: %s, Query: %s, Params: %#v.", err, query, args)
-			}
-		}
-	} else {
-		err := fmt.Errorf("execute DML: tx is not nil")
-		mc.Logger.Error("%s.", err)
+	if mc.tx == nil {
+		err := fmt.Errorf("tx does not exist")
+		mc.Logger.Error("Execute[dml] -- Error: %s", err)
 		return err
+	}
+
+	if _, err := mc.tx.Exec(query, args...); err != nil {
+		if serr := mc.SkipError(err); serr != nil {
+			mc.Logger.Error("Execute[dml] -- Query: %s, Params: %#v, Error: %s", query, args, err)
+
+			if err := mc.Rollback(); err != nil {
+				return err
+			}
+			return err
+		}
+
+		mc.Logger.Warning("Execute[dml] -- Query: %s, Params: %#v, Skip Error: %s", query, args, err)
 	}
 
 	return nil
 }
 
-func (mc *MysqlClient) ExecuteOnDDL(schemaContext string, query string) error {
+func (mc *MysqlClient) ExecuteOnNonDML(schemaContext string, query string) error {
 	if err := mc.Begin(); err != nil {
 		return err
 	}
 
 	if schemaContext != "" {
 		if _, err := mc.tx.Exec("USE " + schemaContext); err != nil {
-			mc.Logger.Error("execute DDL: %s, SchemaContext: %s Query: %s.", err, schemaContext, query)
+			mc.Logger.Error("Execute[nondml] -- SchemaContext: %s, Query: %s, Error: %s", schemaContext, query, err)
+
+			if err := mc.Rollback(); err != nil {
+				return err
+			}
 			return err
 		}
 	}
 
 	if _, err := mc.tx.Exec(query); err != nil {
 		if serr := mc.SkipError(err); serr != nil {
-			mc.Logger.Error("execute DDL: %s, SchemaContext: %s Query: %s.", serr, schemaContext, query)
+			mc.Logger.Error("Execute[nondml] -- SchemaContext: %s, Query: %s, Error: %s", schemaContext, query, err)
+
+			if err := mc.Rollback(); err != nil {
+				return err
+			}
+
 			return err
-		} else {
-			mc.Logger.Warning("skip error: %s, SchemaContext: %s Query: %s.", err, schemaContext, query)
 		}
-		return err
+
+		mc.Logger.Warning("Execute[nondml] -- SchemaContext: %s, Query: %s, Skip Error: %s", schemaContext, query, err)
 	}
 
-	if err := mc.Commit(); err != nil {
-		return err
-	}
-
-	return nil
+	return mc.Commit()
 }
 
 func (mc *MysqlClient) Commit() error {
 	if mc.tx == nil {
-		err := fmt.Errorf("execute Commit: tx is 'nil'")
-		mc.Logger.Error("%s.", err)
+		err := fmt.Errorf("tx does not exist")
+		mc.Logger.Error("Execute[commit] -- Error: %s", err)
 		return err
-	} else {
-		if err := mc.tx.Commit(); err != nil {
-			mc.Logger.Error("execute Commit: %s.", err)
-			return err
-		}
-		mc.tx = nil
 	}
 
+	if err := mc.tx.Commit(); err != nil {
+		mc.Logger.Error("Execute[commit] -- Error: %s", err)
+		return err
+	}
+	mc.tx = nil
+
+	mc.Logger.Debug("Execute[commit] -- complate")
 	return nil
 }
 
 func (mc *MysqlClient) Rollback() error {
-	if mc.tx != nil {
-		err := mc.tx.Rollback()
-		if err != nil {
-			return err
-		}
-		mc.tx = nil
+	if mc.tx == nil {
+		mc.Logger.Warning("Execute[rollback] -- tx does not exist")
+		return nil
 	}
+
+	if err := mc.tx.Rollback(); err != nil {
+		mc.Logger.Error("Execute[rollback] -- Error: %s", err)
+		return err
+	}
+	mc.tx = nil
+
+	mc.Logger.Debug("Execute[rollback] -- complate")
 	return nil
 }
