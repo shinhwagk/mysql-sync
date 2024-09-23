@@ -45,8 +45,18 @@ type DestinationMysqlConfig struct {
 type DestinationSyncConfig struct {
 	Replicate            DestinationReplicateConfig `yaml:"replicate"`
 	InitGtidSetsRangeStr string                     `yaml:"gtidsets"`
-	UpdateMode           string                     `yaml:"update_mode"`
-	InsertMode           string                     `yaml:"insert_mode"`
+	MergeCommit          DestinationSyncMergeConfig `yaml:"merge_commit"`
+	DmlMode              DestinationSyncDmlConfig   `yaml:"dml_mode"`
+}
+
+type DestinationSyncMergeConfig struct {
+	MaxCount int `yaml:"max_count"`
+	MaxDelay int `yaml:"max_delay"`
+}
+
+type DestinationSyncDmlConfig struct {
+	Update string `yaml:"update"`
+	Insert string `yaml:"insert"`
 }
 
 type PrometheusConfig struct {

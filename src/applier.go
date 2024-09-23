@@ -31,8 +31,10 @@ func NewMysqlApplier(logLevel int, ckpt *Checkpoint, destConf DestinationConfig,
 			ckpt:                    ckpt,
 			mysqlClient:             mysqlClient,
 			replicate:               replicateFilter,
-			updateMode:              destConf.Sync.UpdateMode,
-			insertMode:              destConf.Sync.InsertMode,
+			DmlModeUpdate:           destConf.Sync.DmlMode.Update,
+			DmlModeInsert:           destConf.Sync.DmlMode.Insert,
+			MergeCommitMaxCount:     destConf.Sync.MergeCommit.MaxCount,
+			MergeCommitMaxDelay:     destConf.Sync.MergeCommit.MaxDelay,
 			LastCommitted:           0,
 			LastCheckpointTimestamp: 0,
 			CommitCount:             0,
@@ -48,9 +50,11 @@ type MysqlApplier struct {
 	Logger                  *Logger
 	mysqlClient             *MysqlClient
 	replicate               *Replicate
-	updateMode              string
-	insertMode              string
 	ckpt                    *Checkpoint
+	DmlModeUpdate           string
+	DmlModeInsert           string
+	MergeCommitMaxCount     int
+	MergeCommitMaxDelay     int
 	LastCommitted           int64
 	LastCheckpointTimestamp uint32
 	CommitCount             uint
@@ -185,7 +189,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				}
 				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
 			case MysqlOperationDMLInsert:
-				ma.Logger.Debug("Operation[dmlinsert] -- database: %s, table: %s, mode: %s", op.Database, op.Table, ma.insertMode)
+				ma.Logger.Debug("Operation[dmlinsert] -- database: %s, table: %s, mode: %s", op.Database, op.Table, ma.DmlModeInsert)
 
 				if ma.State == StateBEGIN || ma.State == StateDML {
 					ma.State = StateDML
@@ -252,7 +256,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				}
 				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
 			case MysqlOperationDMLUpdate:
-				ma.Logger.Debug("Operation[dmlupdate] -- database: %s, table: %s, mode: %s", op.Database, op.Table, ma.updateMode)
+				ma.Logger.Debug("Operation[dmlupdate] -- database: %s, table: %s, mode: %s", op.Database, op.Table, ma.DmlModeUpdate)
 
 				if ma.State == StateBEGIN || ma.State == StateDML {
 					ma.State = StateDML
@@ -313,7 +317,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 
 				if ma.State == StateXID || ma.State == StateDDL || ma.State == StateDCL || ma.State == StateNULL {
 					if ma.State == StateDDL {
-						ma.Checkpoint()
+						ma.Checkpoint() // must here
 					}
 					ma.State = StateGTID
 				} else {
@@ -330,7 +334,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 			case MysqlOperationHeartbeat:
 				ma.Logger.Trace("Operation[heartbeat]")
 
-				if ma.State == StateDDL {
+				if ma.State == StateDDL || ma.State == StateDCL {
 					ma.Checkpoint()
 				}
 				if err := ma.OnHeartbeat(op); err != nil {
@@ -377,7 +381,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 func (ma *MysqlApplier) OnDMLInsert(op MysqlOperationDMLInsert) error {
 	ma.Logger.Debug("Execute[dmlinsert]")
 
-	if ma.insertMode == "replace" {
+	if ma.DmlModeInsert == "replace" {
 		return ma.OnDMLInsert2(op)
 	}
 
@@ -413,7 +417,7 @@ func (ma *MysqlApplier) OnDMLDelete(op MysqlOperationDMLDelete) error {
 func (ma *MysqlApplier) OnDMLUpdate(op MysqlOperationDMLUpdate) error {
 	ma.Logger.Debug("Execute[dmlupdate]")
 
-	if ma.updateMode == "replace" {
+	if ma.DmlModeUpdate == "replace" {
 		return ma.OnDMLUpdate2(op)
 
 	}
@@ -523,13 +527,11 @@ func (ma *MysqlApplier) MergeCommit() error {
 }
 
 func (ma *MysqlApplier) Checkpoint() error {
-	if err := ma.ckpt.PersistGtidSetsMaptToConsul(); err == nil {
-		ma.Logger.Info("Checkpoint[gtid] -- gtidsets: %s", GetGtidSetsRangeStrFromGtidSetsMap(ma.ckpt.GtidSetsMap))
-	}
+	ma.Logger.Info("Checkpoint[gtid] -- gtidsets: %s", GetGtidSetsRangeStrFromGtidSetsMap(ma.ckpt.GtidSetsMap))
+	ma.ckpt.PersistGtidSetsMaptToConsul()
 
-	if err := ma.ckpt.PersistBinLogPosToConsul(); err == nil {
-		ma.Logger.Info("Checkpoint[binlogpos] -- binlogpos: %s:%d", ma.ckpt.BinLogFile, ma.ckpt.BinLogPos)
-	}
+	ma.Logger.Info("Checkpoint[binlogpos] -- binlogpos: %s:%d", ma.ckpt.BinLogFile, ma.ckpt.BinLogPos)
+	ma.ckpt.PersistBinLogPosToConsul()
 
 	ma.metricCh <- MetricUnit{Name: MetricDestCheckpointTimestamp, Value: uint(ma.LastCheckpointTimestamp)}
 
