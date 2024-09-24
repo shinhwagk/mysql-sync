@@ -416,8 +416,6 @@ func (ma *MysqlApplier) OnDMLDelete(op MysqlOperationDMLDelete) error {
 }
 
 func (ma *MysqlApplier) OnDMLUpdate(op MysqlOperationDMLUpdate) error {
-	ma.Logger.Debug("Execute[dmlupdate]")
-
 	if ma.DmlModeUpdate == "replace" {
 		return ma.OnDMLUpdate2(op)
 	}
