@@ -102,6 +102,8 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 			case MysqlOperationBinLogPos:
 				ma.Logger.Debug("Operation[binlogpos] -- timestamp: %d, server id: %d, file: %s, pos: %d, event: %s, ", op.GetTimestamp(), op.ServerID, op.File, op.Pos, op.Event)
 
+				ma.LastAppliedTimestamp = oper.GetTimestamp()
+
 				ma.ckpt.SetBinlogPos(op.File, op.Pos)
 			case MysqlOperationHeartbeat:
 				ma.LastCheckpointTimestamp = ma.LastAppliedTimestamp
@@ -125,7 +127,6 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				ma.State = StateNULL
 			case MysqlOperationGTID:
 				ma.LastCheckpointTimestamp = ma.LastAppliedTimestamp
-				ma.LastAppliedTimestamp = oper.GetTimestamp()
 
 				ma.Logger.Debug("Operation[gtid] -- gtid: %s:%d, lastcommitted: %d", op.ServerUUID, op.TrxID, op.LastCommitted)
 
@@ -150,8 +151,6 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 
 				ma.State = StateGTID
 			case MysqlOperationDDLDatabase:
-				ma.LastAppliedTimestamp = oper.GetTimestamp()
-
 				ma.Logger.Debug("Operation[ddldatabase] -- DDL:Database, Database: %s, Query: %s", op.Database, op.Query)
 
 				if !(ma.State == StateGTID) {
@@ -180,8 +179,6 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 
 				ma.State = StateDDL
 			case MysqlOperationDDLTable:
-				ma.LastAppliedTimestamp = oper.GetTimestamp()
-
 				ma.Logger.Debug("Operation[ddltable] -- SchemaContext: %s, Database: %s, Table: %s, Query: %s", op.SchemaContext, op.Database, op.Table, op.Query)
 
 				if !(ma.State == StateGTID || ma.State == StateDDL) {
@@ -210,8 +207,6 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 
 				ma.State = StateDDL
 			case MysqlOperationDCLUser:
-				ma.LastAppliedTimestamp = oper.GetTimestamp()
-
 				ma.Logger.Debug("Operation[dcluser] -- SchemaContext: %s, Query: %s", op.SchemaContext, op.Query)
 
 				if !(ma.State == StateGTID || ma.State == StateDCL) {
@@ -240,8 +235,6 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 
 				ma.State = StateDCL
 			case MysqlOperationBegin:
-				ma.LastAppliedTimestamp = oper.GetTimestamp()
-
 				ma.Logger.Debug("Operation[begin]")
 
 				if !(ma.State == StateGTID) {
@@ -260,8 +253,6 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 
 				ma.State = StateBEGIN
 			case MysqlOperationDMLInsert:
-				ma.LastAppliedTimestamp = oper.GetTimestamp()
-
 				ma.Logger.Debug("Operation[dmlinsert] -- database: %s, table: %s, mode: %s", op.Database, op.Table, ma.DmlModeInsert)
 
 				if !(ma.State == StateBEGIN || ma.State == StateDML) {
@@ -294,8 +285,6 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 
 				ma.State = StateDML
 			case MysqlOperationDMLDelete:
-				ma.LastAppliedTimestamp = oper.GetTimestamp()
-
 				ma.Logger.Debug("Operation[dmldelete] -- database: %s, table: %s", op.Database, op.Table)
 
 				if !(ma.State == StateBEGIN || ma.State == StateDML) {
@@ -329,8 +318,6 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 
 				ma.State = StateDML
 			case MysqlOperationDMLUpdate:
-				ma.LastAppliedTimestamp = oper.GetTimestamp()
-
 				ma.Logger.Debug("Operation[dmlupdate] -- database: %s, table: %s, mode: %s", op.Database, op.Table, ma.DmlModeUpdate)
 
 				if !(ma.State == StateBEGIN || ma.State == StateDML) {
@@ -369,8 +356,6 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 
 				ma.State = StateDML
 			case MysqlOperationXid:
-				ma.LastAppliedTimestamp = oper.GetTimestamp()
-
 				ma.Logger.Debug("Operation[xid]")
 
 				if !(ma.State == StateDML || ma.State == StateBEGIN) {
