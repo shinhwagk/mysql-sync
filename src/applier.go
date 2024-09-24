@@ -37,7 +37,8 @@ func NewMysqlApplier(logLevel int, ckpt *Checkpoint, destConf DestinationConfig,
 			MergeCommitMaxDelay:     destConf.Sync.MergeCommit.MaxDelay,
 			LastCommitted:           0,
 			LastCheckpointTimestamp: 0,
-			CommitCount:             0,
+			LastAppliedTimestamp:    0,
+			PendingCommitCount:      0,
 			GtidCount:               0,
 			metricCh:                metricCh,
 			GtidSkip:                false,
@@ -53,11 +54,12 @@ type MysqlApplier struct {
 	ckpt                    *Checkpoint
 	DmlModeUpdate           string
 	DmlModeInsert           string
-	MergeCommitMaxCount     int
-	MergeCommitMaxDelay     int
+	MergeCommitMaxCount     uint
+	MergeCommitMaxDelay     uint32
 	LastCommitted           int64
 	LastCheckpointTimestamp uint32
-	CommitCount             uint
+	LastAppliedTimestamp    uint32
+	PendingCommitCount      uint
 	GtidCount               uint
 	metricCh                chan<- MetricUnit
 	GtidSkip                bool
@@ -97,14 +99,69 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 			}
 
 			switch op := oper.(type) {
+			case MysqlOperationBinLogPos:
+				ma.Logger.Debug("Operation[binlogpos] -- timestamp: %d, server id: %d, file: %s, pos: %d, event: %s, ", op.GetTimestamp(), op.ServerID, op.File, op.Pos, op.Event)
+
+				ma.ckpt.SetBinlogPos(op.File, op.Pos)
+			case MysqlOperationHeartbeat:
+				ma.LastCheckpointTimestamp = ma.LastAppliedTimestamp
+				ma.LastAppliedTimestamp = oper.GetTimestamp()
+
+				ma.Logger.Trace("Operation[heartbeat]")
+
+				if ma.State == StateDDL || ma.State == StateDCL {
+					ma.Checkpoint()
+				} else if ma.State == StateXID {
+					if err := ma.MergeCommit(); err != nil {
+						return
+					}
+				} else if ma.State == StateNULL {
+					ma.metricCh <- MetricUnit{Name: MetricDestCheckpointTimestamp, Value: uint(ma.LastCheckpointTimestamp)}
+				} else {
+					ma.Logger.Error("Execute[heartbeat] -- last state is '%s'", ma.State)
+					return
+				}
+
+				ma.State = StateNULL
+			case MysqlOperationGTID:
+				ma.LastCheckpointTimestamp = ma.LastAppliedTimestamp
+				ma.LastAppliedTimestamp = oper.GetTimestamp()
+
+				ma.Logger.Debug("Operation[gtid] -- gtid: %s:%d, lastcommitted: %d", op.ServerUUID, op.TrxID, op.LastCommitted)
+
+				if ma.State == StateDDL || ma.State == StateDCL {
+					ma.Checkpoint()
+				} else if ma.State == StateXID {
+					if ma.EvaluateForceMergeCommit() {
+						if err := ma.MergeCommit(); err != nil {
+							return
+						}
+					}
+				} else if ma.State == StateNULL {
+				} else {
+					ma.Logger.Error("Execute[gtid] -- last state is '%s'", ma.State)
+					return
+				}
+
+				ma.Logger.Debug("Execute[gtid]")
+				if err := ma.OnGTID(op); err != nil {
+					return
+				}
+
+				ma.GtidCount++
+
+				ma.State = StateGTID
 			case MysqlOperationDDLDatabase:
+				ma.LastAppliedTimestamp = oper.GetTimestamp()
+
 				ma.Logger.Debug("Operation[ddldatabase] -- DDL:Database, Database: %s, Query: %s", op.Database, op.Query)
 
-				ma.LastCheckpointTimestamp = op.Timestamp
-				if ma.State == StateGTID {
-					ma.State = StateDDL
-				} else {
+				if !(ma.State == StateGTID) {
 					ma.Logger.Error("Execute[ddldatabase] -- last state is '%s'", ma.State)
+					return
+				}
+
+				if err := ma.MergeCommit(); err != nil {
 					return
 				}
 
@@ -116,26 +173,25 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				} else {
 					ma.Logger.Debug("Execute[ddldatabase]")
 
-					// Submit dml before ddl execution
-					if err := ma.MergeCommit(); err != nil {
-						return
-					}
 					if err := ma.OnDDLDatabase(op); err != nil {
 						return
 					}
 					ma.metricCh <- MetricUnit{Name: MetricDestDDLDatabase, Value: 1, LabelPair: map[string]string{"database": op.Database}}
 					ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationDDLDatabase, Value: 1}
 				}
-				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
+
+				ma.State = StateDDL
 			case MysqlOperationDDLTable:
+				ma.LastAppliedTimestamp = oper.GetTimestamp()
+
 				ma.Logger.Debug("Operation[ddltable] -- SchemaContext: %s, Database: %s, Table: %s, Query: %s", op.SchemaContext, op.Database, op.Table, op.Query)
 
-				ma.LastCheckpointTimestamp = op.Timestamp
-				if ma.State == StateGTID || ma.State == StateDDL {
-					ma.State = StateDDL
-				} else {
+				if !(ma.State == StateGTID || ma.State == StateDDL) {
 					ma.Logger.Error("Execute[ddltable] -- last state is '%s'", ma.State)
+					return
+				}
 
+				if err := ma.MergeCommit(); err != nil {
 					return
 				}
 
@@ -147,25 +203,25 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				} else {
 					ma.Logger.Debug("Execute[ddltable]")
 
-					// Submit dml before ddl execution
-					if err := ma.MergeCommit(); err != nil {
-						return
-					}
 					if err := ma.OnDDLTable(op); err != nil {
 						return
 					}
 					ma.metricCh <- MetricUnit{Name: MetricDestDDLTable, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 					ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationDDLTable, Value: 1}
 				}
-				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
+
+				ma.State = StateDDL
 			case MysqlOperationDCLUser:
+				ma.LastAppliedTimestamp = oper.GetTimestamp()
+
 				ma.Logger.Debug("Operation[dcluser] -- SchemaContext: %s, Query: %s", op.SchemaContext, op.Query)
 
-				ma.LastCheckpointTimestamp = op.Timestamp
-				if ma.State == StateGTID || ma.State == StateDDL {
-					ma.State = StateDCL
-				} else {
+				if !(ma.State == StateGTID || ma.State == StateDCL) {
 					ma.Logger.Error("Execute[dcluser] -- last state is '%s'", ma.State)
+					return
+				}
+
+				if err := ma.MergeCommit(); err != nil {
 					return
 				}
 
@@ -177,23 +233,40 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				} else {
 					ma.Logger.Debug("Execute[dcluser]")
 
-					// Submit dml before ddl execution
-					if err := ma.MergeCommit(); err != nil {
-						return
-					}
 					if err := ma.OnDCLUser(op); err != nil {
 						return
 					}
 					// ma.metricCh <- MetricUnit{Name: MetricDestDDLTable, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 					// ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationDDLTable, Value: 1}
 				}
-				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
+
+				ma.State = StateDCL
+			case MysqlOperationBegin:
+				ma.LastAppliedTimestamp = oper.GetTimestamp()
+
+				ma.Logger.Debug("Operation[begin]")
+
+				if !(ma.State == StateGTID) {
+					ma.Logger.Error("Execute[begin] -- last state is '%s'", ma.State)
+					return
+				}
+
+				if ma.PendingCommitCount == 0 {
+					if err := ma.OnBegin(op); err != nil {
+						return
+					}
+					ma.Logger.Debug("Execute[begin]")
+				} else {
+					ma.Logger.Debug("Execute[begin] -- skipped due to merge commits")
+				}
+
+				ma.State = StateBEGIN
 			case MysqlOperationDMLInsert:
+				ma.LastAppliedTimestamp = oper.GetTimestamp()
+
 				ma.Logger.Debug("Operation[dmlinsert] -- database: %s, table: %s, mode: %s", op.Database, op.Table, ma.DmlModeInsert)
 
-				if ma.State == StateBEGIN || ma.State == StateDML {
-					ma.State = StateDML
-				} else {
+				if !(ma.State == StateBEGIN || ma.State == StateDML) {
 					ma.Logger.Error("Execute[dmlinsert] -- last state is '%s'", ma.State)
 					return
 				}
@@ -220,13 +293,14 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdate, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 					ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationDMLInsert, Value: 1}
 				}
-				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
+
+				ma.State = StateDML
 			case MysqlOperationDMLDelete:
+				ma.LastAppliedTimestamp = oper.GetTimestamp()
+
 				ma.Logger.Debug("Operation[dmldelete] -- database: %s, table: %s", op.Database, op.Table)
 
-				if ma.State == StateBEGIN || ma.State == StateDML {
-					ma.State = StateDML
-				} else {
+				if !(ma.State == StateBEGIN || ma.State == StateDML) {
 					ma.Logger.Error("Execute[dmldelete] -- last state is '%s'", ma.State)
 					return
 				}
@@ -254,13 +328,14 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdate, Value: 0, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 					ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationDMLDelete, Value: 1}
 				}
-				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
+
+				ma.State = StateDML
 			case MysqlOperationDMLUpdate:
+				ma.LastAppliedTimestamp = oper.GetTimestamp()
+
 				ma.Logger.Debug("Operation[dmlupdate] -- database: %s, table: %s, mode: %s", op.Database, op.Table, ma.DmlModeUpdate)
 
-				if ma.State == StateBEGIN || ma.State == StateDML {
-					ma.State = StateDML
-				} else {
+				if !(ma.State == StateBEGIN || ma.State == StateDML) {
 					ma.Logger.Error("Execute[dmlupdate] -- last state is '%s'", ma.State)
 					return
 				}
@@ -293,87 +368,30 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					ma.metricCh <- MetricUnit{Name: MetricDestDMLUpdate, Value: 1, LabelPair: map[string]string{"database": op.Database, "table": op.Table}}
 					ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationDMLUpdate, Value: 1}
 				}
-				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
+
+				ma.State = StateDML
 			case MysqlOperationXid:
+				ma.LastAppliedTimestamp = oper.GetTimestamp()
+
 				ma.Logger.Debug("Operation[xid]")
 
-				ma.LastCheckpointTimestamp = op.Timestamp
-				if ma.State == StateDML || ma.State == StateBEGIN {
-					ma.State = StateXID
-				} else {
+				if !(ma.State == StateDML || ma.State == StateBEGIN) {
 					ma.Logger.Error("Execute[xid] -- last state is '%s'", ma.State)
 					return
 				}
 
-				ma.Logger.Debug("Execute[xid] -- do nothing")
-				ma.CommitCount++
-				if err := ma.OnXID(op); err != nil {
-					return
-				}
+				ma.PendingCommitCount++
+
+				ma.State = StateXID
+
 				ma.metricCh <- MetricUnit{Name: MetricDestTrx, Value: 1}
-				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
-			case MysqlOperationGTID:
-				ma.Logger.Debug("Operation[gtid] -- gtid: %s:%d, lastcommitted: %d", op.ServerUUID, op.TrxID, op.LastCommitted)
-
-				if ma.State == StateXID || ma.State == StateDDL || ma.State == StateDCL || ma.State == StateNULL {
-					if ma.State == StateDDL {
-						ma.Checkpoint() // must here
-					}
-					ma.State = StateGTID
-				} else {
-					ma.Logger.Error("Execute[gtid] -- last state is '%s'", ma.State)
-					return
-				}
-
-				ma.Logger.Debug("Execute[gtid]")
-				if err := ma.OnGTID(op); err != nil {
-					return
-				}
-				ma.GtidCount++
-				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
-			case MysqlOperationHeartbeat:
-				ma.Logger.Trace("Operation[heartbeat]")
-
-				if ma.State == StateDDL || ma.State == StateDCL {
-					ma.Checkpoint()
-				}
-				if err := ma.OnHeartbeat(op); err != nil {
-					return
-				}
-				ma.State = StateNULL
-				ma.metricCh <- MetricUnit{Name: MetricDestCheckpointTimestamp, Value: uint(op.GetTimestamp())}
-				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
-			case MysqlOperationBegin:
-				ma.Logger.Debug("Operation[begin]")
-
-				if ma.State == StateGTID {
-					ma.State = StateBEGIN
-				} else {
-					ma.Logger.Error("Execute[begin] -- last state is '%s'", ma.State)
-					return
-				}
-
-				if ma.CommitCount == 0 {
-					if err := ma.OnBegin(op); err != nil {
-						return
-					}
-					ma.Logger.Debug("Execute[begin]")
-				} else {
-					ma.Logger.Debug("Execute[begin] -- skipped due to merge commits")
-				}
-				ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(oper.GetTimestamp())}
-			case MysqlOperationBinLogPos:
-				ma.Logger.Debug("Operation[binlogpos] -- server id: %d, file: %s, pos: %d, event: %s", op.ServerID, op.File, op.Pos, op.Event)
-
-				if op.Event != "RotateEvent" {
-					ma.ckpt.SetBinlogPos(op.File, op.Pos)
-				}
 			default:
 				ma.Logger.Error("unknow operation.")
 				return
 			}
 
 			ma.metricCh <- MetricUnit{Name: MetricDestApplierOperations, Value: 1}
+			ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(ma.LastAppliedTimestamp)}
 		}
 	}
 }
@@ -419,7 +437,6 @@ func (ma *MysqlApplier) OnDMLUpdate(op MysqlOperationDMLUpdate) error {
 
 	if ma.DmlModeUpdate == "replace" {
 		return ma.OnDMLUpdate2(op)
-
 	}
 
 	return ma.OnDMLUpdate1(op)
@@ -462,10 +479,6 @@ func (ma *MysqlApplier) OnDCLUser(op MysqlOperationDCLUser) error {
 	return ma.mysqlClient.ExecuteOnNonDML(op.SchemaContext, op.Query)
 }
 
-func (ma *MysqlApplier) OnXID(op MysqlOperationXid) error {
-	return nil
-}
-
 func (ma *MysqlApplier) OnBegin(op MysqlOperationBegin) error {
 	if err := ma.mysqlClient.Begin(); err != nil {
 		return err
@@ -501,21 +514,31 @@ func (ma *MysqlApplier) OnGTID(op MysqlOperationGTID) error {
 	return nil
 }
 
-func (ma *MysqlApplier) OnHeartbeat(op MysqlOperationHeartbeat) error {
-	if err := ma.MergeCommit(); err != nil {
-		return err
+func (ma *MysqlApplier) EvaluateForceMergeCommit() bool {
+	appliedCheckpointLag := ma.LastAppliedTimestamp - ma.LastCheckpointTimestamp //second
+
+	// if ma.LastCommitted != op.LastCommitted {
+	// 	ma.Logger.Debug("Execute[mergetrx] -- pending commit count: %d, gtid count: %d", ma.PendingCommitCount, ma.GtidCount)
+	// 	return true
+	// } else
+	if ma.MergeCommitMaxCount >= 1 && ma.PendingCommitCount >= uint(ma.MergeCommitMaxCount) {
+		ma.Logger.Debug("Execute[mergetrx] -- force merge commit, pending commit count: %d over %d, gtid count: %d", ma.PendingCommitCount, ma.MergeCommitMaxCount, ma.GtidCount)
+		return true
+	} else if ma.MergeCommitMaxDelay >= 1 && appliedCheckpointLag >= ma.MergeCommitMaxDelay {
+		ma.Logger.Debug("Execute[mergetrx] -- force merge commit, checkpoint delay: %ds over %ds, gtid count: %d", appliedCheckpointLag, ma.MergeCommitMaxDelay, ma.GtidCount)
+		return true
 	}
-	return nil
+
+	return false
 }
 
 func (ma *MysqlApplier) MergeCommit() error {
-	if ma.CommitCount >= 1 {
+	if ma.PendingCommitCount >= 1 {
 		if err := ma.mysqlClient.Commit(); err != nil {
 			return err
 		}
 
-		ma.Logger.Debug("Execute[mergetrx] -- merge commit count: %d, gtid count: %d complate", ma.CommitCount, ma.GtidCount)
-		ma.CommitCount = 0
+		ma.PendingCommitCount = 0
 		ma.GtidCount = 0
 
 		ma.Checkpoint()

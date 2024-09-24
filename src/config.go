@@ -50,8 +50,8 @@ type DestinationSyncConfig struct {
 }
 
 type DestinationSyncMergeConfig struct {
-	MaxCount int `yaml:"max_count"`
-	MaxDelay int `yaml:"max_delay"`
+	MaxCount uint   `yaml:"max_count"`
+	MaxDelay uint32 `yaml:"max_delay"`
 }
 
 type DestinationSyncDmlConfig struct {

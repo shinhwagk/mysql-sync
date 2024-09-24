@@ -26,9 +26,9 @@ destination:
           autocommit: off
           replica_skip_errors: 1007,1008,1050,1051,1054,1060,1061,1068,1091,1146
       sync:
-        replicate:
-          do_db: test
-          ignore_tab: test.year_table
+        # replicate:
+        #   do_db: test
+        #   ignore_tab: test.year_table
         gtidsets: ""
         merge_commit:
           max_count:
@@ -38,15 +38,15 @@ destination:
           insert: replace # insert, replace
       prom:
         export: 9092
-    db3:
-      mysql:
-        dsn: "root:root_password@tcp(192.168.161.93:33028)/"
-      sync:
-        replicate:
-          do_db: test
-        gtidsets: ""
-        dml_mode:
-          update: replace # update, replace
-          insert: replace # insert, replace
-      prom:
-        export: 9093
+    # db3:
+    #   mysql:
+    #     dsn: "root:root_password@tcp(192.168.161.93:33028)/"
+    #   sync:
+    #     replicate:
+    #       do_db: test
+    #     gtidsets: ""
+    #     dml_mode:
+    #       update: replace # update, replace
+    #       insert: replace # insert, replace
+    #   prom:
+    #     export: 9093
