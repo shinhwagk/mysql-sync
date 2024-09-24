@@ -102,12 +102,11 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 			case MysqlOperationBinLogPos:
 				ma.Logger.Debug("Operation[binlogpos] -- timestamp: %d, server id: %d, file: %s, pos: %d, event: %s, ", op.GetTimestamp(), op.ServerID, op.File, op.Pos, op.Event)
 
-				ma.LastAppliedTimestamp = oper.GetTimestamp()
-
 				ma.ckpt.SetBinlogPos(op.File, op.Pos)
+
+				continue
 			case MysqlOperationHeartbeat:
 				ma.LastCheckpointTimestamp = ma.LastAppliedTimestamp
-				ma.LastAppliedTimestamp = oper.GetTimestamp()
 
 				ma.Logger.Trace("Operation[heartbeat]")
 
@@ -372,6 +371,8 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				ma.Logger.Error("unknow operation.")
 				return
 			}
+
+			ma.LastAppliedTimestamp = oper.GetTimestamp()
 
 			ma.metricCh <- MetricUnit{Name: MetricDestApplierOperations, Value: 1}
 			ma.metricCh <- MetricUnit{Name: MetricDestApplierTimestamp, Value: uint(ma.LastAppliedTimestamp)}
