@@ -172,7 +172,7 @@ func (mc *MysqlClient) Commit() error {
 	}
 	mc.tx = nil
 
-	mc.Logger.Debug("Execute[commit] -- complate")
+	mc.Logger.Debug("Execute[commit]")
 	return nil
 }
 
