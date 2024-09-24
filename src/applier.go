@@ -148,8 +148,6 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 					return
 				}
 
-				ma.GtidCount++
-
 				ma.State = StateGTID
 			case MysqlOperationDDLDatabase:
 				ma.LastAppliedTimestamp = oper.GetTimestamp()
@@ -502,6 +500,10 @@ func (ma *MysqlApplier) OnGTID(op MysqlOperationGTID) error {
 		}
 	}
 
+	if ma.GtidSkip {
+		return nil
+	}
+
 	if ma.LastCommitted != op.LastCommitted {
 		if err := ma.MergeCommit(); err != nil {
 			return err
@@ -510,6 +512,8 @@ func (ma *MysqlApplier) OnGTID(op MysqlOperationGTID) error {
 	}
 
 	ma.ckpt.SetTrxIdOfServerUUID(op.ServerUUID, uint(op.TrxID))
+
+	ma.GtidCount++
 
 	return nil
 }
@@ -541,9 +545,9 @@ func (ma *MysqlApplier) MergeCommit() error {
 		ma.PendingCommitCount = 0
 		ma.GtidCount = 0
 
-		ma.Checkpoint()
-
 		ma.metricCh <- MetricUnit{Name: MetricDestMergeTrx, Value: 1}
+
+		ma.Checkpoint()
 	}
 
 	return nil
