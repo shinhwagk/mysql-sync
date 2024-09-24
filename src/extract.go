@@ -122,7 +122,7 @@ func (bext *BinlogExtract) Start(ctx context.Context) {
 			bext.toMoCh(moblp)
 
 			if err := bext.handleQueryEvent(e, ev.Header); err != nil {
-				bext.Logger.Error("event: %s.", err)
+				bext.Logger.Error("event: %s, query: %s.", err, string(e.Query))
 				return
 			}
 		case *replication.XIDEvent:
@@ -135,7 +135,7 @@ func (bext *BinlogExtract) Start(ctx context.Context) {
 		case *replication.RotateEvent:
 			bext.Logger.Debug("Operation[binlogpos] -- server id: %d, file: %s, pos: %d, event: %s", moblp.ServerID, moblp.File, moblp.Pos, moblp.Event)
 
-			bext.toMoCh(moblp)
+			// bext.toMoCh(moblp)
 
 			switch ev.Header.EventType {
 			case replication.ROTATE_EVENT:
