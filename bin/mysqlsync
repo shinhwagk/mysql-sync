@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+
+VERSION=$1
+DOWNLOAD_URL="https://github.com/shinhwagk/mysql-sync/releases/download/${VERSION}/mysqlsync-amd64-${VERSION}"
+
+if [[ -f "bin/mysqlsync-amd64-${VERSION}" ]]; then
+  echo "vesrion: $VERSION"
+  cp bin/mysqlsync-amd64-${VERSION} bin/mysqlsync
+else
+  echo "vesrion: $VERSION, downloading, url: ${DOWNLOAD_URL}"
+  curl -Ls -o bin/mysqlsync-amd64-${VERSION} "$DOWNLOAD_URL" && chmod +x bin/mysqlsync
+fi
+
+START() {
+  if [[ -f "$PID_FILE" ]] && kill -0 $(cat "$PID_FILE"); then
+    echo "Service is already running (PID: $(cat "$PID_FILE"))"
+  else
+    echo "Starting mysqlsync..."
+    nohup "$BIN_PATH" >mysqlsync.log 2>&1 &
+    echo $! > "$PID_FILE"
+    echo "Service started with PID: $(cat "$PID_FILE")"
+  fi
+}
+
+STOP() {
+  if [[ -f "$PID_FILE" ]] && kill -0 $(cat "$PID_FILE"); then
+    echo "Stopping mysqlsync (PID: $(cat "$PID_FILE"))..."
+    kill $(cat "$PID_FILE")
+    rm -f "$PID_FILE"
+    echo "Service stopped."
+  else
+    echo "Service is not running."
+  fi
+}
+
+case "$1" in
+    start)
+        START
+        ;;
+    stop)
+        STOP
+        ;;
+    restart)
+        STOP
+        START
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart}"
+        exit 1
+esac
