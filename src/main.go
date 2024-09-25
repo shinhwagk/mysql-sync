@@ -52,6 +52,8 @@ func main() {
 		os.Exit(1)
 	}
 
+	logger.Info("Configuration: \n\n%+v\n\n", *config)
+
 	if *repl {
 		replication := NewReplication(*config)
 		replication.Start(ctx, cancel)
