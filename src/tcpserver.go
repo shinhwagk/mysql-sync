@@ -337,31 +337,28 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 
 	if float64(sendLatencyMs) > floodFactorThresholdLatencyMs || sendThroughput > floodFactorThresholdThroughput {
 		if sendThroughput > floodFactorThresholdThroughput {
-			afc.damping += (1 - floodFactorThresholdThroughput/sendThroughput)
+			afc.damping += sendThroughput / floodFactorThresholdThroughput * 0.1
+
 			afc.Logger.Debug("adaptive fetch -- floodFactorThresholdThroughput %.4f", floodFactorThresholdThroughput)
 		}
 
 		if float64(sendLatencyMs) > floodFactorThresholdLatencyMs {
-			afc.damping += (1 - floodFactorThresholdLatencyMs/float64(sendLatencyMs))
+			afc.damping += float64(sendLatencyMs) / floodFactorThresholdLatencyMs * 0.1
 			afc.Logger.Debug("adaptive fetch -- floodFactorThresholdLatencyMs %.4f", floodFactorThresholdLatencyMs)
 		}
 
-		if afc.damping >= 1 {
-			afc.Logger.Debug("adaptive fetch -- decrease %d", int(float64(afc.baseLineMaxCount)*decreaseFactor))
-			afc.baseLineMaxCount -= max(int(float64(afc.baseLineMaxCount)*decreaseFactor), minRcCnt)
+		afc.damping = max(afc.damping, 0.1) - 0.1
+
+		if afc.damping >= 0.1 {
+			afc.Logger.Debug("adaptive fetch -- decrease %d", int(float64(afc.baseLineMaxCount)*afc.damping))
+			afc.baseLineMaxCount -= max(int(float64(afc.baseLineMaxCount)*afc.damping), minRcCnt)
 			_fetchCount = afc.baseLineMaxCount
 			afc.damping = 0
 		}
 	} else {
-		factor := increaseFactor
-		if afc.floodFactor > 0 {
-			factor = afc.floodFactor
-		}
-		_fetchCount += max(int(float64(_fetchCount)*factor), minRcCnt)
+		_fetchCount += max(int(float64(_fetchCount)*increaseFactor), minRcCnt)
 
 		afc.Logger.Debug("adaptive fetch -- increase _fetchCount %d", _fetchCount)
-
-		afc.damping = max(afc.damping-0.1, 0)
 	}
 
 	afc.Logger.Debug("adaptive fetch -- damping %.4f", afc.damping)
