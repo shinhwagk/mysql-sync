@@ -143,7 +143,7 @@ func contains(value string, list []string) bool {
 	return false
 }
 
-func updateSlice(slice []int, newItem int) []int {
+func updateSliceFloat64(slice []float64, newItem float64) []float64 {
 	for i, value := range slice {
 		if value == 0 {
 			slice[i] = newItem
@@ -153,19 +153,20 @@ func updateSlice(slice []int, newItem int) []int {
 	return slice
 }
 
-func calculateAdjustedMean(slice []int) int {
-	sliceCopy := make([]int, len(slice))
+func calculateMeanWithoutMinMaxFloat64(slice []float64) float64 {
+	sliceCopy := make([]float64, len(slice))
 	copy(sliceCopy, slice)
 
-	sort.Ints(sliceCopy)
+	sort.Float64s(sliceCopy)
+	// sliceCopy = sliceCopy[1 : len(slice)-1]
 	sliceCopy = sliceCopy[1 : len(slice)-1]
 
-	total := 0
+	total := float64(0)
 	for _, value := range sliceCopy {
 		total += value
 	}
 
-	return total / len(sliceCopy)
+	return total / float64(len(sliceCopy))
 }
 
 func ConvertStringToUint16Slice(input string) ([]uint16, error) {

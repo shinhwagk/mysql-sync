@@ -1,0 +1,47 @@
+loglevel: debug
+consul:
+  addr: consul:8500
+replication:
+  name: "xxxx"
+  tcpaddr: "0.0.0.0:9998"
+  serverid: 9999
+  host: "192.168.161.93"
+  port: 33026
+  user: "root"
+  password: "root_password"
+  settings:
+    cache: 100000
+  prom:
+    export: 9091
+destination:
+  tcpaddr: "127.0.0.1:9998"
+  cache: 100000
+  destinations:
+    db2:
+      mysql:
+        dsn: "root:root_password@tcp(192.168.161.93:33027)/"
+        session_params:
+          foreign_key_checks: off
+          time_zone: '+00:00'
+          autocommit: off
+          replica_skip_errors: 1007,1008,1050,1051,1054,1060,1061,1068,1091,1146
+      sync:
+        replicate:
+          do_db: test
+          ignore_tab: test.year_table
+        gtidsets: ""
+        # update_mode: replace # update, replace
+        # insert_mode: replace # insert, replace
+      prom:
+        export: 9092
+    # db3:
+    #   mysql:
+    #     dsn: "root:root_password@tcp(192.168.161.93:33028)/"
+    #   sync:
+    #     replicate:
+    #       do_db: test
+    #     gtidsets: ""
+    #     update_mode: replace # replace
+    #     insert_mode: replace # replace
+    #   prom:
+    #     export: 9093
