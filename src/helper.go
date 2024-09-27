@@ -153,13 +153,13 @@ func updateSliceFloat64(slice []float64, newItem float64) []float64 {
 	return slice
 }
 
-func calculateMeanWithoutMinMaxFloat64(slice []float64) float64 {
+func calculateMeanWithoutMinFloat64(slice []float64) float64 {
 	sliceCopy := make([]float64, len(slice))
 	copy(sliceCopy, slice)
 
 	sort.Float64s(sliceCopy)
 	// sliceCopy = sliceCopy[1 : len(slice)-1]
-	sliceCopy = sliceCopy[1 : len(slice)-1]
+	sliceCopy = sliceCopy[1:]
 
 	total := float64(0)
 	for _, value := range sliceCopy {
