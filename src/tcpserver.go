@@ -284,7 +284,7 @@ func (ts *TCPServer) handleClients(listener net.Listener) {
 
 // Adaptive Fetch Count
 const minRcCnt int = 10
-const volatilityFactor = 0.1
+const increaseFactor = 0.1
 
 // const decreaseFactor = 0.05
 
@@ -335,7 +335,7 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 
 		afc.damping = 0
 	} else {
-		_fetchCount += max(int(float64(_fetchCount)*volatilityFactor), minRcCnt)
+		_fetchCount += max(int(float64(_fetchCount)*increaseFactor), minRcCnt)
 
 		afc.damping = max(afc.damping-0.1, 0)
 	}
