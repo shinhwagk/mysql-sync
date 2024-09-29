@@ -187,7 +187,7 @@ func (ts *TCPServer) distributor() {
 
 			sendLatencyMs := max(int(time.Since(sendStartTs).Milliseconds()), 1)
 
-			fetchCount = afc.EvaluateFetchCount(sendLatencyMs, len(ts.moCh))
+			fetchCount = afc.EvaluateFetchCount(sendLatencyMs, len(ts.moCh), ts.metricCh)
 
 			for len(ts.moCh) < fetchCount {
 				select {
@@ -298,7 +298,7 @@ type AdaptiveFetchCount struct {
 	adaptiveMaxTimeMs     int
 }
 
-func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapacity int) int {
+func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapacity int, metricCh chan<- MetricUnit) int {
 	_fetchCount := afc.fetchCount
 
 	// just first
@@ -352,9 +352,9 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 
 	afc.fetchCount = _fetchCount
 
-	afc.fetchCount = max(min(afc.baseLineMaxCount, filledCapacity)/minRcCnt*minRcCnt, minRcCnt)
-
 	afc.Logger.Debug("adaptive fetch -- fetchCount %d baseLineMaxCount %d ", _fetchCount, afc.baseLineMaxCount)
+
+	metricCh <- MetricUnit{Name: MetricTCPServerAdaptiveSendCount, Value: uint(_fetchCount)}
 
 	return _fetchCount
 }

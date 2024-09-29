@@ -38,6 +38,7 @@ const (
 	MetricDestApplierOperationDDLTableSkip
 
 	MetricTCPServerSendOperations
+	MetricTCPServerAdaptiveSendCount
 	MetricTCPServerOutgoing
 
 	MetricReplExtractorTimestamp
@@ -250,6 +251,8 @@ func (md *MetricDirector) Start(ctx context.Context) {
 				md.inc("tcp_server_outgoing_bytes", metric.Value, metric.LabelPair)
 			case MetricTCPServerSendOperations:
 				md.inc("tcp_server_send_operations", metric.Value, metric.LabelPair)
+			case MetricTCPServerAdaptiveSendCount:
+				md.set("tcp_server_adaptive_send_count", metric.Value, metric.LabelPair)
 			case MetricReplDMLInsert:
 				md.inc("dml_insert_total", metric.Value, metric.LabelPair)
 			case MetricReplDMLDelete:
