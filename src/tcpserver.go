@@ -38,9 +38,10 @@ type TCPServer struct {
 	Clients       map[string]*TCPServerClient
 	BatchID       uint
 	dsgsrsCh      chan<- DestStartGtidSetsRangeStr
+	maxTime       int
 }
 
-func NewTCPServer(logLevel int, listenAddress string, clientNames []string, moCh <-chan MysqlOperation, metricCh chan<- MetricUnit, destStartGtidSetsStrCh chan<- DestStartGtidSetsRangeStr) *TCPServer {
+func NewTCPServer(logLevel int, listenAddress string, clientNames []string, moCh <-chan MysqlOperation, metricCh chan<- MetricUnit, destStartGtidSetsStrCh chan<- DestStartGtidSetsRangeStr, maxTime int) *TCPServer {
 	clients := make(map[string]*TCPServerClient)
 
 	for _, name := range clientNames {
@@ -58,6 +59,7 @@ func NewTCPServer(logLevel int, listenAddress string, clientNames []string, moCh
 		Clients:       clients,
 		BatchID:       0,
 		dsgsrsCh:      destStartGtidSetsStrCh,
+		maxTime:       maxTime,
 	}
 }
 
@@ -166,7 +168,7 @@ func (ts *TCPServer) distributor() {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 
-	afc := NewAdaptiveFetchCount(ts.Logger, maxCapacity)
+	afc := NewAdaptiveFetchCount(ts.Logger, maxCapacity, ts.maxTime)
 
 	for {
 		select {
@@ -281,7 +283,6 @@ func (ts *TCPServer) handleClients(listener net.Listener) {
 }
 
 // Adaptive Fetch Count
-const maxSendLatencyMs int = 10 * 1000 // 10s
 const minRcCnt int = 10
 const volatilityFactor = 0.1
 
@@ -294,6 +295,7 @@ type AdaptiveFetchCount struct {
 	maxCapacity           int
 	fetchCount            int
 	damping               float64
+	adaptiveMaxTimeMs     int
 }
 
 func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapacity int) int {
@@ -305,43 +307,37 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 		return minRcCnt
 	}
 
-	flareFactor := float64(filledCapacity) / float64(afc.maxCapacity) * 0.3 // up to 30%
-
-	afc.Logger.Debug("adaptive fetch -- flareFactor %.4f", flareFactor)
-	afc.Logger.Debug("adaptive fetch -- filledCapacity %d", filledCapacity)
-
-	sendThroughput := float64(afc.fetchCount*1000) / float64(sendLatencyMs)
+	sendThroughput := float64(_fetchCount*1000) / float64(sendLatencyMs)
 	afc.sendThroughputHistory = updateSliceFloat64(afc.sendThroughputHistory, sendThroughput)
-
 	avgSendThroughput := calculateMeanWithoutMinFloat64(afc.sendThroughputHistory)
 
-	afc.Logger.Debug("adaptive fetch -- sendThroughput %.4f", sendThroughput)
-	afc.Logger.Debug("adaptive fetch -- avgSendThroughput %.4f", avgSendThroughput)
-	afc.Logger.Debug("adaptive fetch -- sendLatencyMs %d", sendLatencyMs)
+	flareFactor := float64(filledCapacity) / float64(afc.maxCapacity) * 0.3 // up to 30%
+	afc.Logger.Debug("adaptive fetch -- flareFactor %.4f filledCapacity %d", flareFactor, filledCapacity)
 
 	flareThresholdThroughput := avgSendThroughput * (flareFactor + 1)
-	// flareThresholdLatencyMs := float64(maxSendLatencyMs) * (flareFactor + 1)
 
-	afc.Logger.Debug("adaptive fetch -- sendThroughput %d avgSendThroughput %d flareThresholdThroughput %.4f", sendThroughput, avgSendThroughput, flareThresholdThroughput)
-	afc.Logger.Debug("adaptive fetch -- sendLatencyMs %d maxSendLatencyMs %.4f", sendLatencyMs, maxSendLatencyMs)
+	afc.Logger.Debug("adaptive fetch -- sendThroughput %.4f avgSendThroughput %.4f flareThresholdThroughput %.4f", sendThroughput, avgSendThroughput, flareThresholdThroughput)
+	afc.Logger.Debug("adaptive fetch -- sendLatencyMs %d maxSendLatencyMs %d", sendLatencyMs, afc.adaptiveMaxTimeMs)
 
-	if sendLatencyMs > maxSendLatencyMs {
-		afc.damping += float64(sendLatencyMs) / float64(maxSendLatencyMs) * 0.1
-	} else if sendThroughput > flareThresholdThroughput {
+	if sendLatencyMs > afc.adaptiveMaxTimeMs {
+		afc.damping += float64(sendLatencyMs) / float64(afc.adaptiveMaxTimeMs) * 0.1
+	}
+
+	if sendThroughput > flareThresholdThroughput {
 		afc.damping += sendThroughput / flareThresholdThroughput * 0.1
 	}
 
 	afc.Logger.Debug("adaptive fetch -- damping %.4f", afc.damping)
 
 	if afc.damping >= 0.1 {
-		afc.damping = 0
-
-		afc.baseLineMaxCount -= int(float64(afc.baseLineMaxCount) * volatilityFactor)
+		afc.baseLineMaxCount -= int(float64(afc.baseLineMaxCount) * afc.damping)
 		_fetchCount = afc.baseLineMaxCount
-	} else {
-		afc.damping = max(afc.damping-0.1, 0)
 
+		afc.damping = 0
+	} else {
 		_fetchCount += max(int(float64(_fetchCount)*volatilityFactor), minRcCnt)
+
+		afc.damping = max(afc.damping-0.1, 0)
 	}
 
 	afc.baseLineMaxCount = max(afc.baseLineMaxCount, _fetchCount)
@@ -356,12 +352,14 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 
 	afc.fetchCount = _fetchCount
 
+	afc.fetchCount = max(min(afc.baseLineMaxCount, filledCapacity)/minRcCnt*minRcCnt, minRcCnt)
+
 	afc.Logger.Debug("adaptive fetch -- fetchCount %d baseLineMaxCount %d ", _fetchCount, afc.baseLineMaxCount)
 
 	return _fetchCount
 }
 
-func NewAdaptiveFetchCount(logger *Logger, maxCapacity int) *AdaptiveFetchCount {
+func NewAdaptiveFetchCount(logger *Logger, maxCapacity int, maxTime int) *AdaptiveFetchCount {
 	return &AdaptiveFetchCount{
 		Logger:                logger,
 		sendThroughputHistory: make([]float64, 10),
@@ -369,5 +367,6 @@ func NewAdaptiveFetchCount(logger *Logger, maxCapacity int) *AdaptiveFetchCount 
 		maxCapacity:           maxCapacity,
 		fetchCount:            0,
 		damping:               0,
+		adaptiveMaxTimeMs:     maxTime,
 	}
 }

@@ -59,7 +59,7 @@ func (repl *Replication) Start(ctx context.Context, cancel context.CancelFunc) {
 	go func() {
 		defer cancelTs()
 		defer cancel()
-		tcpServer := NewTCPServer(repl.Logger.Level, repl.msc.Replication.TCPAddr, destNames, moCh, metricCh, destStartGtidSetsStrCh)
+		tcpServer := NewTCPServer(repl.Logger.Level, repl.msc.Replication.TCPAddr, destNames, moCh, metricCh, destStartGtidSetsStrCh, repl.msc.Replication.Transfer.MaxTimeMs)
 		tcpServer.Start(ctx)
 	}()
 
