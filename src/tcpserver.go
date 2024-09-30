@@ -311,7 +311,7 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 		sendThroughput := float64(_fetchCount*1000) / float64(sendLatencyMs)
 		avgSendThroughput := afc.calAvgSendThroughput(sendThroughput)
 
-		decrementFactor := max(float64(sendLatencyMs)/float64(afc.maxTimeMs), min((afc.lastAvgSendThroughput*0.9)/avgSendThroughput, 1.1))
+		decrementFactor := max(float64(sendLatencyMs)/float64(afc.maxTimeMs), min((afc.lastAvgSendThroughput*0.8)/avgSendThroughput, 1.1))
 
 		afc.Logger.Debug("adaptive fetch -- decrementFactor %.4f", decrementFactor)
 		afc.Logger.Debug("adaptive fetch -- sendThroughput %.4f avgSendThroughput %.4f lastAvgSendThroughput %.4f/%.4f", sendThroughput, avgSendThroughput, afc.lastAvgSendThroughput*0.9, afc.lastAvgSendThroughput)
