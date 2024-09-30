@@ -333,13 +333,13 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 		} else if time.Since(afc.calWindow).Seconds() >= float64(60) {
 			_fetchCount += minRcCnt * minIncrementFactor
 
-			afc.Logger.Debug("adaptive fetch -- incrementFactor %d increment %d", minRcCnt*minIncrementFactor)
+			afc.Logger.Debug("adaptive fetch -- increment %d", minRcCnt*minIncrementFactor)
 
 			afc.calWindow = time.Now()
 		}
 	}
 
-	afc.baseLineMaxCount = max(afc.baseLineMaxCount, _fetchCount)
+	afc.baseLineMaxCount = max(afc.baseLineMaxCount, minRcCnt*minIncrementFactor*10, _fetchCount)
 
 	_fetchCount = afc.baseLineMaxCount
 
