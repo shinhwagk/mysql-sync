@@ -55,7 +55,7 @@ type PrometheusConfig struct {
 }
 
 type TransferConfig struct {
-	MaxTimeMs int `yaml:"max_ms"`
+	MaxTime int `yaml:"max_time"`
 }
 
 type DestinationReplicateConfig struct {

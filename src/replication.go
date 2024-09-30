@@ -60,8 +60,9 @@ func (repl *Replication) Start(ctx context.Context, cancel context.CancelFunc) {
 		defer cancelTs()
 		defer cancel()
 
-		maxTimeMs := max(repl.msc.Replication.Transfer.MaxTimeMs, 1000)
-		tcpServer := NewTCPServer(repl.Logger.Level, repl.msc.Replication.TCPAddr, destNames, moCh, metricCh, destStartGtidSetsStrCh, maxTimeMs)
+		// seconds
+		maxTime := max(repl.msc.Replication.Transfer.MaxTime, 1)
+		tcpServer := NewTCPServer(repl.Logger.Level, repl.msc.Replication.TCPAddr, destNames, moCh, metricCh, destStartGtidSetsStrCh, maxTime)
 		tcpServer.Start(ctx)
 	}()
 

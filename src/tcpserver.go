@@ -295,8 +295,7 @@ type AdaptiveFetchCount struct {
 	maxCapacity           int
 	fetchCount            int
 	maxTimeMs             int
-	window                time.Time
-	damping               int
+	calWindow             time.Time
 }
 
 func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapacity int, metricCh chan<- MetricUnit) int {
@@ -311,37 +310,34 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 
 	afc.Logger.Debug("adaptive fetch -- filledCapacity %d", filledCapacity)
 
-	decrementFactor := float64(0)
+	// decrementFactor := float64(0)
 
 	sendThroughput := float64(_fetchCount*1000) / float64(sendLatencyMs)
 	flareThresholdThroughput := afc.calFlareThresholdThroughput(sendThroughput)
-	if sendThroughput > flareThresholdThroughput {
-		decrementFactor = sendThroughput / flareThresholdThroughput
-	}
 
-	if sendLatencyMs > afc.maxTimeMs {
-		decrementFactor = float64(sendLatencyMs) / float64(afc.maxTimeMs)
-	}
+	decrementFactor := max(
+		sendThroughput/flareThresholdThroughput,
+		float64(sendLatencyMs)/float64(afc.maxTimeMs),
+	)
 
 	afc.Logger.Debug("adaptive fetch -- sendThroughput %.4f flareThresholdThroughput %.4f", sendThroughput, flareThresholdThroughput)
 	afc.Logger.Debug("adaptive fetch -- sendLatencyMs %d maxSendLatencyMs %d", sendLatencyMs, afc.maxTimeMs)
 	afc.Logger.Debug("adaptive fetch -- decrementFactor %.4f", decrementFactor)
 
-	if decrementFactor > 0 {
+	if decrementFactor > 1 {
 		afc.baseLineMaxCount = int(float64(afc.baseLineMaxCount) / decrementFactor)
 		_fetchCount = afc.baseLineMaxCount
 
-		afc.damping++
+		afc.Logger.Debug("adaptive fetch -- decrement %d", afc.baseLineMaxCount-int(float64(afc.baseLineMaxCount)/decrementFactor))
 
-		afc.Logger.Debug("adaptive fetch -- decrement %d damping %d", afc.baseLineMaxCount-int(float64(afc.baseLineMaxCount)/decrementFactor), afc.damping)
-	} else {
-		if time.Since(afc.window).Minutes() >= 1 {
-			incrementFactor := minIncrementFactor * max(int(float64(filledCapacity)/float64(afc.maxCapacity)*10)-afc.damping, 1)
-			_fetchCount += minRcCnt * incrementFactor
-			afc.window = time.Now()
-			afc.Logger.Debug("adaptive fetch -- incrementFactor %d increment %d damping %d", incrementFactor, minRcCnt*incrementFactor, afc.damping)
-			afc.damping = 0
-		}
+		afc.calWindow = time.Now()
+	} else if time.Since(afc.calWindow).Seconds() >= float64(60) {
+		incrementFactor := int(float64(filledCapacity) / float64(afc.maxCapacity) * 10)
+		_fetchCount += minRcCnt * incrementFactor
+
+		afc.Logger.Debug("adaptive fetch -- incrementFactor %d increment %d", incrementFactor, minRcCnt*incrementFactor)
+
+		afc.calWindow = time.Now()
 	}
 
 	afc.baseLineMaxCount = max(afc.baseLineMaxCount, _fetchCount)
@@ -374,8 +370,7 @@ func NewAdaptiveFetchCount(logger *Logger, maxCapacity int, maxTime int) *Adapti
 		baseLineMaxCount:      0,
 		maxCapacity:           maxCapacity,
 		fetchCount:            0,
-		maxTimeMs:             maxTime,
-		window:                time.Now(),
-		damping:               0,
+		maxTimeMs:             maxTime * 1000,
+		calWindow:             time.Now(),
 	}
 }
