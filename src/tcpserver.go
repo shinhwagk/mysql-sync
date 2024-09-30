@@ -330,8 +330,6 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 			}
 
 			afc.lastAvgSendThroughput = 0
-
-			afc.calWindow = time.Now()
 		} else if time.Since(afc.calWindow).Seconds() >= float64(60) {
 			_fetchCount += minRcCnt * minIncrementFactor
 
