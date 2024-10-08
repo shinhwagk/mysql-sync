@@ -146,25 +146,8 @@ func (ts *TCPServer) distributor() {
 	defer ts.Logger.Info("Distributor closed.")
 
 	maxCapacity := cap(ts.moCh)
-	// const minRcCnt int = 10
-	// maxRcCnt := (maxCapacity * 5) / 100 / minRcCnt * minRcCnt // 5%
-
 	sendStartTs := time.Now()
-
-	// const maxSendLatencyMs int = 10 * 1000
-
 	noReadyMs := 0
-
-	// sendThroughputBaseLine := float64(0)
-	// sendBaseLineMaxCount := 0
-	// fetchCount := 0
-	// fetchCountLast := 0
-
-	// min delay 1ms
-	// sendThroughputHistory := make([]float64, 10) // maxSize must greater then 3
-
-	// moChFlood := false
-	// moChFloodFactor := float64(1)
 
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
@@ -202,10 +185,8 @@ func (ts *TCPServer) distributor() {
 				}
 			}
 
-			fetchStartTs := time.Now()
 			mos := ts.fetchMos(fetchCount)
-			fetchElapsedMs := int(time.Since(fetchStartTs).Milliseconds())
-			ts.Logger.Debug("Fetch mos(%d) from mo cache, elapsed ms(%d)", fetchCount, fetchElapsedMs)
+			ts.Logger.Debug("Fetch mos(%d) from mo cache", fetchCount)
 			ts.BatchID += 1
 			sendStartTs = time.Now()
 			ts.ClientsPush(mos)
