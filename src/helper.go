@@ -140,13 +140,16 @@ func medianInt(numbers []int) int {
 		return 0
 	}
 
-	sort.Ints(numbers)
+	numbersCopy := make([]int, len(numbers))
+	copy(numbersCopy, numbers)
 
-	n := len(numbers)
+	sort.Ints(numbersCopy)
+
+	n := len(numbersCopy)
 	if n%2 != 0 {
-		return numbers[n/2]
+		return numbersCopy[n/2]
 	}
-	return (numbers[n/2-1] + numbers[n/2]) / 2
+	return (numbersCopy[n/2-1] + numbersCopy[n/2]) / 2
 }
 
 func ConvertStringToUint16Slice(input string) ([]uint16, error) {
