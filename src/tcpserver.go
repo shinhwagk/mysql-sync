@@ -306,8 +306,6 @@ type AdaptiveFetchCount struct {
 func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapacity int) int {
 	_fetchCount := afc.fetchCount
 
-	afc.Logger.Debug("adaptive fetch -- filledCapacity %d", filledCapacity)
-
 	// just first
 	if _fetchCount == 0 {
 		afc.baseLineMaxCount = minRcCnt * minIncrementFactor * 10
@@ -336,19 +334,15 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 		afc.Logger.Debug("adaptive fetch -- timeDecrementFactor %.4f decrement %d", timeDecrementFactor, afc.baseLineMaxCount-int(float64(afc.baseLineMaxCount)/timeDecrementFactor))
 	}
 
-	if time.Since(afc.calWindow).Seconds() >= 10 {
+	if len(afc.sendLatencyMsHistogram[fcRoundedUpValue]) >= 11 && time.Since(afc.calWindow).Seconds() >= 10 {
 		medianSendLatencyMs := medianInt(afc.sendLatencyMsHistogram[fcRoundedUpValue])
 		medianSendLatencyMsHistory := afc.medianSendLatencyMsHistory[fcRoundedUpValue]
 
-		if medianSendLatencyMsHistory == 0 {
-			medianSendLatencyMsHistory = medianSendLatencyMs
-		}
-
-		if float64(medianSendLatencyMs)*0.9 > float64(medianSendLatencyMsHistory) {
+		if medianSendLatencyMs*90/100 > medianSendLatencyMsHistory {
 			afc.baseLineMaxCount -= 10
 			_fetchCount = afc.baseLineMaxCount
-		} else {
-			_fetchCount += 10
+		} else if medianSendLatencyMs <= medianSendLatencyMsHistory {
+			_fetchCount += _fetchCount / 10
 		}
 
 		afc.medianSendLatencyMsHistory[fcRoundedUpValue] = medianSendLatencyMs
@@ -370,7 +364,7 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 
 	afc.fetchCount = _fetchCount
 
-	afc.Logger.Debug("adaptive fetch -- fetchCount %d baseLineMaxCount %d", _fetchCount, afc.baseLineMaxCount)
+	afc.Logger.Debug("adaptive fetch -- fetchCount %d baseLineMaxCount %d filledCapacity %d", _fetchCount, afc.baseLineMaxCount, filledCapacity)
 
 	return _fetchCount
 }
