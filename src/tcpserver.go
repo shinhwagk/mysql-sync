@@ -322,6 +322,7 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 		afc.sendLatencyMsHistogram[fcRoundedUpValue] = append(afc.sendLatencyMsHistogram[fcRoundedUpValue], sendLatencyMs)
 	} else {
 		afc.sendLatencyMsHistogram[fcRoundedUpValue] = []int{sendLatencyMs}
+		afc.medianSendLatencyMsHistory[fcRoundedUpValue] = sendLatencyMs + sendLatencyMs/10
 	}
 
 	afc.Logger.Debug("adaptive fetch -- fcRoundedUpValue %d sendLatencyMs %d maxSendLatencyMs %d", fcRoundedUpValue, sendLatencyMs, afc.maxTimeMs)
@@ -337,10 +338,6 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 	if len(afc.sendLatencyMsHistogram[fcRoundedUpValue]) >= 11 && time.Since(afc.calWindow).Seconds() >= 10 {
 		medianSendLatencyMs := medianInt(afc.sendLatencyMsHistogram[fcRoundedUpValue])
 		medianSendLatencyMsHistory := afc.medianSendLatencyMsHistory[fcRoundedUpValue]
-
-		if medianSendLatencyMsHistory == 0 {
-			medianSendLatencyMsHistory = medianSendLatencyMs
-		}
 
 		if medianSendLatencyMs*9/10 > medianSendLatencyMsHistory {
 			afc.baseLineMaxCount -= 10
