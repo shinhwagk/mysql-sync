@@ -353,7 +353,7 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 
 		afc.calWindow = time.Now()
 
-		afc.Logger.Debug("adaptive fetch -- medianSendLatencyMs %d/%d medianSendLatencyMsHistory %d", medianSendLatencyMs, int(float64(medianSendLatencyMs)*0.9), medianSendLatencyMsHistory)
+		afc.Logger.Debug("adaptive fetch -- medianSendLatencyMs %d/%d medianSendLatencyMsHistory %d", medianSendLatencyMs, medianSendLatencyMs*9/10, medianSendLatencyMsHistory)
 	}
 
 	afc.printSendLatencyMsHistogram()
