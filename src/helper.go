@@ -126,14 +126,6 @@ func splitAndClean(s string) []string {
 	return results
 }
 
-//	func contains(arr []string, str string) bool {
-//		for _, item := range arr {
-//			if item == str {
-//				return true
-//			}
-//		}
-//		return false
-//	}
 func contains(value string, list []string) bool {
 	for _, v := range list {
 		if strings.TrimSpace(v) == value {
@@ -143,56 +135,18 @@ func contains(value string, list []string) bool {
 	return false
 }
 
-func updateSliceFloat64(slice []float64, newItem float64) []float64 {
-	for i, value := range slice {
-		if value == 0 {
-			slice[i] = newItem
-		}
-	}
-	slice = append(slice[1:], newItem)
-	return slice
-}
-
-func calculateMeanFloat64(slice []float64) float64 {
-	total := float64(0)
-	for _, value := range slice {
-		total += value
+func medianInt(numbers []int) int {
+	if len(numbers) == 0 {
+		return 0
 	}
 
-	return total / float64(len(slice))
-}
+	sort.Ints(numbers)
 
-func calculateMeanInt(slice []int) int {
-	total := 0
-	for _, value := range slice {
-		total += value
+	n := len(numbers)
+	if n%2 != 0 {
+		return numbers[n/2]
 	}
-
-	return total / len(slice)
-}
-
-func calculateMeanWithoutMaxFloat64(slice []float64) float64 {
-	sliceCopy := make([]float64, len(slice))
-	copy(sliceCopy, slice)
-	sort.Float64s(sliceCopy)
-
-	if len(sliceCopy) >= 2 {
-		sliceCopy = sliceCopy[:len(sliceCopy)-1]
-	}
-
-	return calculateMeanFloat64(sliceCopy)
-}
-
-func calculateMeanWithoutMaxInt(slice []int) int {
-	sliceCopy := make([]int, len(slice))
-	copy(sliceCopy, slice)
-	sort.Ints(sliceCopy)
-
-	if len(sliceCopy) >= 2 {
-		sliceCopy = sliceCopy[:len(sliceCopy)-1]
-	}
-
-	return calculateMeanInt(sliceCopy)
+	return (numbers[n/2-1] + numbers[n/2]) / 2
 }
 
 func ConvertStringToUint16Slice(input string) ([]uint16, error) {
