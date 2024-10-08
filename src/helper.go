@@ -162,6 +162,15 @@ func calculateMeanFloat64(slice []float64) float64 {
 	return total / float64(len(slice))
 }
 
+func calculateMeanInt(slice []int) int {
+	total := 0
+	for _, value := range slice {
+		total += value
+	}
+
+	return total / len(slice)
+}
+
 func calculateMeanWithoutMaxFloat64(slice []float64) float64 {
 	sliceCopy := make([]float64, len(slice))
 	copy(sliceCopy, slice)
@@ -172,6 +181,18 @@ func calculateMeanWithoutMaxFloat64(slice []float64) float64 {
 	}
 
 	return calculateMeanFloat64(sliceCopy)
+}
+
+func calculateMeanWithoutMaxInt(slice []int) int {
+	sliceCopy := make([]int, len(slice))
+	copy(sliceCopy, slice)
+	sort.Ints(sliceCopy)
+
+	if len(sliceCopy) >= 2 {
+		sliceCopy = sliceCopy[:len(sliceCopy)-1]
+	}
+
+	return calculateMeanInt(sliceCopy)
 }
 
 func ConvertStringToUint16Slice(input string) ([]uint16, error) {
