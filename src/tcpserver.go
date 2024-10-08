@@ -292,14 +292,14 @@ const minIncrementFactor = 10
 // const decreaseFactor = 0.05
 
 type AdaptiveFetchCount struct {
-	Logger                   *Logger
-	baseLineMaxCount         int
-	maxCapacity              int
-	fetchCount               int
-	maxTimeMs                int
-	calWindow                time.Time
-	sendThroughputHistogram  map[int][]int
-	avgSendThroughputHistory map[int]int
+	Logger                     *Logger
+	baseLineMaxCount           int
+	maxCapacity                int
+	fetchCount                 int
+	maxTimeMs                  int
+	calWindow                  time.Time
+	sendLatencyMsHistogram     map[int][]int
+	medianSendLatencyMsHistory map[int]int
 }
 
 // sendLatencyMs min 1ms
@@ -317,16 +317,16 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 
 	fcRoundedUpValue := ((_fetchCount + 99) / 100) * 100 // round up to an integer
 
-	if _, exists := afc.sendThroughputHistogram[fcRoundedUpValue]; exists {
-		if len(afc.sendThroughputHistogram[fcRoundedUpValue]) >= 11 {
-			afc.sendThroughputHistogram[fcRoundedUpValue] = afc.sendThroughputHistogram[fcRoundedUpValue][1:]
+	if _, exists := afc.sendLatencyMsHistogram[fcRoundedUpValue]; exists {
+		if len(afc.sendLatencyMsHistogram[fcRoundedUpValue]) >= 11 {
+			afc.sendLatencyMsHistogram[fcRoundedUpValue] = afc.sendLatencyMsHistogram[fcRoundedUpValue][1:]
 		}
-		afc.sendThroughputHistogram[fcRoundedUpValue] = append(afc.sendThroughputHistogram[fcRoundedUpValue], sendLatencyMs)
+		afc.sendLatencyMsHistogram[fcRoundedUpValue] = append(afc.sendLatencyMsHistogram[fcRoundedUpValue], sendLatencyMs)
 	} else {
-		afc.sendThroughputHistogram[fcRoundedUpValue] = []int{sendLatencyMs}
+		afc.sendLatencyMsHistogram[fcRoundedUpValue] = []int{sendLatencyMs}
 	}
 
-	afc.Logger.Debug("adaptive fetch -- flooredValue %d sendLatencyMs %d maxSendLatencyMs %d", fcRoundedUpValue, sendLatencyMs, afc.maxTimeMs)
+	afc.Logger.Debug("adaptive fetch -- fcRoundedUpValue %d sendLatencyMs %d maxSendLatencyMs %d", fcRoundedUpValue, sendLatencyMs, afc.maxTimeMs)
 
 	timeDecrementFactor := float64(sendLatencyMs) / float64(afc.maxTimeMs)
 	if timeDecrementFactor > 1 {
@@ -337,8 +337,8 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 	}
 
 	if time.Since(afc.calWindow).Seconds() >= 10 {
-		medianSendLatencyMs := medianInt(afc.sendThroughputHistogram[fcRoundedUpValue])
-		medianSendLatencyMsHistory := afc.avgSendThroughputHistory[fcRoundedUpValue]
+		medianSendLatencyMs := medianInt(afc.sendLatencyMsHistogram[fcRoundedUpValue])
+		medianSendLatencyMsHistory := afc.medianSendLatencyMsHistory[fcRoundedUpValue]
 
 		if float64(medianSendLatencyMs)*0.9 > float64(medianSendLatencyMsHistory) {
 			afc.baseLineMaxCount -= 10
@@ -347,14 +347,14 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 			_fetchCount += 10
 		}
 
-		afc.avgSendThroughputHistory[fcRoundedUpValue] = medianSendLatencyMs
+		afc.medianSendLatencyMsHistory[fcRoundedUpValue] = medianSendLatencyMs
 
 		afc.calWindow = time.Now()
 
-		afc.Logger.Debug("adaptive fetch -- avgSendThroughput %d avgSendThroughputHistory %d", medianSendLatencyMs, medianSendLatencyMsHistory)
+		afc.Logger.Debug("adaptive fetch -- medianSendLatencyMs %d medianSendLatencyMsHistory %d", medianSendLatencyMs, medianSendLatencyMsHistory)
 	}
 
-	afc.printSendThroughputHistogram()
+	afc.printSendLatencyMsHistogram()
 
 	afc.baseLineMaxCount = max(afc.baseLineMaxCount, _fetchCount)
 
@@ -371,16 +371,16 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 	return _fetchCount
 }
 
-func (afc *AdaptiveFetchCount) printSendThroughputHistogram() {
-	keys := make([]int, 0, len(afc.sendThroughputHistogram))
-	for key := range afc.sendThroughputHistogram {
+func (afc *AdaptiveFetchCount) printSendLatencyMsHistogram() {
+	keys := make([]int, 0, len(afc.sendLatencyMsHistogram))
+	for key := range afc.sendLatencyMsHistogram {
 		keys = append(keys, key)
 	}
 
 	sort.Ints(keys)
 
 	for _, key := range keys {
-		originalValues := afc.sendThroughputHistogram[key]
+		originalValues := afc.sendLatencyMsHistogram[key]
 		valuesCopy := make([]int, len(originalValues))
 		copy(valuesCopy, originalValues)
 		sort.Ints(valuesCopy)
@@ -390,13 +390,13 @@ func (afc *AdaptiveFetchCount) printSendThroughputHistogram() {
 
 func NewAdaptiveFetchCount(logger *Logger, maxCapacity int, maxTime int) *AdaptiveFetchCount {
 	return &AdaptiveFetchCount{
-		Logger:                   logger,
-		baseLineMaxCount:         0,
-		maxCapacity:              maxCapacity,
-		fetchCount:               0,
-		maxTimeMs:                maxTime * 1000,
-		calWindow:                time.Now(),
-		avgSendThroughputHistory: make(map[int]int),
-		sendThroughputHistogram:  make(map[int][]int),
+		Logger:                     logger,
+		baseLineMaxCount:           0,
+		maxCapacity:                maxCapacity,
+		fetchCount:                 0,
+		maxTimeMs:                  maxTime * 1000,
+		calWindow:                  time.Now(),
+		medianSendLatencyMsHistory: make(map[int]int),
+		sendLatencyMsHistogram:     make(map[int][]int),
 	}
 }
