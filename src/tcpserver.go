@@ -345,7 +345,7 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 		if medianSendLatencyMs*9/10 > medianSendLatencyMsHistory {
 			afc.baseLineMaxCount -= 10
 			_fetchCount = afc.baseLineMaxCount
-		} else if medianSendLatencyMs <= medianSendLatencyMsHistory {
+		} else {
 			_fetchCount += 100
 		}
 
