@@ -350,7 +350,7 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 
 		afc.calWindow = time.Now()
 
-		afc.Logger.Debug("adaptive fetch -- avgSendThroughput %.4f throughputDecrementFactor %d", avgSendThroughput, throughputDecrementFactor)
+		afc.Logger.Debug("adaptive fetch -- avgSendThroughput %.4f throughputDecrementFactor %.4f", avgSendThroughput, throughputDecrementFactor)
 
 	}
 
