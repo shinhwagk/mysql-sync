@@ -337,9 +337,10 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 	}
 
 	if time.Since(afc.calWindow).Seconds() >= 10 {
-		avgSendThroughput := calculateMeanWithoutMaxInt(afc.sendThroughputHistogram[fcRoundedUpValue])
+		avgSendThroughput := float64(calculateMeanWithoutMaxInt(afc.sendThroughputHistogram[fcRoundedUpValue])) * 0.9
+		avgSendThroughputHistory := float64(afc.avgSendThroughputHistory[fcRoundedUpValue])
 
-		throughputDecrementFactor := float64(avgSendThroughput) * 0.9 / float64(afc.avgSendThroughputHistory[fcRoundedUpValue])
+		throughputDecrementFactor := avgSendThroughput / avgSendThroughputHistory
 		if throughputDecrementFactor > 1 {
 			afc.baseLineMaxCount -= 10
 			_fetchCount = afc.baseLineMaxCount
@@ -351,7 +352,7 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 
 		afc.calWindow = time.Now()
 
-		afc.Logger.Debug("adaptive fetch -- avgSendThroughput %.4f throughputDecrementFactor %.4f", avgSendThroughput, throughputDecrementFactor)
+		afc.Logger.Debug("adaptive fetch -- avgSendThroughput %d avgSendThroughputHistory %d throughputDecrementFactor %.4f", int(avgSendThroughput), int(avgSendThroughputHistory), throughputDecrementFactor)
 	}
 
 	afc.printSendThroughputHistogram()
