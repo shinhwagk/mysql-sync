@@ -156,7 +156,7 @@ func (ts *TCPServer) distributor() {
 
 	// sendThroughputBaseLine := float64(0)
 	// sendBaseLineMaxCount := 0
-	fetchCount := 0
+	// fetchCount := 0
 	// fetchCountLast := 0
 
 	// min delay 1ms
@@ -187,7 +187,9 @@ func (ts *TCPServer) distributor() {
 
 			sendLatencyMs := max(int(time.Since(sendStartTs).Milliseconds()), 1)
 
-			fetchCount = afc.EvaluateFetchCount(sendLatencyMs, len(ts.moCh), ts.metricCh)
+			fetchCount := afc.EvaluateFetchCount(sendLatencyMs, len(ts.moCh))
+
+			ts.metricCh <- MetricUnit{Name: MetricTCPServerAdaptiveSendCount, Value: uint(fetchCount)}
 
 			for len(ts.moCh) < fetchCount {
 				select {
@@ -289,17 +291,18 @@ const minIncrementFactor = 10
 // const decreaseFactor = 0.05
 
 type AdaptiveFetchCount struct {
-	Logger                *Logger
-	sendThroughputHistory []float64
-	baseLineMaxCount      int
-	maxCapacity           int
-	fetchCount            int
-	maxTimeMs             int
-	calWindow             time.Time
-	lastAvgSendThroughput float64
+	Logger                   *Logger
+	baseLineMaxCount         int
+	maxCapacity              int
+	fetchCount               int
+	maxTimeMs                int
+	calWindow                time.Time
+	sendThroughputHistogram  map[int][]float64
+	avgSendThroughputHistory map[int]float64
 }
 
-func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapacity int, metricCh chan<- MetricUnit) int {
+// sendLatencyMs min 1ms
+func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapacity int) int {
 	_fetchCount := afc.fetchCount
 
 	afc.Logger.Debug("adaptive fetch -- filledCapacity %d", filledCapacity)
@@ -307,39 +310,54 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 	// just first
 	if _fetchCount == 0 {
 		afc.baseLineMaxCount = minRcCnt * minIncrementFactor * 10
-	} else {
-		sendThroughput := float64(_fetchCount*1000) / float64(sendLatencyMs)
-		avgSendThroughput := afc.calAvgSendThroughput(sendThroughput)
-
-		decrementFactor := max(float64(sendLatencyMs)/float64(afc.maxTimeMs), min((afc.lastAvgSendThroughput*0.8)/avgSendThroughput, 1.1))
-
-		afc.Logger.Debug("adaptive fetch -- decrementFactor %.4f", decrementFactor)
-		afc.Logger.Debug("adaptive fetch -- sendThroughput %.4f avgSendThroughput %.4f lastAvgSendThroughput %.4f/%.4f", sendThroughput, avgSendThroughput, afc.lastAvgSendThroughput*0.9, afc.lastAvgSendThroughput)
-		afc.Logger.Debug("adaptive fetch -- sendLatencyMs %d maxSendLatencyMs %d", sendLatencyMs, afc.maxTimeMs)
-
-		afc.lastAvgSendThroughput = avgSendThroughput
-
-		if decrementFactor > 1 {
-			afc.baseLineMaxCount = int(float64(afc.baseLineMaxCount) / decrementFactor)
-			_fetchCount = afc.baseLineMaxCount
-
-			afc.Logger.Debug("adaptive fetch -- decrement %d", afc.baseLineMaxCount-int(float64(afc.baseLineMaxCount)/decrementFactor))
-
-			for i := range afc.sendThroughputHistory {
-				afc.sendThroughputHistory[i] = 0.0
-			}
-
-			afc.lastAvgSendThroughput = 0
-		} else if time.Since(afc.calWindow).Seconds() >= float64(60) {
-			_fetchCount += minRcCnt * minIncrementFactor
-
-			afc.Logger.Debug("adaptive fetch -- increment %d", minRcCnt*minIncrementFactor)
-
-			afc.calWindow = time.Now()
-		}
+		afc.fetchCount = afc.baseLineMaxCount
+		return afc.fetchCount
 	}
 
-	afc.baseLineMaxCount = max(afc.baseLineMaxCount, minRcCnt*minIncrementFactor*10, _fetchCount)
+	flooredValue := ((_fetchCount + 99) / 100) * 100 // round up to an integer
+	flooredValueThroughput := float64(_fetchCount) * 1000 / max(float64(sendLatencyMs), 1)
+
+	if _, exists := afc.sendThroughputHistogram[flooredValue]; exists {
+		if len(afc.sendThroughputHistogram[flooredValue]) >= 10 {
+			afc.sendThroughputHistogram[flooredValue] = afc.sendThroughputHistogram[flooredValue][1:]
+		}
+		afc.sendThroughputHistogram[flooredValue] = append(afc.sendThroughputHistogram[flooredValue], flooredValueThroughput)
+	} else {
+		afc.sendThroughputHistogram[flooredValue] = []float64{flooredValueThroughput}
+	}
+
+	afc.Logger.Debug("adaptive fetch -- flooredValue %d flooredValueThroughput %.4f", flooredValue, flooredValueThroughput)
+	afc.Logger.Debug("adaptive fetch -- sendLatencyMs %d maxSendLatencyMs %d", sendLatencyMs, afc.maxTimeMs)
+
+	timeDecrementFactor := float64(sendLatencyMs) / float64(afc.maxTimeMs)
+	if timeDecrementFactor > 1 {
+		afc.baseLineMaxCount = int(float64(afc.baseLineMaxCount) / timeDecrementFactor)
+		_fetchCount = afc.baseLineMaxCount
+
+		afc.Logger.Debug("adaptive fetch -- timeDecrementFactor %.4f decrement %d", timeDecrementFactor, afc.baseLineMaxCount-int(float64(afc.baseLineMaxCount)/timeDecrementFactor))
+	}
+
+	if time.Since(afc.calWindow).Seconds() >= float64(10) {
+		avgSendThroughput := calculateMeanWithoutMaxFloat64(afc.sendThroughputHistogram[flooredValue])
+
+		throughputDecrementFactor := afc.avgSendThroughputHistory[flooredValue] * 0.9 / avgSendThroughput
+		if throughputDecrementFactor > 1 {
+			afc.baseLineMaxCount -= 10
+			_fetchCount = afc.baseLineMaxCount
+		} else {
+			_fetchCount += 10
+		}
+
+		afc.avgSendThroughputHistory[flooredValue] = avgSendThroughput
+
+		afc.calWindow = time.Now()
+	}
+
+	for key, values := range afc.sendThroughputHistogram {
+		afc.Logger.Debug("adaptive fetch -- sendThroughputHistogram Key: %d, Values: %#v\n", key, values)
+	}
+
+	afc.baseLineMaxCount = max(afc.baseLineMaxCount, _fetchCount)
 
 	_fetchCount = afc.baseLineMaxCount
 
@@ -347,29 +365,22 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 	_fetchCount = _fetchCount / minRcCnt * minRcCnt
 	_fetchCount = max(_fetchCount, minRcCnt)
 
-	metricCh <- MetricUnit{Name: MetricTCPServerAdaptiveSendCount, Value: uint(_fetchCount)}
-
 	afc.fetchCount = _fetchCount
 
-	afc.Logger.Debug("adaptive fetch -- fetchCount %d baseLineMaxCount %d ", _fetchCount, afc.baseLineMaxCount)
+	afc.Logger.Debug("adaptive fetch -- fetchCount %d baseLineMaxCount %d", _fetchCount, afc.baseLineMaxCount)
 
 	return _fetchCount
 }
 
-func (afc *AdaptiveFetchCount) calAvgSendThroughput(sendThroughput float64) float64 {
-	afc.sendThroughputHistory = updateSliceFloat64(afc.sendThroughputHistory, sendThroughput)
-	return calculateMeanFloat64(afc.sendThroughputHistory)
-}
-
 func NewAdaptiveFetchCount(logger *Logger, maxCapacity int, maxTime int) *AdaptiveFetchCount {
 	return &AdaptiveFetchCount{
-		Logger:                logger,
-		sendThroughputHistory: make([]float64, 10),
-		baseLineMaxCount:      0,
-		maxCapacity:           maxCapacity,
-		fetchCount:            0,
-		maxTimeMs:             maxTime * 1000,
-		calWindow:             time.Now(),
-		lastAvgSendThroughput: 0,
+		Logger:                   logger,
+		baseLineMaxCount:         0,
+		maxCapacity:              maxCapacity,
+		fetchCount:               0,
+		maxTimeMs:                maxTime * 1000,
+		calWindow:                time.Now(),
+		avgSendThroughputHistory: make(map[int]float64),
+		sendThroughputHistogram:  make(map[int][]float64),
 	}
 }
