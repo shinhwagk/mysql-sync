@@ -318,7 +318,7 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 	fcRoundedUpValue := ((_fetchCount + 99) / 100) * 100 // round up to an integer
 
 	if _, exists := afc.sendThroughputHistogram[fcRoundedUpValue]; exists {
-		if len(afc.sendThroughputHistogram[fcRoundedUpValue]) >= 10 {
+		if len(afc.sendThroughputHistogram[fcRoundedUpValue]) >= 11 {
 			afc.sendThroughputHistogram[fcRoundedUpValue] = afc.sendThroughputHistogram[fcRoundedUpValue][1:]
 		}
 		afc.sendThroughputHistogram[fcRoundedUpValue] = append(afc.sendThroughputHistogram[fcRoundedUpValue], sendLatencyMs)
@@ -336,7 +336,7 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 		afc.Logger.Debug("adaptive fetch -- timeDecrementFactor %.4f decrement %d", timeDecrementFactor, afc.baseLineMaxCount-int(float64(afc.baseLineMaxCount)/timeDecrementFactor))
 	}
 
-	if time.Since(afc.calWindow).Seconds() >= 11 {
+	if time.Since(afc.calWindow).Seconds() >= 10 {
 		medianSendLatencyMs := medianInt(afc.sendThroughputHistogram[fcRoundedUpValue])
 		medianSendLatencyMsHistory := afc.avgSendThroughputHistory[fcRoundedUpValue]
 
