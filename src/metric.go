@@ -26,6 +26,7 @@ const (
 	MetricDestTrx
 	MetricDestMergeTrx
 	MetricDestApplierOperations
+	MetricDestApplierOperationsCache
 	MetricDestApplierOperationDMLUpdate
 	MetricDestApplierOperationDMLUpdateSkip
 	MetricDestApplierOperationDMLDelete
@@ -48,6 +49,7 @@ const (
 	MetricReplDDLDatabase
 	MetricReplDDLTable
 	MetricReplExtractorOperations
+	MetricReplExtractorOperationsCache
 	MetricReplExtractorOperationDMLUpdate
 	MetricReplExtractorOperationDMLDelete
 	MetricReplExtractorOperationDMLInsert
@@ -207,6 +209,8 @@ func (md *MetricDirector) Start(ctx context.Context) {
 				md.inc("tcp_client_receive_operations", metric.Value, metric.LabelPair)
 			case MetricDestApplierOperations:
 				md.inc("applier_operations", metric.Value, metric.LabelPair)
+			case MetricDestApplierOperationsCache:
+				md.set("applier_operations_cache", metric.Value, metric.LabelPair)
 			case MetricDestApplierOperationDMLDelete:
 				md.inc("applier_operation_dml_delete_total", metric.Value, metric.LabelPair)
 			case MetricDestApplierOperationDMLDeleteSkip:
@@ -246,6 +250,8 @@ func (md *MetricDirector) Start(ctx context.Context) {
 				md.inc("extractor_operation_ddl_table_total", metric.Value, metric.LabelPair)
 			case MetricReplExtractorOperations:
 				md.inc("extractor_operations", metric.Value, metric.LabelPair)
+			case MetricReplExtractorOperationsCache:
+				md.set("extractor_operations_cache", metric.Value, metric.LabelPair)
 
 			case MetricTCPServerOutgoing:
 				md.inc("tcp_server_outgoing_bytes", metric.Value, metric.LabelPair)

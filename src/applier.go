@@ -69,6 +69,9 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 	defer ma.Logger.Info("stopped.")
 
 	for {
+
+		ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationsCache, Value: uint(len(moCh))}
+
 		select {
 		// case <-time.After(time.Millisecond * 100):
 		case <-ctx.Done():
