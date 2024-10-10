@@ -316,15 +316,11 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 	afc.lastSendLatencyMs = sendLatencyMs
 	afc.lastSendThroughput = sendThroughput
 
-	_fetchCount = min(afc.baseLineMaxCount, filledCapacity)
-	_fetchCount = _fetchCount / MinRcCnt * MinRcCnt
-	_fetchCount = max(_fetchCount, MinRcCnt)
+	afc.fetchCount = max(min(afc.baseLineMaxCount, filledCapacity)/MinRcCnt*MinRcCnt, MinRcCnt)
 
-	afc.fetchCount = _fetchCount
+	afc.Logger.Debug("adaptive fetch -- fetchCount %d baseLineMaxCount %d filledCapacity %d", afc.fetchCount, afc.baseLineMaxCount, filledCapacity)
 
-	afc.Logger.Debug("adaptive fetch -- fetchCount %d baseLineMaxCount %d filledCapacity %d", _fetchCount, afc.baseLineMaxCount, filledCapacity)
-
-	return _fetchCount
+	return afc.fetchCount
 }
 
 func NewAdaptiveFetchCount(logger *Logger, maxTime int) *AdaptiveFetchCount {
