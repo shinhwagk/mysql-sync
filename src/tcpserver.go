@@ -282,14 +282,14 @@ type AdaptiveFetchCount struct {
 
 // sendLatencyMs min 1ms
 func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapacity int) int {
-	_fetchCount := afc.fetchCount
-
 	// just first
-	if _fetchCount == 0 {
+	if afc.fetchCount == 0 {
 		afc.baseLineMaxCount = max(filledCapacity/100/MinRcCnt*MinRcCnt, MinRcCnt)
 		afc.fetchCount = afc.baseLineMaxCount
 		return afc.fetchCount
 	}
+
+	_fetchCount := afc.fetchCount
 
 	timeDecrementFactor := float64(sendLatencyMs) / float64(afc.maxTimeMs)
 	sendThroughput := float64(afc.fetchCount) * 1000 / float64(sendLatencyMs)
