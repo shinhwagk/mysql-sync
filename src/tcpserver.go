@@ -293,15 +293,14 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 	}
 
 	timeDecrementFactor := float64(sendLatencyMs) / float64(afc.maxTimeMs)
+	sendThroughput := float64(afc.fetchCount) * 1000 / float64(sendLatencyMs)
+
 	if timeDecrementFactor > 1 {
 		afc.baseLineMaxCount = int(float64(afc.baseLineMaxCount) / timeDecrementFactor)
 		_fetchCount = afc.baseLineMaxCount
 
 		afc.Logger.Debug("adaptive fetch -- timeDecrementFactor %.4f decrement %d", timeDecrementFactor, afc.baseLineMaxCount-int(float64(afc.baseLineMaxCount)/timeDecrementFactor))
-	}
-
-	sendThroughput := float64(afc.fetchCount) * 1000 / float64(sendLatencyMs)
-	if afc.fetchCount >= afc.lastFetchCount {
+	} else if afc.fetchCount >= afc.lastFetchCount {
 		if sendThroughput*1.1 >= afc.lastSendThroughput || float64(sendLatencyMs) <= float64(afc.lastSendLatencyMs)*1.1 {
 			_fetchCount += 100
 		} else {
@@ -314,7 +313,10 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 	afc.lastSendLatencyMs = sendLatencyMs
 	afc.lastSendThroughput = sendThroughput
 
-	afc.baseLineMaxCount = max(afc.baseLineMaxCount, _fetchCount, filledCapacity/100)
+	if !(timeDecrementFactor > 1) {
+		afc.baseLineMaxCount = max(afc.baseLineMaxCount, _fetchCount, filledCapacity/100)
+	}
+
 	_fetchCount = min(afc.baseLineMaxCount, filledCapacity)
 	_fetchCount = _fetchCount / minRcCnt * minRcCnt
 	_fetchCount = max(_fetchCount, minRcCnt)
