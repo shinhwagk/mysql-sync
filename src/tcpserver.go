@@ -6,7 +6,6 @@ import (
 	"encoding/gob"
 	"math"
 	"net"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -152,7 +151,7 @@ func (ts *TCPServer) distributor() {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 
-	afc := NewAdaptiveFetchCount(ts.Logger, maxCapacity, ts.maxTime)
+	afc := NewAdaptiveFetchCount(ts.Logger, ts.maxTime)
 
 	for {
 		select {
@@ -273,14 +272,13 @@ const minIncrementFactor = 10
 // const decreaseFactor = 0.05
 
 type AdaptiveFetchCount struct {
-	Logger                     *Logger
-	baseLineMaxCount           int
-	maxCapacity                int
-	fetchCount                 int
-	maxTimeMs                  int
-	calWindow                  time.Time
-	sendLatencyMsHistogram     map[int][]int
-	medianSendLatencyMsHistory map[int]int
+	Logger             *Logger
+	baseLineMaxCount   int
+	fetchCount         int
+	maxTimeMs          int
+	lastSendLatencyMs  int
+	lastSendThroughput float64
+	lastFetchCount     int
 }
 
 // sendLatencyMs min 1ms
@@ -294,20 +292,6 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 		return afc.fetchCount
 	}
 
-	fcRoundedUpValue := ((_fetchCount + 99) / 100) * 100 // round up to an integer
-
-	if _, exists := afc.sendLatencyMsHistogram[fcRoundedUpValue]; exists {
-		if len(afc.sendLatencyMsHistogram[fcRoundedUpValue]) >= 11 {
-			afc.sendLatencyMsHistogram[fcRoundedUpValue] = afc.sendLatencyMsHistogram[fcRoundedUpValue][1:]
-		}
-		afc.sendLatencyMsHistogram[fcRoundedUpValue] = append(afc.sendLatencyMsHistogram[fcRoundedUpValue], sendLatencyMs)
-	} else {
-		afc.sendLatencyMsHistogram[fcRoundedUpValue] = []int{sendLatencyMs}
-		afc.medianSendLatencyMsHistory[fcRoundedUpValue] = sendLatencyMs + sendLatencyMs/10
-	}
-
-	afc.Logger.Debug("adaptive fetch -- fcRoundedUpValue %d sendLatencyMs %d maxSendLatencyMs %d", fcRoundedUpValue, sendLatencyMs, afc.maxTimeMs)
-
 	timeDecrementFactor := float64(sendLatencyMs) / float64(afc.maxTimeMs)
 	if timeDecrementFactor > 1 {
 		afc.baseLineMaxCount = int(float64(afc.baseLineMaxCount) / timeDecrementFactor)
@@ -316,30 +300,22 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 		afc.Logger.Debug("adaptive fetch -- timeDecrementFactor %.4f decrement %d", timeDecrementFactor, afc.baseLineMaxCount-int(float64(afc.baseLineMaxCount)/timeDecrementFactor))
 	}
 
-	if len(afc.sendLatencyMsHistogram[fcRoundedUpValue]) >= 11 && time.Since(afc.calWindow).Seconds() >= 10 {
-		medianSendLatencyMs := medianInt(afc.sendLatencyMsHistogram[fcRoundedUpValue])
-		medianSendLatencyMsHistory := afc.medianSendLatencyMsHistory[fcRoundedUpValue]
-
-		if float64(medianSendLatencyMs) > float64(medianSendLatencyMsHistory)*1.1 {
-			afc.baseLineMaxCount -= 10
-			_fetchCount = afc.baseLineMaxCount
+	sendThroughput := float64(afc.fetchCount) * 1000 / float64(sendLatencyMs)
+	if afc.fetchCount >= afc.lastFetchCount {
+		if sendThroughput*1.1 >= afc.lastSendThroughput || float64(sendLatencyMs) <= float64(afc.lastSendLatencyMs)*1.1 {
+			_fetchCount += 100
 		} else {
-			_fetchCount += minRcCnt * minIncrementFactor
+			afc.baseLineMaxCount -= 10
 		}
-
-		afc.medianSendLatencyMsHistory[fcRoundedUpValue] = medianSendLatencyMs
-
-		afc.calWindow = time.Now()
-
-		afc.Logger.Debug("adaptive fetch -- medianSendLatencyMs %d medianSendLatencyMsHistory %d/%d", medianSendLatencyMs, medianSendLatencyMsHistory, int(float64(medianSendLatencyMsHistory)*1.1))
+		afc.Logger.Debug("adaptive fetch -- sendThroughput %.4f/%.4f lastSendThroughput %d sendLatencyMs %d lastSendLatencyMs %d/%d", sendThroughput, sendThroughput*1.1, afc.lastSendThroughput, sendLatencyMs, afc.lastSendLatencyMs, afc.lastSendLatencyMs+afc.lastSendLatencyMs*10/100)
 	}
 
-	afc.printSendLatencyMsHistogram()
+	afc.lastFetchCount = afc.fetchCount
+	afc.lastSendLatencyMs = sendLatencyMs
+	afc.lastSendThroughput = sendThroughput
 
 	afc.baseLineMaxCount = max(afc.baseLineMaxCount, _fetchCount)
-
 	_fetchCount = afc.baseLineMaxCount
-
 	_fetchCount = min(_fetchCount, filledCapacity)
 	_fetchCount = _fetchCount / minRcCnt * minRcCnt
 	_fetchCount = max(_fetchCount, minRcCnt)
@@ -351,32 +327,13 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 	return _fetchCount
 }
 
-func (afc *AdaptiveFetchCount) printSendLatencyMsHistogram() {
-	keys := make([]int, 0, len(afc.sendLatencyMsHistogram))
-	for key := range afc.sendLatencyMsHistogram {
-		keys = append(keys, key)
-	}
-
-	sort.Ints(keys)
-
-	for _, key := range keys {
-		originalValues := afc.sendLatencyMsHistogram[key]
-		valuesCopy := make([]int, len(originalValues))
-		copy(valuesCopy, originalValues)
-		sort.Ints(valuesCopy)
-		afc.Logger.Debug("adaptive fetch -- sendThroughputHistogram Key: %d, Values: %#v\n", key, valuesCopy)
-	}
-}
-
-func NewAdaptiveFetchCount(logger *Logger, maxCapacity int, maxTime int) *AdaptiveFetchCount {
+func NewAdaptiveFetchCount(logger *Logger, maxTime int) *AdaptiveFetchCount {
 	return &AdaptiveFetchCount{
-		Logger:                     logger,
-		baseLineMaxCount:           0,
-		maxCapacity:                maxCapacity,
-		fetchCount:                 0,
-		maxTimeMs:                  maxTime * 1000,
-		calWindow:                  time.Now(),
-		medianSendLatencyMsHistory: make(map[int]int),
-		sendLatencyMsHistogram:     make(map[int][]int),
+		Logger:             logger,
+		baseLineMaxCount:   0,
+		fetchCount:         0,
+		maxTimeMs:          maxTime * 1000,
+		lastSendLatencyMs:  0,
+		lastSendThroughput: 0,
 	}
 }
