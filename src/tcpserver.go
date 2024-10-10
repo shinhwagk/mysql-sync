@@ -266,8 +266,7 @@ func (ts *TCPServer) handleClients(listener net.Listener) {
 }
 
 // Adaptive Fetch Count
-const minRcCnt int = 10
-const minIncrementFactor = 10
+const MinRcCnt int = 10
 
 // const decreaseFactor = 0.05
 
@@ -287,7 +286,7 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 
 	// just first
 	if _fetchCount == 0 {
-		afc.baseLineMaxCount = max(filledCapacity/100/minRcCnt*minRcCnt, minRcCnt)
+		afc.baseLineMaxCount = max(filledCapacity/100/MinRcCnt*MinRcCnt, MinRcCnt)
 		afc.fetchCount = afc.baseLineMaxCount
 		return afc.fetchCount
 	}
@@ -318,8 +317,8 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 	}
 
 	_fetchCount = min(afc.baseLineMaxCount, filledCapacity)
-	_fetchCount = _fetchCount / minRcCnt * minRcCnt
-	_fetchCount = max(_fetchCount, minRcCnt)
+	_fetchCount = _fetchCount / MinRcCnt * MinRcCnt
+	_fetchCount = max(_fetchCount, MinRcCnt)
 
 	afc.fetchCount = _fetchCount
 
