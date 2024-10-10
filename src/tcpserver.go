@@ -301,12 +301,12 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 
 		if afc.fetchCount >= afc.lastFetchCount {
 			if sendThroughput*1.1 >= afc.lastSendThroughput || float64(sendLatencyMs) <= float64(afc.lastSendLatencyMs)*1.1 {
-				_fetchCount += MinRcCnt * 11
+				_fetchCount += MinRcCnt * 10
 			}
 			afc.Logger.Debug("adaptive fetch -- sendThroughput %.2f/%.2f lastSendThroughput %.2f sendLatencyMs %d lastSendLatencyMs %d/%d", sendThroughput, sendThroughput*1.1, afc.lastSendThroughput, sendLatencyMs, afc.lastSendLatencyMs, int(float64(afc.lastSendLatencyMs)*1.1))
 		}
 
-		afc.baseLineMaxCount = max(afc.baseLineMaxCount, _fetchCount, filledCapacity/100) - MinRcCnt
+		afc.baseLineMaxCount = max(max(afc.baseLineMaxCount, _fetchCount)-MinRcCnt, filledCapacity/100)
 	}
 
 	afc.lastFetchCount = afc.fetchCount
