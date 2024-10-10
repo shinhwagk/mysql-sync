@@ -287,7 +287,7 @@ func (afc *AdaptiveFetchCount) EvaluateFetchCount(sendLatencyMs int, filledCapac
 
 	// just first
 	if _fetchCount == 0 {
-		afc.baseLineMaxCount = minRcCnt * minIncrementFactor * 10
+		afc.baseLineMaxCount = max(filledCapacity/100/minRcCnt*minRcCnt, minRcCnt)
 		afc.fetchCount = afc.baseLineMaxCount
 		return afc.fetchCount
 	}
