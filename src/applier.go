@@ -491,6 +491,7 @@ func (ma *MysqlApplier) OnGTID(op MysqlOperationGTID) error {
 	}
 
 	if ma.LastCommitted != op.LastCommitted {
+		ma.Logger.Debug("Execute[mergetrx] -- force merge commit, lastcommitted changed %d/%d", ma.LastCommitted, op.LastCommitted)
 		if err := ma.MergeCommit(); err != nil {
 			return err
 		}
