@@ -511,6 +511,8 @@ func (ma *MysqlApplier) EvaluateForceMergeCommit() bool {
 	// 	ma.Logger.Debug("Execute[mergetrx] -- pending commit count: %d, gtid count: %d", ma.PendingCommitCount, ma.GtidCount)
 	// 	return true
 	// } else
+	ma.Logger.Debug("Execute[mergetrx] -- force merge commit, pending commit count: %d over %d, gtid count: %d", ma.PendingCommitCount, ma.MergeCommitMaxCount, ma.GtidCount)
+	ma.Logger.Debug("Execute[mergetrx] -- force merge commit, checkpoint delay: %ds over %ds, gtid count: %d", appliedCheckpointLag, ma.MergeCommitMaxDelay, ma.GtidCount)
 	if ma.MergeCommitMaxCount >= 1 && ma.PendingCommitCount >= uint(ma.MergeCommitMaxCount) {
 		ma.Logger.Debug("Execute[mergetrx] -- force merge commit, pending commit count: %d over %d, gtid count: %d", ma.PendingCommitCount, ma.MergeCommitMaxCount, ma.GtidCount)
 		return true
