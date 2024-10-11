@@ -13,6 +13,8 @@ replication:
     cache: 100000
   prom:
     export: 9091
+  transfer:
+    max_time: 11
 destination:
   tcpaddr: "127.0.0.1:9998"
   cache: 100000

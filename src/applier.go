@@ -91,6 +91,8 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 			}
 			return
 		case oper := <-moCh:
+			ma.metricCh <- MetricUnit{Name: MetricDestApplierOperationsCache, Value: uint(len(moCh))}
+
 			if ma.GtidSkip {
 				if _, ok := oper.(MysqlOperationGTID); !ok {
 					continue

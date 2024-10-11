@@ -126,14 +126,6 @@ func splitAndClean(s string) []string {
 	return results
 }
 
-//	func contains(arr []string, str string) bool {
-//		for _, item := range arr {
-//			if item == str {
-//				return true
-//			}
-//		}
-//		return false
-//	}
 func contains(value string, list []string) bool {
 	for _, v := range list {
 		if strings.TrimSpace(v) == value {
@@ -143,30 +135,21 @@ func contains(value string, list []string) bool {
 	return false
 }
 
-func updateSliceFloat64(slice []float64, newItem float64) []float64 {
-	for i, value := range slice {
-		if value == 0 {
-			slice[i] = newItem
-		}
-	}
-	slice = append(slice[1:], newItem)
-	return slice
-}
-
-func calculateMeanWithoutMinMaxFloat64(slice []float64) float64 {
-	sliceCopy := make([]float64, len(slice))
-	copy(sliceCopy, slice)
-
-	sort.Float64s(sliceCopy)
-	// sliceCopy = sliceCopy[1 : len(slice)-1]
-	sliceCopy = sliceCopy[1 : len(slice)-1]
-
-	total := float64(0)
-	for _, value := range sliceCopy {
-		total += value
+func medianInt(numbers []int) int {
+	if len(numbers) == 0 {
+		return 0
 	}
 
-	return total / float64(len(sliceCopy))
+	numbersCopy := make([]int, len(numbers))
+	copy(numbersCopy, numbers)
+
+	sort.Ints(numbersCopy)
+
+	n := len(numbersCopy)
+	if n%2 != 0 {
+		return numbersCopy[n/2]
+	}
+	return (numbersCopy[n/2-1] + numbersCopy[n/2]) / 2
 }
 
 func ConvertStringToUint16Slice(input string) ([]uint16, error) {

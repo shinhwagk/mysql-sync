@@ -23,6 +23,7 @@ type ReplicationConfig struct {
 	Password   string           `yaml:"password"`
 	Settings   SettingsConfig   `yaml:"settings"`
 	Prometheus PrometheusConfig `yaml:"prom"`
+	Transfer   TransferConfig   `yaml:"transfer"`
 }
 
 type DestinationsConfig struct {
@@ -61,6 +62,10 @@ type DestinationSyncDmlConfig struct {
 
 type PrometheusConfig struct {
 	ExportPort int `yaml:"export"`
+}
+
+type TransferConfig struct {
+	MaxTime int `yaml:"max_time"`
 }
 
 type DestinationReplicateConfig struct {
