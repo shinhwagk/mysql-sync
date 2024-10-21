@@ -377,7 +377,7 @@ func (bext *BinlogExtract) handleQueryEvent(e *replication.QueryEvent, eh *repli
 			bext.metricCh <- MetricUnit{Name: MetricReplDDLDatabase, Value: 1, LabelPair: map[string]string{"database": database}}
 			bext.metricCh <- MetricUnit{Name: MetricReplExtractorOperationDDLDatabase, Value: 1}
 			bext.Logger.Debug("Operation[ddldatabase], Database: %s, Query: %s", database, string(e.Query))
-		case *ast.CreateUserStmt, *ast.DropUserStmt, *ast.GrantStmt, *ast.RevokeStmt, *ast.AlterUserStmt:
+		case *ast.CreateUserStmt, *ast.DropUserStmt, *ast.GrantStmt, *ast.RevokeStmt, *ast.AlterUserStmt, *ast.RenameUserStmt:
 			schemaContext := string(e.Schema)
 
 			bext.toMoCh(MysqlOperationDCLUser{SchemaContext: schemaContext, Query: string(e.Query), Timestamp: eh.Timestamp})

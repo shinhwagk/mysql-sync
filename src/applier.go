@@ -160,7 +160,7 @@ func (ma *MysqlApplier) Start(ctx context.Context, moCh <-chan MysqlOperation) {
 				ma.Logger.Debug("Operation[dcluser] -- SchemaContext: %s, Query: %s", op.SchemaContext, op.Query)
 
 				ma.LastCheckpointTimestamp = op.Timestamp
-				if ma.State == StateGTID || ma.State == StateDDL {
+				if ma.State == StateGTID || ma.State == StateDDL || ma.State == StateDCL {
 					ma.State = StateDCL
 				} else {
 					ma.Logger.Error("Execute[dcluser] -- last state is '%s'", ma.State)
