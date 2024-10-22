@@ -71,15 +71,17 @@ func (ckpt *Checkpoint) InitStartupGtidSetsMap(initGtidSetsRangeStr string) erro
 
 func (ckpt *Checkpoint) QueryGtidSetsMapFromConsul() (map[string]uint, error) {
 	p, _, err := ckpt.ConsulKV.Get(ckpt.ConsulKVPathGtidsets, nil)
-	ckpt.Logger.Info("Query consul k: %s, v: %s", ckpt.ConsulKVPathGtidsets, string(p.Value))
+	ckpt.Logger.Info("Query consul k: %s", ckpt.ConsulKVPathGtidsets)
 	if err != nil {
 		ckpt.Logger.Error("Read consul kv: %s.", err)
 		return nil, err
 	}
 
 	if p == nil {
+		ckpt.Logger.Info("Query consul k: %s, v: nil", ckpt.ConsulKVPathGtidsets)
 		return make(map[string]uint), nil
 	} else {
+		ckpt.Logger.Info("Query consul k: %s, v: %s", ckpt.ConsulKVPathGtidsets, string(p.Value))
 		if gsm, err := GetGtidSetsMapFromGtidSetsRangeStr(string(p.Value)); err != nil {
 			return nil, err
 		} else {
